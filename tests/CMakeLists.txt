@@ -69,9 +69,11 @@ add_executable(fork_engine_tests
     src/test_script_binding.cpp
     src/test_builtin_behaviours.cpp
     src/test_export.cpp
+    src/test_example_projects.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)
+target_compile_definitions(fork_engine_tests PRIVATE "FE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
 
 # The breakout vertical-slice tests compile the game's own rules and systems
 # straight from the example directory (by path, so they do not depend on

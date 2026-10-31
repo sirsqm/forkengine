@@ -11,15 +11,17 @@ assets/textures/       the checker texture the floor references
 scenes/main3d.fescene  the startup scene (a camera, a light, a floor, two cubes)
 ```
 
-Open it with the editor shell, from the repository root:
+Open it with the editor shell:
 
 ```bash
 ./build/bin/fork_editor_shell --project examples/demo3d_project
 ```
 
-On a machine without a display, `--headless --frames N` opens the project, loads
-the startup scene, and exits after N frames, which is enough to check that the
-project loads:
+`--project` accepts either a project directory or a project file, and the scene's
+`obj:` and `tex:` references resolve against the project directory, so the
+project opens from any working directory (see ADR-0114). On a machine without a
+display, `--headless --frames N` opens the project, loads the startup scene, and
+exits after N frames, which is enough to check that the project loads:
 
 ```bash
 ./build/bin/fork_editor_shell --project examples/demo3d_project --headless
