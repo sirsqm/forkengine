@@ -18,10 +18,12 @@
 #include "fe/platform/DynamicLibrary.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/script/ScriptBinding.h"
 #include "fe/script/ScriptHost.h"
 #include "fe/script/ScriptLibrary.h"
 #include "fe/script/ScriptRegistry.h"
 #include "fe/script/ScriptSystem.h"
+#include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
 #include "fe/systems/SceneSchedule.h"
 
@@ -273,5 +275,71 @@ TEST_CASE("a failed reload drops the module and leaves nodes unscripted") {
     CHECK_FALSE(error.ok());
     CHECK(library.module_count() == 0);
     CHECK_FALSE(library.registry().contains("SpinBehaviour"));
+    CHECK(host.script_count() == 0);
+}
+
+// The shipped shape of M7: a scene *document* records a behaviour by name, and
+// that name resolves through a module the engine did not compile in. The tests
+// above attach programmatically and the binding tests use an in-process registry,
+// so neither exercises the path a player runs -- a scene read from a document
+// whose binding is satisfied by a loaded image. This is what the queue item's
+// "a game's rules load from a module the engine did not compile in" means, and it
+// is the shape an exported game uses (fork_player loads its manifest's modules,
+// then loads the scene through the same ScriptBinding seam).
+//
+// A hand-written document, not one the test serialized: the point is that a
+// *game author's* file, produced by an editor that never had the module, resolves
+// against the module at load. The behaviour name is the only link between them.
+TEST_CASE("a scene document's binding resolves through a loaded module") {
+    const std::string document = R"({"format":"fork_scene","format_version":4,"name":"ModGame","roots":[)"
+                                 R"({"name":"Mover","type":"Node","scripts":[{"behaviour":"SpinBehaviour"}]}]})";
+
+    // Load the module first, exactly as fork_player does with a manifest's
+    // modules, then read the scene through the library's registry.
+    ScriptLibrary library;
+    REQUIRE(library.load_module(kModuleAPath).ok());
+
+    Scene scene;
+    ScriptHost host;
+    script::ScriptBinding binding(host, library.registry());
+    REQUIRE_FALSE(serialization::scene::from_json(document, scene, nullptr, &binding));
+
+    // The document's binding produced a live script from the module's code.
+    Node* mover = scene.find_node_by_name("Mover");
+    REQUIRE(mover != nullptr);
+    REQUIRE(host.has_script(mover->id()));
+    CHECK(host.script_count() == 1);
+
+    // And it runs: the module's behaviour advances X by 1.0 per frame, driven by
+    // the ordinary schedule. The image's own counter proves the module's code,
+    // not a copy, executed.
+    ModuleProbe probe(kModuleAPath);
+    const u32 ticks_before = probe.ticks();
+
+    SceneSchedule schedule;
+    schedule.add_system<ScriptSystem>(host);
+    const FrameContext context;
+    schedule.update(context, scene);
+    schedule.update(context, scene);
+
+    CHECK(node_x(*mover) == doctest::Approx(2.0f));
+    CHECK(probe.ticks() - ticks_before == 2);
+}
+
+// The negative half: the same document with the module *not* loaded attaches
+// nothing and is not fatal -- the scene still loads. This is the state a game
+// with a missing module must not crash in, and it proves the previous test's
+// success came from the module rather than from the document alone.
+TEST_CASE("a scene document's binding is inert when its module is not loaded") {
+    const std::string document = R"({"format":"fork_scene","format_version":4,"name":"ModGame","roots":[)"
+                                 R"({"name":"Mover","type":"Node","scripts":[{"behaviour":"SpinBehaviour"}]}]})";
+
+    ScriptLibrary library; // nothing loaded
+    Scene scene;
+    ScriptHost host;
+    script::ScriptBinding binding(host, library.registry());
+    REQUIRE_FALSE(serialization::scene::from_json(document, scene, nullptr, &binding));
+
+    CHECK(scene.find_node_by_name("Mover") != nullptr);
     CHECK(host.script_count() == 0);
 }

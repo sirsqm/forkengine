@@ -640,6 +640,24 @@ logic can live outside the engine.
 **Done when** a game's rules load from a module the engine did not compile in,
 with a test covering load and reload.
 
+Met. The seam, the C++ module ABI, hot reload, reflection-backed properties, and
+editor integration all landed earlier ([ADR-0044](adr/0044-scripting-seam.md),
+[ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md),
+[ADR-0063](adr/0063-reflection-backed-script-properties.md),
+[ADR-0066](adr/0066-editor-driven-module-hot-reload.md)), and `fork_player`
+loads the modules an export manifest names before it reads the scene
+([ADR-0064](adr/0064-export-runtime-and-player.md)). What was missing was a test
+of the *shipped* path: the loader tests attached a script programmatically and the
+binding tests used an in-process registry, so neither read a scene *document*
+whose binding is satisfied by a loaded image. `test_script_module.cpp` now does —
+a hand-written scene names a behaviour, the module is loaded, the scene is read
+through the same `ScriptBinding` seam `fork_player` uses, and the behaviour runs
+through the ordinary schedule with the image's own counter proving its code
+executed; a second case proves the same document is inert (and not fatal) with no
+module loaded. Reload was already covered. Verified end to end as well: a real
+`fork_export --module` writes a manifest naming the module, and the real
+`fork_player --export` loads it and reports `1 script(s)`.
+
 ---
 ## Backlog — not yet ordered
 
