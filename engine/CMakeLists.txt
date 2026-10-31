@@ -183,6 +183,7 @@ set(FE_ENGINE_SOURCES
     src/audio/AudioBackend.cpp
     src/audio/MiniAudioDevice.cpp
     src/pack/AssetClosure.cpp
+    src/pack/PackCompression.cpp
     src/pack/PackFile.cpp
     src/pack/PackWriter.cpp
     src/pack/PackSource.cpp
@@ -231,7 +232,7 @@ target_include_directories(
 target_link_libraries(
   fork_engine
   PUBLIC ${FE_GL_LOADER_TARGET} ${FE_JSON_TARGET} FE::stb
-  PRIVATE ${FE_GLFW_TARGET} fe_warnings miniaudio
+  PRIVATE ${FE_GLFW_TARGET} fe_warnings miniaudio FE::miniz
 )
 
 # The public headers must not leak GLFW. GLFW is a private implementation detail

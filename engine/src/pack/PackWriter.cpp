@@ -82,7 +82,7 @@ Error PackWriter::write(std::string_view pack_path, const AssetDatabase& assets,
     if (!built) {
         return built.error();
     }
-    auto bytes = built.value().write();
+    auto bytes = built.value().write(options.compression);
     if (!bytes) {
         return bytes.error();
     }

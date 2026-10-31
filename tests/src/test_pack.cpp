@@ -5,6 +5,7 @@
 #include "fe/core/FileSystem.h"
 #include "fe/mesh/GltfLoader.h"
 #include "fe/pack/AssetClosure.h"
+#include "fe/pack/PackCompression.h"
 #include "fe/pack/PackFile.h"
 #include "fe/pack/PackSource.h"
 #include "fe/pack/PackWriter.h"
@@ -403,4 +404,190 @@ TEST_CASE("a pack mounts on a ResourceManager and serves loads with no loose fil
     // A missing key fails cleanly rather than reading a loose file.
     auto missing = manager.read_text("scenes/absent.fescene");
     CHECK_FALSE(missing);
+}
+
+TEST_CASE("DEFLATE compresses and decompresses a payload losslessly") {
+    // A highly compressible input: the same byte repeated. DEFLATE must shrink
+    // it, and the round trip must return the exact bytes.
+    std::vector<u8> input(4096, u8{0x41});
+    auto compressed = pack::compress(input, pack::PackCompression::Fast);
+    REQUIRE(compressed);
+    CHECK(compressed.value().size() < input.size());
+
+    auto restored = pack::decompress(compressed.value().data(), compressed.value().size(), input.size());
+    REQUIRE(restored);
+    CHECK(restored.value() == input);
+
+    // Incompressible input still round-trips: the codec is lossless whatever the
+    // bytes are, so the writer's "only if smaller" rule is a size decision, not a
+    // correctness one.
+    std::vector<u8> noise(1024);
+    u32 state = 0x12345678U;
+    for (u8& b : noise) {
+        state = state * 1664525U + 1013904223U; // a plain LCG, so the bytes do not repeat
+        b = static_cast<u8>(state >> 24);
+    }
+    auto noise_compressed = pack::compress(noise, pack::PackCompression::Fast);
+    REQUIRE(noise_compressed);
+    auto noise_restored =
+        pack::decompress(noise_compressed.value().data(), noise_compressed.value().size(), noise.size());
+    REQUIRE(noise_restored);
+    CHECK(noise_restored.value() == noise);
+}
+
+TEST_CASE("an empty payload round-trips through the codec") {
+    const std::vector<u8> empty;
+    auto compressed = pack::compress(empty, pack::PackCompression::Fast);
+    REQUIRE(compressed);
+    auto restored = pack::decompress(compressed.value().data(), compressed.value().size(), 0);
+    REQUIRE(restored);
+    CHECK(restored.value().empty());
+}
+
+TEST_CASE("a compressed stream that does not match the promised length is rejected") {
+    std::vector<u8> input(512, u8{0x7});
+    auto compressed = pack::compress(input, pack::PackCompression::Fast);
+    REQUIRE(compressed);
+
+    // The index promises 512 bytes; claim 511 and the reader must refuse rather
+    // than hand back a short buffer a loader would misread.
+    auto wrong = pack::decompress(compressed.value().data(), compressed.value().size(), input.size() - 1);
+    CHECK_FALSE(wrong);
+
+    // Garbage that is not a DEFLATE stream is rejected too.
+    const std::array<u8, 4> junk{0xDE, 0xAD, 0xBE, 0xEF};
+    auto bad = pack::decompress(junk.data(), junk.size(), 512);
+    CHECK_FALSE(bad);
+}
+
+TEST_CASE("an uncompressed pack is byte for byte the format before compression") {
+    // The compatibility guarantee: with the default codec the writer emits
+    // version 1 and the same bytes it always did, so a pack built before
+    // compression existed and one built now are identical.
+    PackFile pack;
+    pack.add_file("assets/a.txt", "", Uuid{}, bytes_of("hello"));
+    pack.add_file("assets/b.txt", "tex", Uuid::generate(), bytes_of("world"));
+
+    auto raw = pack.write(); // default: PackCompression::None
+    REQUIRE(raw);
+
+    // The header's format_version is the u32 at byte 4; it must be 1.
+    const u32 version = static_cast<u32>(raw.value()[4]) | (static_cast<u32>(raw.value()[5]) << 8);
+    CHECK(version == 1);
+
+    // Explicitly asking for None gives the same bytes as the default.
+    auto explicit_none = pack.write(pack::PackCompression::None);
+    REQUIRE(explicit_none);
+    CHECK(explicit_none.value() == raw.value());
+
+    // And it parses back with every entry stored raw.
+    auto parsed = PackFile::parse(raw.value().data(), raw.value().size());
+    REQUIRE(parsed);
+    REQUIRE(parsed.value().entry_count() == 2);
+    CHECK(parsed.value().find_path("assets/a.txt")->codec == pack::PackCodec::None);
+    CHECK(parsed.value().find_path("assets/b.txt")->data == bytes_of("world"));
+}
+
+TEST_CASE("a compressed pack round-trips its payloads and is smaller") {
+    PackFile pack;
+    // A compressible payload and an incompressible one, so the test covers both
+    // the compressed and the stored-raw branch in one pack.
+    const std::vector<u8> compressible(8192, u8{0x5A});
+    std::vector<u8> noise(512);
+    u32 state = 0xC0FFEEU;
+    for (u8& b : noise) {
+        state = state * 1664525U + 1013904223U;
+        b = static_cast<u8>(state >> 24);
+    }
+    const Uuid id = Uuid::generate();
+    pack.add_file("assets/big.bin", "tex", id, compressible);
+    pack.add_file("assets/noise.bin", "", Uuid{}, noise);
+
+    auto raw = pack.write(pack::PackCompression::None);
+    auto packed = pack.write(pack::PackCompression::Best);
+    REQUIRE(raw);
+    REQUIRE(packed);
+    CHECK(packed.value().size() < raw.value().size());
+
+    auto parsed = PackFile::parse(packed.value().data(), packed.value().size());
+    REQUIRE(parsed);
+    REQUIRE(parsed.value().entry_count() == 2);
+
+    // The compressible entry was stored with the DEFLATE codec and comes back
+    // decompressed, byte for byte.
+    const pack::PackEntry* big = parsed.value().find_path("assets/big.bin");
+    REQUIRE(big != nullptr);
+    CHECK(big->codec == pack::PackCodec::Deflate);
+    CHECK(big->uncompressed_size == compressible.size());
+    CHECK(big->data == compressible);
+    CHECK(big->guid == id);
+
+    // The incompressible entry is stored raw - compressing it would grow the
+    // pack - and its bytes survive unchanged.
+    const pack::PackEntry* noise_entry = parsed.value().find_path("assets/noise.bin");
+    REQUIRE(noise_entry != nullptr);
+    CHECK(noise_entry->codec == pack::PackCodec::None);
+    CHECK(noise_entry->data == noise);
+
+    // A guid lookup still resolves through a compressed pack.
+    CHECK(parsed.value().find_guid(id) == big);
+}
+
+TEST_CASE("a compressed pack mounts and serves loads with no loose files") {
+    TempDir dir("compressed_mount");
+    Scene authored;
+    authored.set_name("Compressed");
+    Node* node = authored.create_node("Hero");
+    node->add_component<Sprite2D>()->size = Vec2{16.0f, 16.0f};
+    REQUIRE_FALSE(serialization::scene::save(authored, dir.file("scenes/main.fescene")));
+
+    const std::vector<u8> pixels = checker_tga_bytes();
+    REQUIRE_FALSE(fs::write_binary_file(dir.file("assets/checker.tga"), pixels.data(), pixels.size()));
+
+    AssetDatabase assets;
+    assets.set_root(dir.file("assets"));
+    auto imported = assets.import("checker.tga", "");
+    REQUIRE(imported);
+
+    pack::PackOptions options;
+    options.compression = pack::PackCompression::Best;
+    REQUIRE_FALSE(pack::PackWriter::write(dir.file("game.fepack"), assets, dir.file("scenes/main.fescene"),
+                                          "scenes/main.fescene", options));
+    std::filesystem::remove_all(dir.file("assets"));
+    std::filesystem::remove_all(dir.file("scenes"));
+
+    auto source = pack::PackSource::open(dir.file("game.fepack"));
+    REQUIRE(source);
+
+    ResourceManager manager;
+    manager.mount(source.value());
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::load("scenes/main.fescene", loaded, &manager));
+    CHECK(loaded.name() == "Compressed");
+
+    // The texture decodes from the compressed pack through the real loader, so
+    // decompression is transparent to the whole load path, not just to a byte
+    // read.
+    manager.register_loader(std::make_unique<ImageLoader>());
+    auto image = manager.load_as<Image>(to_reference(imported.value().id));
+    REQUIRE(image);
+    CHECK(image.value()->width() == 2);
+    CHECK(image.value()->height() == 2);
+    CHECK(image.value()->pixels().size() == 2U * 2U * 4U);
+}
+
+TEST_CASE("a corrupted compressed payload is rejected, not served as garbage") {
+    PackFile pack;
+    pack.add_file("assets/big.bin", "", Uuid{}, std::vector<u8>(4096, u8{0x33}));
+    auto packed = pack.write(pack::PackCompression::Fast);
+    REQUIRE(packed);
+
+    std::vector<u8> corrupt = packed.value();
+    // Flip a byte inside the compressed payload (the last byte of the file) so
+    // the stream no longer decodes. The reader must fail rather than return a
+    // short or wrong buffer.
+    corrupt.back() ^= 0xFFU;
+    auto parsed = PackFile::parse(corrupt.data(), corrupt.size());
+    CHECK_FALSE(parsed);
 }

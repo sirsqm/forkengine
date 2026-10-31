@@ -136,6 +136,26 @@ target_include_directories(fe_stb SYSTEM INTERFACE "${PROJECT_SOURCE_DIR}/third_
 target_compile_definitions(fe_stb INTERFACE STBI_NO_STDIO=0)
 
 # ---------------------------------------------------------------------------
+# miniz - DEFLATE compression for pack payloads (vendored, single file).
+# ---------------------------------------------------------------------------
+# Vendored like stb_image: one .c and one .h, no build system to integrate, and
+# checked in so a clean checkout compresses a pack without network access. It is
+# the codec behind PackCompression (docs/adr/0126-pack-compression.md); the pack
+# module includes <miniz.h> and links this target.
+#
+# It is a static C library compiled once. The header is included as an external
+# header (SYSTEM) so its warnings never reach our translation units, and the
+# vendored C is built without our warning flags - the same treatment glad and
+# stb get. It is needed on every target, including wasm: a pack is compressed at
+# build time and decompressed at run time on the web too.
+add_library(fe_miniz STATIC "${PROJECT_SOURCE_DIR}/third_party/miniz/miniz.c")
+add_library(FE::miniz ALIAS fe_miniz)
+target_include_directories(fe_miniz SYSTEM PUBLIC "${PROJECT_SOURCE_DIR}/third_party/miniz")
+if(NOT MSVC)
+  target_compile_options(fe_miniz PRIVATE -w)
+endif()
+
+# ---------------------------------------------------------------------------
 # miniaudio - cross-platform audio output (single-header, public domain / MIT-0).
 # ---------------------------------------------------------------------------
 # The real backend for the audio module. Single-header and dependency-free. Its

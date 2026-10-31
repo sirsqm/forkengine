@@ -35,6 +35,7 @@ set(_checks
     "installs the glad headers and archive|glad_gl_core_33"
     "installs the GLFW headers and archive|glfw"
     "installs the miniaudio header and archive|miniaudio"
+    "installs the miniz header and archive|fe_miniz"
     "installs the stb header|stb_image.h"
     "installs a CMake package config|ForkEngineConfig.cmake"
     "installs the version file|write_basic_package_version_file"

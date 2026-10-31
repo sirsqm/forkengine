@@ -56,6 +56,9 @@ struct Options {
     std::string out;       // output pack path
     bool prune = true;     // pack only what the startup scene references
     bool verbose = false;
+    // The payload codec. `none` (default) stores raw; `fast` and `best` DEFLATE
+    // each payload that shrinks (docs/adr/0126-pack-compression.md).
+    fe::pack::PackCompression compression = fe::pack::PackCompression::None;
 };
 
 // The subset of the project file the packer needs. The engine does not know
@@ -145,8 +148,9 @@ scene_asset_paths(const std::string& scene_path, const std::string& pack_root, c
 }
 
 void print_usage() {
-    std::puts("usage: fork_pack --project DIR --out FILE [--no-prune]\n"
-              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH] [--no-prune]\n"
+    std::puts("usage: fork_pack --project DIR --out FILE [--no-prune] [--compress none|fast|best]\n"
+              "       fork_pack --assets DIR --scene FILE --out FILE [--scene-key PATH]\n"
+              "                 [--no-prune] [--compress none|fast|best]\n"
               "\n"
               "  --project DIR     a project directory or fork.project.json file\n"
               "  --assets DIR      the asset root to pack (explicit form)\n"
@@ -156,6 +160,9 @@ void print_usage() {
               "  --no-prune        pack the whole asset tree instead of only the\n"
               "                    assets the startup scene references. Pruning is\n"
               "                    the default (ADR-0065)\n"
+              "  --compress LEVEL  payload codec: none (default, stores raw), fast,\n"
+              "                    or best. A payload is compressed only when that\n"
+              "                    makes it smaller, so a pack never grows\n"
               "  --out FILE        the pack file to write\n"
               "  --verbose         log at debug level");
 }
@@ -178,6 +185,19 @@ void print_usage() {
             out.prune = true;
         } else if (arg == "--no-prune") {
             out.prune = false;
+        } else if (arg == "--compress" && has_value) {
+            const std::string_view level = argv[++i];
+            if (level == "none") {
+                out.compression = fe::pack::PackCompression::None;
+            } else if (level == "fast") {
+                out.compression = fe::pack::PackCompression::Fast;
+            } else if (level == "best") {
+                out.compression = fe::pack::PackCompression::Best;
+            } else {
+                std::fprintf(stderr, "fork_pack: --compress takes none, fast, or best (got '%s')\n",
+                             std::string(level).c_str());
+                return false;
+            }
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -260,6 +280,7 @@ int main(int argc, char** argv) {
                 pack_root.c_str());
 
     fe::pack::PackOptions pack_options;
+    pack_options.compression = options.compression;
     if (options.prune) {
         auto paths = scene_asset_paths(scene_path, pack_root, assets);
         if (!paths) {

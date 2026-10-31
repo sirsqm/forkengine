@@ -809,6 +809,16 @@ is as large as its assets.
 it transparently, a round-trip test proves the bytes survive, and an uncompressed
 pack still loads byte for byte.
 
+Landed as a per-entry codec on the pack format
+([ADR-0126](adr/0126-pack-compression.md)). The index records a codec and the
+payload's original length per entry; `None` is the identity, so a pack with no
+compressed entry is written as format version 1 and is byte for byte the format
+before compression. A payload is compressed only when DEFLATE makes it smaller,
+so enabling compression never grows a pack, and the reader decompresses
+transparently and rejects a stream that does not decode to the promised length.
+The codec is vendored miniz (MIT); `fork_pack` and `fork_export` take
+`--compress none|fast|best`.
+
 ### `render-graph-target-ownership`
 
 The render-graph row (ADR-0100, ADR-0110) leaves render-target ownership open:

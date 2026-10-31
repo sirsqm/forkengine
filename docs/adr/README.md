@@ -131,6 +131,7 @@ rather than editing it.
 | [0123](0123-skeletal-state-machines.md) | Skeletal animation state machines | Accepted |
 | [0124](0124-animation-blend-trees.md) | Animation blend trees and additive layers | Accepted |
 | [0125](0125-audio-head-shadow-front-back.md) | A head shadow for the audio front/back cue | Accepted |
+| [0126](0126-pack-compression.md) | Compressed pack payloads | Accepted |
 
 ## Format
 

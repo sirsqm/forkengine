@@ -105,6 +105,9 @@ struct Options {
     std::string ios_engine_dir; // the engine checkout; default: the current directory
     bool prune = true;          // pack only what the startup scene references
     bool verbose = false;
+    // The pack payload codec. `none` (default) stores raw; `fast` and `best`
+    // DEFLATE each payload that shrinks (docs/adr/0126-pack-compression.md).
+    fe::pack::PackCompression compression = fe::pack::PackCompression::None;
 };
 
 // The subset of the project file the exporter needs. The engine does not know
@@ -248,6 +251,9 @@ void print_usage() {
               "  --no-prune       pack the whole asset tree instead of only the\n"
               "                   assets the startup scene references. Pruning is\n"
               "                   the default (ADR-0065)\n"
+              "  --compress LEVEL the pack payload codec: none (default, stores raw),\n"
+              "                   fast, or best. A payload is compressed only when\n"
+              "                   that makes it smaller, so a pack never grows\n"
               "  --verbose        log at debug level");
 }
 
@@ -281,6 +287,19 @@ void print_usage() {
             out.prune = true;
         } else if (arg == "--no-prune") {
             out.prune = false;
+        } else if (arg == "--compress" && has_value) {
+            const std::string_view level = argv[++i];
+            if (level == "none") {
+                out.compression = fe::pack::PackCompression::None;
+            } else if (level == "fast") {
+                out.compression = fe::pack::PackCompression::Fast;
+            } else if (level == "best") {
+                out.compression = fe::pack::PackCompression::Best;
+            } else {
+                std::fprintf(stderr, "fork_export: --compress takes none, fast, or best (got '%s')\n",
+                             std::string(level).c_str());
+                return false;
+            }
         } else if (arg == "--verbose") {
             out.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -434,7 +453,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "fork_export: %s\n", built.error().message().c_str());
         return 1;
     }
-    auto pack_bytes = built.value().write();
+    auto pack_bytes = built.value().write(options.compression);
     if (!pack_bytes) {
         std::fprintf(stderr, "fork_export: %s\n", pack_bytes.error().message().c_str());
         return 1;

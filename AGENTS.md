@@ -54,9 +54,14 @@ ctest --test-dir build --output-on-failure
 ## Packaging (install rules)
 
 The engine, the editor, and the tools install with a plain `cmake --install`.
-There is no export/`find_package` config yet: an installed tree is runnable
-(binaries, shared libraries, headers), not yet linkable from another CMake
-project.
+The installed tree is also linkable: `find_package(ForkEngine)` produces
+`ForkEngine::engine`, carrying the public headers, the engine archive, the
+dependency archives the final link needs, the platform libraries, and the C++20
+requirement (ADR-0084, ADR-0102). The payload is written by
+`cmake/FEInstallDependencies.cmake`; a new dependency that ends up on the
+engine's link line has to be added there (header install + archive install) and
+named in `cmake/ForkEngineConfig.cmake.in`, or a consumer's link fails where the
+build tree never does. `cmake/tests/test_sdk_consumable.cmake` guards the list.
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/fe-install

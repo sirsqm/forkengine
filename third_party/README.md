@@ -8,6 +8,7 @@ builds without network access or extra tooling.
 | --- | --- | --- | --- |
 | `glad/` | [glad](https://github.com/Dav1dde/glad) OpenGL 3.3 core loader | MIT | Generated once and committed, so the build never needs Python, jinja2, or network access. |
 | `stb/` | [stb_image](https://github.com/nothings/stb) | Public domain / MIT | Single header, no build system to integrate. |
+| `miniz/` | [miniz](https://github.com/richgel999/miniz) | MIT | Single file, no build system to integrate; the pack payload codec (ADR-0126). |
 
 Libraries fetched at configure time (GLFW, nlohmann/json, doctest) are pinned in
 `cmake/FEDependencies.cmake` and keep their own licenses:

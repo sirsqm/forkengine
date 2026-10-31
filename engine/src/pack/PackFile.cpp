@@ -14,8 +14,11 @@ namespace {
 // The fixed header size: magic, format_version, entry_count, index_offset,
 // payload_offset.
 constexpr usize kHeaderSize = 4 + 4 + 4 + 8 + 8;
-// One index entry's fixed part: key length, scheme length, guid, offset, length.
-constexpr usize kEntryFixedSize = 4 + 4 + 16 + 8 + 8;
+// One index entry's fixed part, format version 1: key length, scheme length,
+// guid, offset, length.
+constexpr usize kEntryFixedSizeV1 = 4 + 4 + 16 + 8 + 8;
+// Version 2 appends the codec (1 byte) and the original length (u64).
+constexpr usize kEntryFixedSizeV2 = kEntryFixedSizeV1 + 1 + 8;
 
 // Little-endian writers. The format is defined as little-endian on every host,
 // so a pack written on one platform reads on another.
@@ -64,6 +67,8 @@ public:
               (static_cast<u32>(bytes[3]) << 24);
         return true;
     }
+
+    bool read_u8(u8& out) { return read_bytes(&out, 1); }
 
     bool read_u64(u64& out) {
         u8 bytes[8];
@@ -127,7 +132,7 @@ const PackEntry* PackFile::find_guid(const Uuid& id) const {
     return nullptr;
 }
 
-Result<std::vector<u8>> PackFile::write() const {
+Result<std::vector<u8>> PackFile::write(PackCompression compression) const {
     // Write in a stable order (by key) so a rebuild from the same inputs is
     // byte-identical, which lets a build system treat an unchanged pack as up
     // to date. Reject a duplicate key rather than letting one shadow the other.
@@ -143,6 +148,49 @@ Result<std::vector<u8>> PackFile::write() const {
         }
     }
 
+    // Resolve each entry's on-disk payload and codec up front. A payload is
+    // compressed only when that makes it smaller: an incompressible asset (a
+    // PNG, a compressed WAV) is stored raw with the `None` codec, so enabling
+    // compression never makes a pack larger than the uncompressed one.
+    struct StoredPayload {
+        std::vector<u8> compressed; // empty when the payload is stored raw
+        PackCodec codec = PackCodec::None;
+        u64 uncompressed_size = 0;
+    };
+    std::vector<StoredPayload> stored;
+    stored.reserve(ordered.size());
+    for (const PackEntry* entry : ordered) {
+        StoredPayload slot;
+        slot.uncompressed_size = static_cast<u64>(entry->data.size());
+        if (compression != PackCompression::None && !entry->data.empty()) {
+            auto compressed = compress(entry->data, compression);
+            if (!compressed) {
+                return compressed.error();
+            }
+            // Keep the compressed form only when it is actually smaller; a
+            // tie stores raw, so a pack never grows by a byte.
+            if (compressed.value().size() < entry->data.size()) {
+                slot.compressed = std::move(compressed.value());
+                slot.codec = PackCodec::Deflate;
+            }
+        }
+        stored.push_back(std::move(slot));
+    }
+    // The on-disk bytes of entry `i`: the raw payload, or the compressed form.
+    const auto payload_bytes = [&](usize i) -> const std::vector<u8>& {
+        return stored[i].codec == PackCodec::None ? ordered[i]->data : stored[i].compressed;
+    };
+
+    // The format version follows the content: a pack with no compressed entry is
+    // written as version 1 and is byte-identical to the format before compression
+    // existed. Only a pack that actually uses a codec is version 2.
+    bool any_compressed = false;
+    for (const StoredPayload& slot : stored) {
+        any_compressed = any_compressed || slot.codec != PackCodec::None;
+    }
+    const i32 format_version = any_compressed ? kFormatVersion : kFormatVersionRaw;
+    const usize entry_fixed_size = any_compressed ? kEntryFixedSizeV2 : kEntryFixedSizeV1;
+
     // The index length depends only on the keys and schemes, so it can be sized
     // before the payload offset is known.
     usize index_size = 0;
@@ -150,7 +198,7 @@ Result<std::vector<u8>> PackFile::write() const {
         if (entry->key.size() > 0xFFFFFFFFULL || entry->scheme.size() > 0xFFFFFFFFULL) {
             return Error("pack: key or scheme is too long for the format");
         }
-        index_size += kEntryFixedSize + entry->key.size() + entry->scheme.size();
+        index_size += entry_fixed_size + entry->key.size() + entry->scheme.size();
     }
 
     const u64 index_offset = kHeaderSize;
@@ -160,7 +208,7 @@ Result<std::vector<u8>> PackFile::write() const {
     out.reserve(static_cast<usize>(payload_offset) + 64);
 
     write_u32(out, kMagic);
-    write_u32(out, static_cast<u32>(kFormatVersion));
+    write_u32(out, static_cast<u32>(format_version));
     write_u32(out, static_cast<u32>(ordered.size()));
     write_u64(out, index_offset);
     write_u64(out, payload_offset);
@@ -170,9 +218,9 @@ Result<std::vector<u8>> PackFile::write() const {
     std::vector<u64> data_offsets;
     data_offsets.reserve(ordered.size());
     u64 cursor = payload_offset;
-    for (const PackEntry* entry : ordered) {
+    for (usize i = 0; i < ordered.size(); ++i) {
         data_offsets.push_back(cursor);
-        cursor += entry->data.size();
+        cursor += payload_bytes(i).size();
     }
 
     for (usize i = 0; i < ordered.size(); ++i) {
@@ -183,11 +231,16 @@ Result<std::vector<u8>> PackFile::write() const {
         out.insert(out.end(), entry->scheme.begin(), entry->scheme.end());
         out.insert(out.end(), entry->guid.bytes().begin(), entry->guid.bytes().end());
         write_u64(out, data_offsets[i]);
-        write_u64(out, static_cast<u64>(entry->data.size()));
+        write_u64(out, static_cast<u64>(payload_bytes(i).size()));
+        if (any_compressed) {
+            out.push_back(static_cast<u8>(stored[i].codec));
+            write_u64(out, stored[i].uncompressed_size);
+        }
     }
 
-    for (const PackEntry* entry : ordered) {
-        out.insert(out.end(), entry->data.begin(), entry->data.end());
+    for (usize i = 0; i < ordered.size(); ++i) {
+        const std::vector<u8>& bytes = payload_bytes(i);
+        out.insert(out.end(), bytes.begin(), bytes.end());
     }
 
     return out;
@@ -216,6 +269,12 @@ Result<PackFile> PackFile::parse(const u8* data, usize size) {
         return Error("pack: format version " + std::to_string(version) + " is newer than supported version " +
                      std::to_string(kFormatVersion));
     }
+    // Version 0 is not a format we ever wrote; treat anything below 1 as corrupt
+    // rather than guessing a layout.
+    if (version < static_cast<u32>(kFormatVersionRaw)) {
+        return Error("pack: format version " + std::to_string(version) + " is not a known pack version");
+    }
+    const bool has_codec = version >= static_cast<u32>(kFormatVersion);
     if (index_offset < kHeaderSize || index_offset > size || payload_offset > size || payload_offset < index_offset) {
         return Error("pack: header offsets are out of range");
     }
@@ -262,13 +321,43 @@ Result<PackFile> PackFile::parse(const u8* data, usize size) {
             return Error("pack: truncated index (payload location)");
         }
 
+        // Version 2 carries the codec and the payload's original length after the
+        // on-disk location. A version-1 entry is stored raw, so its original
+        // length is its on-disk length.
+        PackCodec codec = PackCodec::None;
+        u64 uncompressed_size = length;
+        if (has_codec) {
+            u8 raw_codec = 0;
+            if (!reader.read_u8(raw_codec) || !reader.read_u64(uncompressed_size)) {
+                return Error("pack: truncated index (codec)");
+            }
+            if (raw_codec != static_cast<u8>(PackCodec::None) && raw_codec != static_cast<u8>(PackCodec::Deflate)) {
+                return Error("pack: entry '" + entry.key + "' names an unknown codec " + std::to_string(raw_codec));
+            }
+            codec = static_cast<PackCodec>(raw_codec);
+        }
+
         // The payload span must lie within the buffer and within the payload
         // region, so a corrupt index cannot make the reader hand out bytes from
         // the header or the index itself.
         if (offset < payload_offset || length > size || offset > size || length > size - static_cast<usize>(offset)) {
             return Error("pack: entry '" + entry.key + "' has an out-of-range payload");
         }
-        entry.data.assign(data + offset, data + offset + length);
+
+        entry.codec = codec;
+        entry.uncompressed_size = uncompressed_size;
+        if (codec == PackCodec::None) {
+            entry.data.assign(data + offset, data + offset + length);
+        } else {
+            // Decompress transparently, so a caller reads `data` the same way for
+            // a stored and a compressed entry. The reader rejects a stream that
+            // does not decode to the length the index promised.
+            auto decoded = decompress(data + offset, static_cast<usize>(length), static_cast<usize>(uncompressed_size));
+            if (!decoded) {
+                return Error("pack: entry '" + entry.key + "': " + decoded.error().message());
+            }
+            entry.data = std::move(decoded.value());
+        }
         pack.entries_.push_back(std::move(entry));
     }
 

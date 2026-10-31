@@ -25,6 +25,7 @@
 #   glad           headers + archive   the engine's PUBLIC GL loader
 #   GLFW           headers + archive   the desktop window backend
 #   miniaudio      header + archive    the audio backend
+#   miniz          header + archive    the pack payload codec
 #   stb            header              the image loader's header
 #
 # glad and GLFW headers are only needed because the config points a consumer at
@@ -112,6 +113,21 @@ function(fe_install_sdk_dependencies)
       DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
     )
     fe_install_dependency_archive(miniaudio)
+  endif()
+
+  # --- miniz: the pack payload codec, a vendored static library. ------------
+  # The archive is on the engine's final link line (a static library's private
+  # dependencies still have to be resolved by the consumer), so it is installed
+  # beside the engine. The header is not part of the public API - PackFile.h
+  # includes PackCompression.h, which names no miniz symbol - so it is installed
+  # too only for parity with the other vendored archives, keeping the tree
+  # self-describing for a consumer that inspects it.
+  if(TARGET fe_miniz)
+    install(
+      FILES "${PROJECT_SOURCE_DIR}/third_party/miniz/miniz.h"
+      DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    )
+    fe_install_dependency_archive(fe_miniz)
   endif()
 
   # ---------------------------------------------------------------------------

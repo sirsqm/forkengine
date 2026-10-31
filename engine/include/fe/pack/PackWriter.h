@@ -33,6 +33,12 @@ struct PackOptions {
     // ("assets/hero.png") without re-deriving the join. Ignored when `prune` is
     // false.
     std::vector<std::string> include;
+
+    // The per-entry codec. `None` (default) stores every payload raw and writes
+    // the pack byte for byte as before compression existed. `Fast`/`Best`
+    // compress each payload that shrinks, so a shipped pack is smaller; see
+    // PackCompression.
+    PackCompression compression = PackCompression::None;
 };
 
 // Turns a project's asset tree and startup scene into one pack.
