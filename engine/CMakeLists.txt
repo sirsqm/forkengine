@@ -148,6 +148,8 @@ set(FE_ENGINE_SOURCES
     src/anim/SkeletalAnimationTypes.cpp
     src/anim/Skeleton.cpp
     src/anim/SkeletonAnimationSystem.cpp
+    src/anim/SkeletalStateMachine.cpp
+    src/anim/SkeletalStateMachineSystem.cpp
     src/anim/SkinnedMesh.cpp
     src/anim/SkinnedMeshRenderer3D.cpp
     src/physics/IslandSolver.cpp

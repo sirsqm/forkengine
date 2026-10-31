@@ -128,6 +128,7 @@ rather than editing it.
 | [0120](0120-gamepad-input-seam.md) | The gamepad input seam | Accepted |
 | [0121](0121-3d-authoring-view.md) | The 3D authoring view | Accepted |
 | [0122](0122-msvc-runtime-shared-and-bundled.md) | The MSVC runtime stays shared, and the zip bundles it | Accepted |
+| [0123](0123-skeletal-state-machines.md) | Skeletal animation state machines | Accepted |
 
 ## Format
 

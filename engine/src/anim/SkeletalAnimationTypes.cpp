@@ -4,6 +4,7 @@
 
 #include "fe/anim/AnimationClip.h"
 #include "fe/anim/Animator.h"
+#include "fe/anim/SkeletalStateMachine.h"
 #include "fe/anim/Skeleton.h"
 #include "fe/anim/SkinnedMesh.h"
 #include "fe/anim/SkinnedMeshRenderer3D.h"
@@ -249,6 +250,38 @@ template <typename VectorT>
     return property;
 }
 
+// The state machine's graph, exposed as one String property, exactly as the
+// sprite machine's `graph` is (ADR-0059). The reflection model has no
+// list-of-struct kind, so rather than widen it the component serializes its own
+// graph to compact JSON and the property's getter/setter call to_json/from_json.
+// The clip a state names travels as its resource key inside that JSON, which is
+// why the graph property is `Multiline` and why the state machine resolves its
+// clips through the manager rather than through a per-state resource property.
+void register_skeletal_state_machine(Registry& registry) {
+    TypeDesc desc;
+    desc.name = anim::SkeletalStateMachine::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<anim::SkeletalStateMachine>()); };
+
+    Property property;
+    property.name = "graph";
+    property.value_kind = ValueKind::String;
+    property.getter = [](const void* object) -> Value {
+        return static_cast<const anim::SkeletalStateMachine*>(object)->to_json();
+    };
+    property.setter = [](void* object, const Value& value) -> bool {
+        const auto* as_string = std::get_if<std::string>(&value);
+        if (as_string == nullptr) {
+            return false;
+        }
+        return static_cast<anim::SkeletalStateMachine*>(object)->from_json(*as_string);
+    };
+    property.hint = Hint::Multiline;
+    property.default_value = std::string{};
+    desc.properties.push_back(std::move(property));
+
+    registry.register_type(std::move(desc));
+}
+
 void register_skinned_mesh_renderer(Registry& registry) {
     anim::SkinnedMeshRenderer3D defaults;
 
@@ -293,6 +326,7 @@ void register_skeletal_animation_types() {
     Registry& registry = Registry::instance();
     register_animator(registry);
     register_skinned_mesh_renderer(registry);
+    register_skeletal_state_machine(registry);
 }
 
 } // namespace fe::reflect
