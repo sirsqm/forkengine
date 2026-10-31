@@ -479,6 +479,27 @@ if(FE_SMOKE)
   endforeach()
   message(STATUS "release: fork_export accepted the prebuilt runtime via --player")
 
+  # A downloadable build has to say which version it is (ADR-0094). The version
+  # has one source of truth -- the root project() call -- and the manifest must
+  # carry that value, not a hand-typed one, so the artifact is compared against
+  # the build tree's version here rather than trusted. This is the end-to-end
+  # half of the queue item's "Done when": a real export of examples/demo_project
+  # writes the version the engine was built with.
+  file(READ "${FE_RUNTIME_EXPORT}/fork.export.json" _export_manifest)
+  string(REGEX MATCH "\"engine_version\"[ \t]*:[ \t]*\"([^\"]*)\"" _version_match "${_export_manifest}")
+  if(NOT _version_match)
+    message(FATAL_ERROR
+      "the export manifest carries no engine_version; a downloadable build must "
+      "say which engine made it (ADR-0094).")
+  endif()
+  if(NOT CMAKE_MATCH_1 STREQUAL "${FE_VERSION}")
+    message(FATAL_ERROR
+      "the export manifest says engine_version '${CMAKE_MATCH_1}' but the build "
+      "tree's version is '${FE_VERSION}'; the version no longer comes from the "
+      "one source of truth.")
+  endif()
+  message(STATUS "release: the export manifest carries the build's engine version (${FE_VERSION})")
+
   if(FE_SMOKE_GAME)
     execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_RUNTIME_EXPORT}/${FE_RUNTIME_PLAYER}"
                     --export "${FE_RUNTIME_EXPORT}" --headless "${FE_SMOKE_FRAMES}"

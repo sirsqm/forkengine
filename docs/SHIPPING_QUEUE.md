@@ -549,10 +549,12 @@ not change the document's shape ([ADR-0094](adr/0094-export-version-stamping.md)
 
 **Done when** the export manifest carries the version from
 `CMakeLists.txt` and a test proves it matches `fe::version::kEngineVersion`.
-Both hold: a unit test round-trips the field and rejects a wrong type, and an
-end-to-end export of `examples/demo_project` writes `"engine_version": "0.1.0"`
-and a `<title>Demo 0.1.0</title>`. A manifest written before the field existed
-still loads, reading no version rather than a guess.
+Both hold: a unit test round-trips the field and rejects a wrong type, and the
+packaging smoke exports `examples/demo_project` with the prebuilt runtime and
+asserts the written `fork.export.json` carries the build tree's version (and
+fails if it does not), so the end-to-end claim is checked on every packaged
+build rather than only in a unit test. A manifest written before the field
+existed still loads, reading no version rather than a guess.
 
 ---
 

@@ -211,6 +211,17 @@ if(NOT _deps MATCHES "USE_MSVC_RUNTIME_LIBRARY_DLL OFF")
     "mixing /MT and /MD across a memory boundary is undefined behaviour.")
 endif()
 
+# A downloadable build has to say which version it is (ADR-0094). The packaging
+# smoke exports a real game with the prebuilt runtime, so it is where the
+# manifest's version can be compared against the build tree's -- the end-to-end
+# half of the queue item's "Done when". Assert the check is present, because a
+# manifest that silently drops the version is exactly the failure it guards.
+if(NOT _package MATCHES "engine_version")
+  message(FATAL_ERROR
+    "the packaging smoke no longer checks the export manifest's engine_version; a "
+    "downloadable build must say which engine made it (ADR-0094).")
+endif()
+
 message(STATUS "release: every platform packages, the tag is checked, and the archives are compressed")
 
 # ---------------------------------------------------------------------------
