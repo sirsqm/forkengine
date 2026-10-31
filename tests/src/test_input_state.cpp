@@ -212,3 +212,143 @@ TEST_CASE("any_pressed reports a gesture for exactly one frame") {
     input.on_touch(TouchPhase::Began, 0, 10.0f, 10.0f);
     CHECK(input.any_pressed());
 }
+
+TEST_CASE("a gamepad button reports down and press edges") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::South, true);
+
+    CHECK(input.is_gamepad_connected(0));
+    CHECK(input.is_gamepad_button_down(0, GamepadButton::South));
+    CHECK(input.was_gamepad_button_pressed(0, GamepadButton::South));
+    CHECK_FALSE(input.was_gamepad_button_released(0, GamepadButton::South));
+
+    input.begin_frame();
+    // Still held, but the press edge belonged to the previous frame.
+    CHECK(input.is_gamepad_button_down(0, GamepadButton::South));
+    CHECK_FALSE(input.was_gamepad_button_pressed(0, GamepadButton::South));
+
+    input.on_gamepad_button(0, GamepadButton::South, false);
+    CHECK(input.was_gamepad_button_released(0, GamepadButton::South));
+    CHECK_FALSE(input.is_gamepad_button_down(0, GamepadButton::South));
+}
+
+TEST_CASE("gamepad slots are independent") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_connected(1, true);
+    input.on_gamepad_button(1, GamepadButton::Start, true);
+
+    // Player one's pad is untouched by player two's press.
+    CHECK_FALSE(input.is_gamepad_button_down(0, GamepadButton::Start));
+    CHECK(input.is_gamepad_button_down(1, GamepadButton::Start));
+}
+
+TEST_CASE("an unconnected gamepad reports nothing") {
+    InputState input;
+    // A button fed for a slot that was never connected is still recorded (the
+    // backend may deliver a snapshot before it reports the connect), but a slot
+    // that is genuinely empty reads as no input.
+    CHECK_FALSE(input.is_gamepad_connected(2));
+    CHECK_FALSE(input.is_gamepad_button_down(2, GamepadButton::South));
+    CHECK(input.gamepad_axis(2, GamepadAxis::LeftX) == 0.0f);
+    CHECK(input.first_connected_gamepad() == InputState::kInvalidGamepad);
+}
+
+TEST_CASE("disconnecting a gamepad releases its held buttons") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::East, true);
+    input.begin_frame();
+
+    input.on_gamepad_connected(0, false);
+    // The release edge is observable for one frame, so a consumer sees the
+    // button come up rather than it being stuck down by a pulled cable.
+    CHECK(input.was_gamepad_button_released(0, GamepadButton::East));
+    CHECK_FALSE(input.is_gamepad_button_down(0, GamepadButton::East));
+    CHECK_FALSE(input.is_gamepad_connected(0));
+
+    input.begin_frame();
+    CHECK_FALSE(input.was_gamepad_button_released(0, GamepadButton::East));
+}
+
+TEST_CASE("reconnecting a gamepad starts from a clean state") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::North, true);
+    input.on_gamepad_connected(0, false);
+    input.on_gamepad_connected(0, true);
+
+    // A pad plugged back in does not inherit the button that was held when it
+    // was unplugged.
+    CHECK(input.is_gamepad_connected(0));
+    CHECK_FALSE(input.is_gamepad_button_down(0, GamepadButton::North));
+}
+
+TEST_CASE("gamepad axes are clamped to their range") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, 2.0f);
+    input.on_gamepad_axis(0, GamepadAxis::LeftY, -3.0f);
+    // A trigger is 0..1, so a negative raw value floors at 0 rather than -1.
+    input.on_gamepad_axis(0, GamepadAxis::RightTrigger, -0.5f);
+
+    CHECK(input.gamepad_axis(0, GamepadAxis::LeftX) == 1.0f);
+    CHECK(input.gamepad_axis(0, GamepadAxis::LeftY) == -1.0f);
+    CHECK(input.gamepad_axis(0, GamepadAxis::RightTrigger) == 0.0f);
+}
+
+TEST_CASE("first_connected_gamepad finds the lowest occupied slot") {
+    InputState input;
+    CHECK(input.first_connected_gamepad() == InputState::kInvalidGamepad);
+
+    input.on_gamepad_connected(2, true);
+    CHECK(input.first_connected_gamepad() == 2);
+
+    input.on_gamepad_connected(1, true);
+    CHECK(input.first_connected_gamepad() == 1);
+
+    input.on_gamepad_connected(1, false);
+    CHECK(input.first_connected_gamepad() == 2);
+}
+
+TEST_CASE("release_all clears held gamepad buttons but keeps the slot") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::LeftBumper, true);
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, 0.8f);
+
+    input.release_all();
+    // The pad is still plugged in; only the held input is dropped.
+    CHECK(input.is_gamepad_connected(0));
+    CHECK_FALSE(input.is_gamepad_button_down(0, GamepadButton::LeftBumper));
+    CHECK(input.was_gamepad_button_released(0, GamepadButton::LeftBumper));
+    CHECK(input.gamepad_axis(0, GamepadAxis::LeftX) == 0.0f);
+}
+
+TEST_CASE("a gamepad press is a user gesture") {
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    CHECK_FALSE(input.any_pressed());
+
+    input.on_gamepad_button(0, GamepadButton::South, true);
+    CHECK(input.any_pressed());
+
+    // Holding it is not a new gesture.
+    input.begin_frame();
+    CHECK_FALSE(input.any_pressed());
+    CHECK(input.is_gamepad_button_down(0, GamepadButton::South));
+}
+
+TEST_CASE("an out-of-range gamepad slot is ignored") {
+    InputState input;
+    // A slot at or above kMaxGamepads is a programming error the API absorbs
+    // rather than reading past the array.
+    input.on_gamepad_connected(kMaxGamepads, true);
+    input.on_gamepad_button(kMaxGamepads, GamepadButton::South, true);
+    input.on_gamepad_axis(kMaxGamepads, GamepadAxis::LeftX, 1.0f);
+
+    CHECK_FALSE(input.is_gamepad_connected(kMaxGamepads));
+    CHECK_FALSE(input.is_gamepad_button_down(kMaxGamepads, GamepadButton::South));
+    CHECK(input.gamepad_axis(kMaxGamepads, GamepadAxis::LeftX) == 0.0f);
+}

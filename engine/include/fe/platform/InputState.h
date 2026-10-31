@@ -120,6 +120,57 @@ enum class TouchPhase : u8 {
     Ended,
 };
 
+// A gamepad's physical controls, in the layout every desktop backend can fill
+// in: the four face buttons in the standard (Xbox) arrangement, the two
+// shoulders and their sticks, the d-pad, and the menu buttons. The names are the
+// positional ones the engine uses everywhere, not a vendor's glyphs, because the
+// same physical button is "A" on an Xbox pad, "Cross" on a PlayStation pad, and
+// "B" on a Nintendo pad - the backend maps its native layout onto this one, and
+// gameplay asks for the position. `Count` bounds the fixed arrays.
+enum class GamepadButton : u8 {
+    South = 0, // Xbox A, PlayStation Cross, Nintendo B
+    East,      // Xbox B, PlayStation Circle, Nintendo A
+    West,      // Xbox X, PlayStation Square, Nintendo Y
+    North,     // Xbox Y, PlayStation Triangle, Nintendo X
+    LeftBumper,
+    RightBumper,
+    Back,
+    Start,
+    Guide,
+    LeftStick,
+    RightStick,
+    DpadUp,
+    DpadDown,
+    DpadLeft,
+    DpadRight,
+    Count,
+};
+
+// A gamepad's analog axes. A stick is reported as a unit-range axis with a
+// positive-up convention (`Y` is negative when the stick is pushed up), matching
+// the way a screen-space Y grows downward so gameplay does not have to flip it;
+// a trigger is reported 0..1 with 0 released.
+enum class GamepadAxis : u8 {
+    LeftX = 0,
+    LeftY,
+    RightX,
+    RightY,
+    LeftTrigger,
+    RightTrigger,
+    Count,
+};
+
+// The maximum number of gamepads tracked. GLFW exposes four slots; a backend
+// that has more reuses the lowest free one.
+inline constexpr usize kMaxGamepads = 4;
+
+// The largest number of buttons and axes one pad reports, so a backend can size
+// its native-to-engine translation table without a heap allocation. Both are
+// above the standard layout's counts (15 buttons, 6 axes) with room for a
+// vendor's extra controls.
+inline constexpr usize kMaxGamepadButtons = 24;
+inline constexpr usize kMaxGamepadAxes = 12;
+
 // Per-frame input snapshot.
 //
 // The state is event-driven: the platform backend feeds raw events in, and the
@@ -131,6 +182,8 @@ class InputState {
 public:
     static constexpr usize kKeyCount = static_cast<usize>(Key::Count);
     static constexpr usize kMouseButtonCount = static_cast<usize>(MouseButton::Count);
+    static constexpr usize kGamepadButtonCount = static_cast<usize>(GamepadButton::Count);
+    static constexpr usize kGamepadAxisCount = static_cast<usize>(GamepadAxis::Count);
 
     // The maximum number of simultaneous touch contacts tracked. A backend
     // reports more than this only by reusing an id, exactly as it would when a
@@ -152,6 +205,51 @@ public:
     // state persists until the matching Ended, and the begin/end edges are
     // cleared by begin_frame().
     void on_touch(TouchPhase phase, u32 id, f32 x, f32 y) noexcept;
+
+    // --- Gamepad -----------------------------------------------------------
+    //
+    // A gamepad is *polled*, not event-driven, because that is how every desktop
+    // API exposes it: the backend reads the pad's current button/axis snapshot
+    // once per frame and feeds it in, rather than receiving a stream of changes.
+    // `begin_frame()` therefore does not clear gamepad state the way it clears
+    // key edges; the backend re-reports the whole pad each frame and `on_gamepad_*`
+    // derives the edges by comparing against the previous snapshot.
+    //
+    // A slot is keyed by a small index (0..kMaxGamepads-1), not by a hardware id,
+    // because a pad is connected and disconnected at runtime and gameplay wants
+    // "the first pad", not a USB serial. `on_gamepad_connected(slot, true)`
+    // claims a slot and marks it present; `false` releases it and clears its
+    // state, so a disconnected pad reads as no input rather than a stuck one.
+
+    // Marks a slot present or absent. A newly-connected pad starts from a clean
+    // state, so a reconnect does not inherit the previous pad's held buttons.
+    void on_gamepad_connected(usize slot, bool connected) noexcept;
+
+    // Feeds one button's state for a slot. Edge flags are derived here against
+    // the previous frame's value, so a caller reports the current state every
+    // frame and the press/release edges come out right.
+    void on_gamepad_button(usize slot, GamepadButton button, bool down) noexcept;
+
+    // Feeds one analog axis for a slot. The value is clamped to the axis's
+    // range (see GamepadAxis), so a backend that reports a raw ADC value cannot
+    // hand gameplay an out-of-range number.
+    void on_gamepad_axis(usize slot, GamepadAxis axis, f32 value) noexcept;
+
+    [[nodiscard]] bool is_gamepad_connected(usize slot) const noexcept;
+
+    [[nodiscard]] bool is_gamepad_button_down(usize slot, GamepadButton button) const noexcept;
+    [[nodiscard]] bool was_gamepad_button_pressed(usize slot, GamepadButton button) const noexcept;
+    [[nodiscard]] bool was_gamepad_button_released(usize slot, GamepadButton button) const noexcept;
+
+    // The axis's current value: -1..1 for a stick, 0..1 for a trigger. Zero for
+    // a slot that is not connected, so a missing pad reads as centred.
+    [[nodiscard]] f32 gamepad_axis(usize slot, GamepadAxis axis) const noexcept;
+
+    // The first connected slot, or kInvalidGamepad when none is. This is the
+    // query a single-player game wants: it does not care which USB port the pad
+    // is in, only that one exists.
+    [[nodiscard]] usize first_connected_gamepad() const noexcept;
+    static constexpr usize kInvalidGamepad = static_cast<usize>(-1);
 
     [[nodiscard]] bool is_key_down(Key key) const noexcept;
     [[nodiscard]] bool was_key_pressed(Key key) const noexcept;
@@ -236,6 +334,20 @@ private:
         Vec2 delta{};
     };
     std::array<TouchPoint, kMaxTouchPoints> touches_{};
+
+    // One slot per tracked gamepad. The button edges are derived at feed time by
+    // comparing against the last reported value, and cleared by begin_frame()
+    // exactly like the key edges - so they are correct whether a backend
+    // re-reports the whole pad every frame (the usual desktop case) or reports
+    // only the changes (an event-driven one).
+    struct Gamepad {
+        bool connected{};
+        std::array<bool, kGamepadButtonCount> buttons{};
+        std::array<bool, kGamepadButtonCount> pressed{};
+        std::array<bool, kGamepadButtonCount> released{};
+        std::array<f32, kGamepadAxisCount> axes{};
+    };
+    std::array<Gamepad, kMaxGamepads> gamepads_{};
 
     Vec2 mouse_position_{};
     Vec2 mouse_delta_{};

@@ -1142,13 +1142,19 @@ game built here reaches every platform its players use — see
   (suspend, resume, resize, orientation). A target is a new backend, not a
   scattering of `#ifdef`s. [ADR-0041](adr/0041-platform-contract-and-null-backend.md)
   audits the contract and records, concern by concern, what is implemented and
-  where it lives; the deferred rows (gamepad, suspend/resume) are named there so
-  they are planned rather than forgotten. Touch and gamepad attach to the
+  where it lives; the one remaining deferred row (suspend/resume) is named there
+  so it is planned rather than forgotten. Touch and gamepad attach to the
   existing `InputState` seam — a backend translates native events into
   `on_key`-style calls — so they need no new interface. Touch has landed as
   `InputState::on_touch` plus id-keyed `Began`/`Moved`/`Ended` queries, with the
-  same per-frame `begin_frame()` edge semantics as the mouse path; no backend
-  feeds it yet. Dynamic libraries are now implemented: `platform::DynamicLibrary`
+  same per-frame `begin_frame()` edge semantics as the mouse path, and the web
+  backend feeds it from DOM events. Gamepad has landed with a different feed
+  shape — it is *polled*, so the backend reads the whole pad each frame and the
+  engine derives the edges — keyed by a slot index rather than a hardware id,
+  and the desktop backend reads it through GLFW's standard-layout gamepad API
+  ([ADR-0120](adr/0120-gamepad-input-seam.md)). `ActionMap` binds a pad button or
+  one direction of a stick or trigger to an action, so a pad drives the same
+  actions a key does. Dynamic libraries are now implemented: `platform::DynamicLibrary`
   opens an image, resolves a symbol by name, and closes it, with `dlopen`/`dlsym`
   and `LoadLibrary`/`GetProcAddress` the only native APIs the engine names. It is
   what loads a C++ gameplay module ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)).

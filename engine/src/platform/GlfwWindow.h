@@ -52,6 +52,11 @@ public:
 
 private:
     GlfwWindow();
+
+    // Reads the connected gamepads' state into `input()`; called once per frame
+    // from poll_events(). GLFW exposes a pad as a polled snapshot, not an event
+    // stream, so there is nothing to install a callback for.
+    void poll_gamepads();
 };
 
 } // namespace fe

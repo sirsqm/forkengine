@@ -52,6 +52,34 @@ public:
     void bind_mouse_button(Id action, MouseButton button);
     void bind_touch_region(Id action, f32 x0, f32 y0, f32 x1, f32 y1);
 
+    // A gamepad button, or one direction of a gamepad axis. A stick's push is a
+    // *direction*, not a device, so an axis binds with a sign and a threshold:
+    // `bind_gamepad_axis(action, GamepadAxis::LeftX, -1.0f, 0.5f)` fires the
+    // action while the left stick is pushed past half travel to the left. That
+    // is what lets a gamepad drive the same "MoveLeft" action a key does.
+    //
+    // The sign is `+1` or `-1`; the threshold is the magnitude at which the
+    // action counts as held. A threshold below the pad's own deadzone is
+    // harmless (the pad already reports 0 at rest); one above it is a deliberate
+    // choice, because a stick that must be pushed most of the way is a common
+    // preference. A zero threshold is treated as the smallest positive value, so
+    // a binding can never be held by a centred stick's noise.
+    void bind_gamepad_button(Id action, GamepadButton button);
+    void bind_gamepad_axis(Id action, GamepadAxis axis, f32 sign, f32 threshold);
+
+    // The gamepad slot the map reads, or `InputState::kInvalidGamepad` for the
+    // first connected pad. A single-player game leaves this at the default; a
+    // local-multiplayer game sets it per player. Either way the bindings are the
+    // same, so a split-screen mode does not need a second map.
+    void set_gamepad_slot(usize slot) noexcept { gamepad_slot_ = slot; }
+    [[nodiscard]] usize gamepad_slot() const noexcept { return gamepad_slot_; }
+
+    // The deadzone applied to every axis binding, so a worn stick that rests
+    // slightly off-centre does not hold an action. Set once for the map; a
+    // binding's own threshold is applied on top.
+    void set_gamepad_deadzone(f32 deadzone) noexcept { gamepad_deadzone_ = deadzone; }
+    [[nodiscard]] f32 gamepad_deadzone() const noexcept { return gamepad_deadzone_; }
+
     // Removes the bindings of one kind for `action`, leaving the others alone.
     //
     // This is what lets a game *replace* a binding the engine declared rather
@@ -63,6 +91,7 @@ public:
     void clear_key_bindings(Id action);
     void clear_mouse_bindings(Id action);
     void clear_touch_regions(Id action);
+    void clear_gamepad_bindings(Id action);
 
     // --- Per-frame evaluation ----------------------------------------------
 
@@ -119,6 +148,19 @@ private:
         f32 x1;
         f32 y1;
     };
+    struct GamepadButtonBinding {
+        Id action;
+        GamepadButton button;
+    };
+    struct GamepadAxisBinding {
+        Id action;
+        GamepadAxis axis;
+        // +1 or -1: which way the axis must be pushed. Stored as a sign rather
+        // than as two separate binding kinds so a stick direction reads the same
+        // as a button in update().
+        f32 sign;
+        f32 threshold;
+    };
 
     [[nodiscard]] bool valid(Id action) const noexcept {
         return action != kNone && static_cast<usize>(action) <= names_.size();
@@ -128,6 +170,13 @@ private:
     std::vector<KeyBinding> keys_;
     std::vector<ButtonBinding> buttons_;
     std::vector<TouchRegion> touch_regions_;
+    std::vector<GamepadButtonBinding> gamepad_buttons_;
+    std::vector<GamepadAxisBinding> gamepad_axes_;
+
+    // Which pad the gamepad bindings read. `InputState::kInvalidGamepad` (the
+    // default) means "the first connected pad", resolved in update().
+    usize gamepad_slot_ = InputState::kInvalidGamepad;
+    f32 gamepad_deadzone_ = 0.15f;
 
     // Normalised fractions of the viewport reserved on each edge for the OS's own
     // chrome. Zero on every backend that is not a phone.

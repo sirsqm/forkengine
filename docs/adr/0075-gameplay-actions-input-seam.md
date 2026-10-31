@@ -89,7 +89,8 @@ into `InputState` underneath it.
   and the middle third serves. That is the roadmap's Phase 2 goal, and it is
   verified in a real browser, not only in a unit test.
 * The device set is extensible in one place. Adding a gamepad is a new binding
-  kind and a row in the backend, not an edit to every system.
+  kind and a row in the backend, not an edit to every system - which is what
+  happened when the gamepad landed ([ADR-0120](0120-gamepad-input-seam.md)).
 * `ActionMap` is derived state, not accumulating state. It holds no per-frame
   history of its own, so it cannot disagree with `InputState` about an edge.
 * The web backend now depends on where a listener is bound, and that differs

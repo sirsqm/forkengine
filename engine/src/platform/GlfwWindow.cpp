@@ -208,6 +208,71 @@ u32 g_window_count = 0;
     return static_cast<Window*>(glfwGetWindowUserPointer(handle));
 }
 
+// Maps an engine GamepadButton index onto GLFW's standard gamepad layout.
+// GLFW's `GLFW_GAMEPAD_BUTTON_*` values are a contiguous 0..14 block in the
+// same order the engine enum uses, so the mapping is the identity - but it is
+// written out explicitly so a change in either numbering is a compile-time
+// mismatch rather than a silently swapped button. Returns -1 for an index
+// GLFW's layout does not carry.
+[[nodiscard]] int translate_gamepad_button(usize engine_index) noexcept {
+    switch (static_cast<GamepadButton>(engine_index)) {
+    case GamepadButton::South:
+        return GLFW_GAMEPAD_BUTTON_A;
+    case GamepadButton::East:
+        return GLFW_GAMEPAD_BUTTON_B;
+    case GamepadButton::West:
+        return GLFW_GAMEPAD_BUTTON_X;
+    case GamepadButton::North:
+        return GLFW_GAMEPAD_BUTTON_Y;
+    case GamepadButton::LeftBumper:
+        return GLFW_GAMEPAD_BUTTON_LEFT_BUMPER;
+    case GamepadButton::RightBumper:
+        return GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER;
+    case GamepadButton::Back:
+        return GLFW_GAMEPAD_BUTTON_BACK;
+    case GamepadButton::Start:
+        return GLFW_GAMEPAD_BUTTON_START;
+    case GamepadButton::Guide:
+        return GLFW_GAMEPAD_BUTTON_GUIDE;
+    case GamepadButton::LeftStick:
+        return GLFW_GAMEPAD_BUTTON_LEFT_THUMB;
+    case GamepadButton::RightStick:
+        return GLFW_GAMEPAD_BUTTON_RIGHT_THUMB;
+    case GamepadButton::DpadUp:
+        return GLFW_GAMEPAD_BUTTON_DPAD_UP;
+    case GamepadButton::DpadDown:
+        return GLFW_GAMEPAD_BUTTON_DPAD_DOWN;
+    case GamepadButton::DpadLeft:
+        return GLFW_GAMEPAD_BUTTON_DPAD_LEFT;
+    case GamepadButton::DpadRight:
+        return GLFW_GAMEPAD_BUTTON_DPAD_RIGHT;
+    default:
+        return -1;
+    }
+}
+
+// Maps an engine GamepadAxis index onto GLFW's standard gamepad layout. Written
+// out for the same reason as the button table. Returns -1 for an index GLFW's
+// layout does not carry.
+[[nodiscard]] int translate_gamepad_axis(usize engine_index) noexcept {
+    switch (static_cast<GamepadAxis>(engine_index)) {
+    case GamepadAxis::LeftX:
+        return GLFW_GAMEPAD_AXIS_LEFT_X;
+    case GamepadAxis::LeftY:
+        return GLFW_GAMEPAD_AXIS_LEFT_Y;
+    case GamepadAxis::RightX:
+        return GLFW_GAMEPAD_AXIS_RIGHT_X;
+    case GamepadAxis::RightY:
+        return GLFW_GAMEPAD_AXIS_RIGHT_Y;
+    case GamepadAxis::LeftTrigger:
+        return GLFW_GAMEPAD_AXIS_LEFT_TRIGGER;
+    case GamepadAxis::RightTrigger:
+        return GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER;
+    default:
+        return -1;
+    }
+}
+
 void key_callback(GLFWwindow* handle, int key, int /*scancode*/, int action, int /*mods*/) {
     Window* window = window_from(handle);
     if (window == nullptr) {
@@ -336,6 +401,57 @@ Result<std::unique_ptr<Window>> GlfwWindow::create(const WindowDesc& desc) {
 
 void GlfwWindow::poll_events() {
     glfwPollEvents();
+    poll_gamepads();
+}
+
+// Reads every gamepad GLFW knows about and feeds the engine's slots.
+//
+// GLFW exposes a gamepad as a *polled snapshot* rather than an event stream -
+// `glfwGetGamepadState` returns the current state of every button and axis - so
+// this runs once per frame from poll_events() and reports the whole pad. The
+// engine derives the press/release edges from the change between frames.
+//
+// Only the standard-layout pads GLFW maps (`glfwJoystickIsGamepad`) are read: a
+// raw joystick's button numbering is vendor-specific and cannot be mapped to the
+// engine's positional layout without a per-device database. A pad GLFW cannot
+// map is left unconnected rather than reported as a wrong set of buttons.
+//
+// Disconnection is handled by the same pass: a slot that was connected and whose
+// `glfwJoystickIsGamepad` is now false is reported disconnected, so a pad pulled
+// out mid-game releases its buttons instead of leaving one stuck down.
+void GlfwWindow::poll_gamepads() {
+    InputState& state_in = input();
+    for (usize slot = 0; slot < kMaxGamepads; ++slot) {
+        const int jid = static_cast<int>(slot);
+        const bool present = glfwJoystickPresent(jid) == GLFW_TRUE && glfwJoystickIsGamepad(jid) == GLFW_TRUE;
+        if (!present) {
+            if (state_in.is_gamepad_connected(slot)) {
+                state_in.on_gamepad_connected(slot, false);
+            }
+            continue;
+        }
+        if (!state_in.is_gamepad_connected(slot)) {
+            state_in.on_gamepad_connected(slot, true);
+        }
+        GLFWgamepadstate state{};
+        if (glfwGetGamepadState(jid, &state) != GLFW_TRUE) {
+            continue;
+        }
+        for (usize i = 0; i < InputState::kGamepadButtonCount; ++i) {
+            const int glfw_button = translate_gamepad_button(i);
+            if (glfw_button < 0) {
+                continue;
+            }
+            state_in.on_gamepad_button(slot, static_cast<GamepadButton>(i), state.buttons[glfw_button] == GLFW_PRESS);
+        }
+        for (usize i = 0; i < InputState::kGamepadAxisCount; ++i) {
+            const int glfw_axis = translate_gamepad_axis(i);
+            if (glfw_axis < 0) {
+                continue;
+            }
+            state_in.on_gamepad_axis(slot, static_cast<GamepadAxis>(i), state.axes[glfw_axis]);
+        }
+    }
 }
 
 void GlfwWindow::swap_buffers() {

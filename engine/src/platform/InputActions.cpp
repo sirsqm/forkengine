@@ -63,6 +63,24 @@ void ActionMap::bind_touch_region(Id action, f32 x0, f32 y0, f32 x1, f32 y1) {
     }
 }
 
+void ActionMap::bind_gamepad_button(Id action, GamepadButton button) {
+    if (valid(action) && button != GamepadButton::Count) {
+        gamepad_buttons_.push_back(GamepadButtonBinding{action, button});
+    }
+}
+
+void ActionMap::bind_gamepad_axis(Id action, GamepadAxis axis, f32 sign, f32 threshold) {
+    if (!valid(action) || axis == GamepadAxis::Count) {
+        return;
+    }
+    // Only the sign of `sign` is meaningful; a caller passing 0 gets +1 rather
+    // than a binding that can never fire. The threshold is held strictly
+    // positive so a centred stick's noise cannot hold the action.
+    const f32 resolved_sign = sign < 0.0f ? -1.0f : 1.0f;
+    const f32 resolved_threshold = threshold > 0.0f ? threshold : 1.0f;
+    gamepad_axes_.push_back(GamepadAxisBinding{action, axis, resolved_sign, resolved_threshold});
+}
+
 void ActionMap::clear_key_bindings(Id action) {
     std::erase_if(keys_, [action](const KeyBinding& binding) { return binding.action == action; });
 }
@@ -73,6 +91,11 @@ void ActionMap::clear_mouse_bindings(Id action) {
 
 void ActionMap::clear_touch_regions(Id action) {
     std::erase_if(touch_regions_, [action](const TouchRegion& region) { return region.action == action; });
+}
+
+void ActionMap::clear_gamepad_bindings(Id action) {
+    std::erase_if(gamepad_buttons_, [action](const GamepadButtonBinding& binding) { return binding.action == action; });
+    std::erase_if(gamepad_axes_, [action](const GamepadAxisBinding& binding) { return binding.action == action; });
 }
 
 void ActionMap::set_safe_area_insets(f32 top, f32 right, f32 bottom, f32 left) {
@@ -117,6 +140,31 @@ void ActionMap::update(const InputState& input, Vec2 viewport) {
     for (const ButtonBinding& binding : buttons_) {
         if (input.is_mouse_down(binding.button)) {
             down_[binding.action - 1] = true;
+        }
+    }
+
+    // Gamepad bindings read one slot. An unset slot means "the first connected
+    // pad", resolved here rather than at bind time so a pad plugged in after the
+    // bindings were declared still drives them. With no pad connected the slot
+    // is kInvalidGamepad and every gamepad query answers false/zero, so the rest
+    // of this block is skipped and the actions fall back to the other devices.
+    const usize slot = gamepad_slot_ != InputState::kInvalidGamepad ? gamepad_slot_ : input.first_connected_gamepad();
+    if (slot != InputState::kInvalidGamepad) {
+        for (const GamepadButtonBinding& binding : gamepad_buttons_) {
+            if (input.is_gamepad_button_down(slot, binding.button)) {
+                down_[binding.action - 1] = true;
+            }
+        }
+        for (const GamepadAxisBinding& binding : gamepad_axes_) {
+            const f32 value = input.gamepad_axis(slot, binding.axis);
+            // The deadzone suppresses rest noise; the binding's own threshold is
+            // the travel at which the action counts as held. Both are compared
+            // on magnitude so the sign selects the direction only.
+            const f32 magnitude = value * binding.sign;
+            const f32 floor = gamepad_deadzone_ > binding.threshold ? gamepad_deadzone_ : binding.threshold;
+            if (magnitude >= floor) {
+                down_[binding.action - 1] = true;
+            }
         }
     }
 

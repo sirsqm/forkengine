@@ -46,7 +46,7 @@ whether it is implemented now.
 | --- | --- | --- |
 | Window / surface | `platform::Window` (GLFW backend) | Implemented |
 | Input: keyboard, mouse, scroll | `platform::InputState`, fed by the window backend | Implemented |
-| Input: touch, gamepad | Touch: `platform::InputState` (`on_touch` + id-keyed queries); gamepad: — | Touch implemented (no backend feeds it yet); gamepad deferred; see "Where touch and gamepad attach" |
+| Input: touch, gamepad | `platform::InputState` (`on_touch` + id-keyed queries; `on_gamepad_*` + slot-keyed queries); the web backend feeds touch, the desktop backend feeds gamepad | Implemented; see "Where touch and gamepad attach" |
 | Graphics context | `rhi::Device` + `Window::get_proc_address` | Implemented (OpenGL 3.3 core) |
 | Filesystem | `core::fs` (+ `resources::ResourceSource`, `pack::PackSource`) | Implemented |
 | Threads | `core` (std only); the `jobs` module (`JobSystem`, ADR-0068) | Implemented |
@@ -77,10 +77,19 @@ The touch half has landed: `InputState::on_touch(TouchPhase, u32 id, x, y)`
 takes a contact id and a `Began`/`Moved`/`Ended` phase, and the id-keyed queries
 `is_touch_down`/`was_touch_began`/`was_touch_ended`/`touch_position`/
 `touch_delta` read it back. The edge state is cleared by `begin_frame()` exactly
-as the mouse path's is. No backend feeds it yet — the null backend stays empty
-by construction and the GLFW backend does not yet translate native touch events
-— so the API is the recorded seam, not a shipped device path. Gamepad is still
-deferred and is the remaining half of this row.
+as the mouse path's is. The web backend feeds it, translating DOM touch events
+into `on_touch`; the GLFW backend does not translate native touch events, so a
+desktop touchscreen is not yet a device path.
+
+The gamepad half has landed too, with a different feed shape: a gamepad is
+*polled*, so `GlfwWindow::poll_events()` reads the whole pad from
+`glfwGetGamepadState` each frame and feeds `on_gamepad_connected`,
+`on_gamepad_button`, and `on_gamepad_axis`, and the engine derives the edges from
+the change between frames. A pad is keyed by a small slot index rather than a
+hardware id. `ActionMap` binds a pad button or one direction of a stick/trigger
+to an action, so a pad drives the same actions a key does. See
+[ADR-0120](0120-gamepad-input-seam.md) for the design. The null backend stays
+empty by construction: it feeds no pad, which is correct for a headless run.
 
 ### The null backend
 

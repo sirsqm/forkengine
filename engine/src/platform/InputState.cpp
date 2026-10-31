@@ -11,6 +11,10 @@ void InputState::begin_frame() noexcept {
     keys_released_.fill(false);
     buttons_pressed_.fill(false);
     buttons_released_.fill(false);
+    for (Gamepad& pad : gamepads_) {
+        pad.pressed.fill(false);
+        pad.released.fill(false);
+    }
     for (TouchPoint& touch : touches_) {
         // A slot whose contact ended last frame is freed here, after the end
         // edge has been observable for one frame.
@@ -189,9 +193,112 @@ bool InputState::was_mouse_released(MouseButton button) const noexcept {
     return buttons_released_[index_of(button)];
 }
 
+void InputState::on_gamepad_connected(usize slot, bool connected) noexcept {
+    if (slot >= kMaxGamepads) {
+        return;
+    }
+    Gamepad& pad = gamepads_[slot];
+    if (connected) {
+        // A fresh connect starts clean, so a pad plugged in while a button is
+        // held does not inherit that button as "down".
+        pad = Gamepad{};
+        pad.connected = true;
+        return;
+    }
+    if (pad.connected) {
+        // Raise the released edge for anything held, so a consumer sees the
+        // release rather than a button stuck down forever. The edges have to
+        // survive the state reset below, so they are captured first.
+        std::array<bool, kGamepadButtonCount> released{};
+        for (usize i = 0; i < kGamepadButtonCount; ++i) {
+            released[i] = pad.buttons[i];
+        }
+        pad = Gamepad{};
+        pad.released = released;
+    }
+}
+
+void InputState::on_gamepad_button(usize slot, GamepadButton button, bool down) noexcept {
+    if (slot >= kMaxGamepads || button == GamepadButton::Count) {
+        return;
+    }
+    Gamepad& pad = gamepads_[slot];
+    // A button reported for a slot nobody marked connected is still recorded:
+    // the backend may deliver a snapshot before it reports the connect, and
+    // dropping the input would make the pad appear dead for a frame.
+    const usize index = static_cast<usize>(button);
+    if (pad.buttons[index] == down) {
+        return;
+    }
+    pad.buttons[index] = down;
+    if (down) {
+        pad.pressed[index] = true;
+    } else {
+        pad.released[index] = true;
+    }
+}
+
+void InputState::on_gamepad_axis(usize slot, GamepadAxis axis, f32 value) noexcept {
+    if (slot >= kMaxGamepads || axis == GamepadAxis::Count) {
+        return;
+    }
+    // A trigger is 0..1 from released to fully pressed; a stick is -1..1. The
+    // clamp is here rather than at each query so every consumer sees the same
+    // range regardless of what the backend reported.
+    const bool trigger = axis == GamepadAxis::LeftTrigger || axis == GamepadAxis::RightTrigger;
+    const f32 lo = trigger ? 0.0f : -1.0f;
+    const f32 hi = 1.0f;
+    gamepads_[slot].axes[static_cast<usize>(axis)] = value < lo ? lo : (value > hi ? hi : value);
+}
+
+bool InputState::is_gamepad_connected(usize slot) const noexcept {
+    return slot < kMaxGamepads && gamepads_[slot].connected;
+}
+
+bool InputState::is_gamepad_button_down(usize slot, GamepadButton button) const noexcept {
+    return slot < kMaxGamepads && button != GamepadButton::Count && gamepads_[slot].buttons[static_cast<usize>(button)];
+}
+
+bool InputState::was_gamepad_button_pressed(usize slot, GamepadButton button) const noexcept {
+    return slot < kMaxGamepads && button != GamepadButton::Count && gamepads_[slot].pressed[static_cast<usize>(button)];
+}
+
+bool InputState::was_gamepad_button_released(usize slot, GamepadButton button) const noexcept {
+    return slot < kMaxGamepads && button != GamepadButton::Count &&
+           gamepads_[slot].released[static_cast<usize>(button)];
+}
+
+f32 InputState::gamepad_axis(usize slot, GamepadAxis axis) const noexcept {
+    if (slot >= kMaxGamepads || axis == GamepadAxis::Count) {
+        return 0.0f;
+    }
+    return gamepads_[slot].axes[static_cast<usize>(axis)];
+}
+
+usize InputState::first_connected_gamepad() const noexcept {
+    for (usize slot = 0; slot < kMaxGamepads; ++slot) {
+        if (gamepads_[slot].connected) {
+            return slot;
+        }
+    }
+    return kInvalidGamepad;
+}
+
 void InputState::release_all() noexcept {
     keys_down_.fill(false);
     buttons_down_.fill(false);
+    for (Gamepad& pad : gamepads_) {
+        // A focus loss does not disconnect the pad, so the slot stays present;
+        // only the held state is cleared, and the buttons' own released edges
+        // are raised so a consumer sees the release rather than a silent drop.
+        for (usize i = 0; i < kGamepadButtonCount; ++i) {
+            if (pad.buttons[i]) {
+                pad.buttons[i] = false;
+                pad.released[i] = true;
+            }
+        }
+        pad.axes.fill(0.0f);
+    }
     for (TouchPoint& touch : touches_) {
         touch.down = false;
     }
@@ -215,6 +322,13 @@ bool InputState::any_pressed() const noexcept {
     for (const TouchPoint& touch : touches_) {
         if (touch.began) {
             return true;
+        }
+    }
+    for (const Gamepad& pad : gamepads_) {
+        for (bool pressed : pad.pressed) {
+            if (pressed) {
+                return true;
+            }
         }
     }
     return false;

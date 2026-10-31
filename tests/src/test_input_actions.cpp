@@ -358,3 +358,190 @@ TEST_CASE("a mouse button can drive an action") {
     actions.update(input, kViewport);
     CHECK(actions.is_down(fire));
 }
+
+TEST_CASE("a gamepad button can drive an action") {
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_gamepad_button(jump, GamepadButton::South);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(jump));
+
+    input.on_gamepad_button(0, GamepadButton::South, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(jump));
+    CHECK(actions.was_pressed(jump));
+
+    input.begin_frame();
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(jump));
+    CHECK_FALSE(actions.was_pressed(jump));
+
+    input.on_gamepad_button(0, GamepadButton::South, false);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(jump));
+    CHECK(actions.was_released(jump));
+}
+
+TEST_CASE("a gamepad stick direction can drive an action") {
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    const auto move_right = actions.add("MoveRight");
+    actions.bind_gamepad_axis(move_left, GamepadAxis::LeftX, -1.0f, 0.5f);
+    actions.bind_gamepad_axis(move_right, GamepadAxis::LeftX, 1.0f, 0.5f);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    // A centred stick holds neither direction.
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(move_left));
+    CHECK_FALSE(actions.is_down(move_right));
+
+    // Pushed left past the threshold: only the left action fires.
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, -0.8f);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(move_left));
+    CHECK_FALSE(actions.is_down(move_right));
+
+    // Pushed right: the other direction fires instead.
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, 0.8f);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(move_left));
+    CHECK(actions.is_down(move_right));
+}
+
+TEST_CASE("a stick inside the deadzone does not hold an action") {
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    actions.bind_gamepad_axis(move_left, GamepadAxis::LeftX, -1.0f, 0.2f);
+    actions.set_gamepad_deadzone(0.3f);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    // The deadzone is the larger of the two, so a 0.25 push is still rest.
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, -0.25f);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(move_left));
+
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, -0.35f);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(move_left));
+}
+
+TEST_CASE("an axis binding on the wrong side does not fire") {
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    actions.bind_gamepad_axis(move_left, GamepadAxis::LeftX, -1.0f, 0.5f);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    // Pushed the other way, the action must not fire: the sign selects a
+    // direction, not a magnitude.
+    input.on_gamepad_axis(0, GamepadAxis::LeftX, 0.9f);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(move_left));
+}
+
+TEST_CASE("a gamepad trigger drives an action") {
+    ActionMap actions;
+    const auto fire = actions.add("Fire");
+    actions.bind_gamepad_axis(fire, GamepadAxis::RightTrigger, 1.0f, 0.5f);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_axis(0, GamepadAxis::RightTrigger, 0.2f);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(fire));
+
+    input.on_gamepad_axis(0, GamepadAxis::RightTrigger, 0.9f);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(fire));
+}
+
+TEST_CASE("a gamepad and a key can drive the same action") {
+    ActionMap actions;
+    const auto move_left = actions.add("MoveLeft");
+    actions.bind_key(move_left, Key::A);
+    actions.bind_gamepad_button(move_left, GamepadButton::DpadLeft);
+
+    // Either device alone is enough, which is the point of the action layer: the
+    // gameplay that reads MoveLeft never learns which one fired.
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::DpadLeft, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(move_left));
+
+    input.on_gamepad_button(0, GamepadButton::DpadLeft, false);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(move_left));
+
+    input.on_key(Key::A, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(move_left));
+}
+
+TEST_CASE("gamepad bindings follow the first connected pad by default") {
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_gamepad_button(jump, GamepadButton::South);
+
+    InputState input;
+    // The pad is in slot 2, not slot 0; the default binding still reads it.
+    input.on_gamepad_connected(2, true);
+    input.on_gamepad_button(2, GamepadButton::South, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(jump));
+}
+
+TEST_CASE("a gamepad binding reads its configured slot") {
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_gamepad_button(jump, GamepadButton::South);
+    actions.set_gamepad_slot(1);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_connected(1, true);
+    // Slot 0's press must not reach a map pinned to slot 1.
+    input.on_gamepad_button(0, GamepadButton::South, true);
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(jump));
+
+    input.on_gamepad_button(1, GamepadButton::South, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(jump));
+}
+
+TEST_CASE("with no gamepad connected the gamepad bindings stay inactive") {
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_gamepad_button(jump, GamepadButton::South);
+    actions.bind_gamepad_axis(jump, GamepadAxis::RightTrigger, 1.0f, 0.5f);
+
+    InputState input;
+    actions.update(input, kViewport);
+    CHECK_FALSE(actions.is_down(jump));
+}
+
+TEST_CASE("clear_gamepad_bindings removes only the gamepad bindings") {
+    ActionMap actions;
+    const auto jump = actions.add("Jump");
+    actions.bind_key(jump, Key::Space);
+    actions.bind_gamepad_button(jump, GamepadButton::South);
+
+    actions.clear_gamepad_bindings(jump);
+
+    InputState input;
+    input.on_gamepad_connected(0, true);
+    input.on_gamepad_button(0, GamepadButton::South, true);
+    actions.update(input, kViewport);
+    // The pad binding is gone; the key binding is untouched.
+    CHECK_FALSE(actions.is_down(jump));
+
+    input.on_key(Key::Space, true);
+    actions.update(input, kViewport);
+    CHECK(actions.is_down(jump));
+}
