@@ -40,6 +40,23 @@ void Tilemap::clear(i32 fill) noexcept {
     }
 }
 
+bool Tilemap::is_solid(u32 x, u32 y) const noexcept {
+    const i32 tile = at(x, y);
+    if (tile == kEmpty) {
+        return false;
+    }
+    if (solid_tiles.empty()) {
+        // No explicit list: every drawn tile is ground.
+        return true;
+    }
+    for (const i32 solid : solid_tiles) {
+        if (solid == tile) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Vec4 Tilemap::tile_uv(i32 tile) const noexcept {
     // A zero-dimension tileset cannot address a cell; the whole texture is the
     // defined fallback, matching SpriteAnimator::uv().
@@ -64,6 +81,10 @@ std::string Tilemap::to_json() const {
     document["width"] = width;
     document["height"] = height;
     document["cells"] = cells;
+    // The solid tile list rides in the same document rather than a second
+    // property, so the grid and its solidity serialize together and cannot
+    // disagree after a load.
+    document["solid_tiles"] = solid_tiles;
     return document.dump();
 }
 
@@ -76,6 +97,7 @@ bool Tilemap::from_json(std::string_view text) {
     u32 new_width = 0;
     u32 new_height = 0;
     std::vector<i32> new_cells;
+    std::vector<i32> new_solid;
     try {
         const nlohmann::json document = nlohmann::json::parse(text);
         if (!document.is_object()) {
@@ -85,6 +107,11 @@ bool Tilemap::from_json(std::string_view text) {
         new_height = document.value("height", 0u);
         if (document.contains("cells") && document.at("cells").is_array()) {
             new_cells = document.at("cells").get<std::vector<i32>>();
+        }
+        // Absent in a document written before solidity existed, which the empty
+        // default reads as "every non-empty tile is solid".
+        if (document.contains("solid_tiles") && document.at("solid_tiles").is_array()) {
+            new_solid = document.at("solid_tiles").get<std::vector<i32>>();
         }
     } catch (const nlohmann::json::exception&) {
         return false;
@@ -99,6 +126,7 @@ bool Tilemap::from_json(std::string_view text) {
     width = new_width;
     height = new_height;
     cells = std::move(new_cells);
+    solid_tiles = std::move(new_solid);
     return true;
 }
 

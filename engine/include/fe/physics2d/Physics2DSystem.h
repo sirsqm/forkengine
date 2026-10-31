@@ -7,10 +7,14 @@
 #include "fe/core/Types.h"
 #include "fe/core/Uuid.h"
 #include "fe/physics2d/BroadPhase.h"
+#include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/Geometry.h"
 #include "fe/physics2d/IslandSolver.h"
 #include "fe/physics2d/JointSolver.h"
+#include "fe/physics2d/Physics2DQueries.h"
 #include "fe/systems/System.h"
 
+#include <memory>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -188,6 +192,11 @@ public:
     // continuous pass ran, not only that the body ended up in the right place.
     [[nodiscard]] usize continuous_hit_count() const noexcept { return continuous_hits_; }
 
+    // Solid tile cells gathered from every `Tilemap` in the most recent update,
+    // each one a static box the solver collides a body against. Zero when the
+    // scene has no solid tiles. Exposed for tests and the debug overlay.
+    [[nodiscard]] usize tile_collider_count() const noexcept { return tile_colliders_.size(); }
+
 private:
     // One simulated node, flattened out of the scene for the duration of the
     // update so the solver works on a contiguous array.
@@ -204,6 +213,13 @@ private:
         f32 restitution;
         f32 friction;
         bool fixed_rotation;
+
+        // True when this body is a solid tile cell of a `Tilemap` rather than a
+        // node's collider. A tile is static geometry like any other, but it has
+        // no node of its own: its contact is attributed to the map node, and
+        // several tiles of one map can touch the same body at once, so it does
+        // not contribute to the contact-event stream (which is keyed by node).
+        bool is_tile = false;
     };
 
     // A collider pair, keyed by node identity so it is stable across frames
@@ -302,6 +318,25 @@ private:
     BroadPhase broad_phase_;
     std::vector<Aabb2D> broad_phase_bounds_;
     std::vector<usize> bounds_owner_;
+
+    // Solid tile cells gathered from every `Tilemap` in the scene, rebuilt once
+    // per step (a tilemap is static, but the map and its transform can change
+    // between steps, and gathering once keeps the step self-contained). A tile
+    // is a static box: it is inserted into the broad phase and collided against
+    // like any static collider, and it is never simulated.
+    std::vector<TileCollider> tile_colliders_;
+
+    // The `Collider2D` each tile body borrows. A component is non-movable, so
+    // the shapes are held by pointer and reused across steps -- the pool is
+    // grown once and then only rewritten, so a steady-state step does not
+    // allocate. Owned here, outliving the `bodies_` entries that point into it.
+    std::vector<std::unique_ptr<Collider2D>> tile_shapes_;
+
+    // How many entries of `bodies_` came from scene nodes; the tile bodies
+    // follow. A tile is always static, so the island pass (which is O(n^2) over
+    // dynamic bodies) bounds its scan here rather than walking thousands of
+    // tiles that could never be a vertex.
+    usize node_body_count_ = 0;
 
     // Scratch, reused across frames so a steady-state step allocates nothing.
     std::vector<BodyPair> active_pairs_;

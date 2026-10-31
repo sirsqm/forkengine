@@ -4,6 +4,7 @@
 
 #include "fe/core/Log.h"
 #include "fe/physics2d/Collider2D.h"
+#include "fe/physics2d/Physics2DQueries.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/RigidBody3D.h"
@@ -271,6 +272,29 @@ usize append_collider_wireframes_2d(const Scene& scene, DebugDrawList& out) {
         ++drawn;
     });
     return drawn;
+}
+
+usize append_tilemap_wireframes_2d(const Scene& scene, DebugDrawList& out) {
+    std::vector<physics2d::TileCollider> tiles;
+    physics2d::append_tilemap_colliders(scene, tiles);
+    const Vec4 color = static_collider_color();
+    for (const physics2d::TileCollider& tile : tiles) {
+        // The four corners of the cell's oriented box, on the z = 0 plane.
+        const f32 c = std::cos(tile.box.rotation);
+        const f32 s = std::sin(tile.box.rotation);
+        const Vec2 axis_x{tile.box.half_extent.x * c, tile.box.half_extent.x * s};
+        const Vec2 axis_y{-tile.box.half_extent.y * s, tile.box.half_extent.y * c};
+        const Vec2 center = tile.box.center;
+        const Vec2 p0 = center - axis_x - axis_y;
+        const Vec2 p1 = center + axis_x - axis_y;
+        const Vec2 p2 = center + axis_x + axis_y;
+        const Vec2 p3 = center - axis_x + axis_y;
+        out.add_line(Vec3{p0.x, p0.y, 0.0f}, Vec3{p1.x, p1.y, 0.0f}, color);
+        out.add_line(Vec3{p1.x, p1.y, 0.0f}, Vec3{p2.x, p2.y, 0.0f}, color);
+        out.add_line(Vec3{p2.x, p2.y, 0.0f}, Vec3{p3.x, p3.y, 0.0f}, color);
+        out.add_line(Vec3{p3.x, p3.y, 0.0f}, Vec3{p0.x, p0.y, 0.0f}, color);
+    }
+    return tiles.size();
 }
 
 } // namespace fe::debugdraw

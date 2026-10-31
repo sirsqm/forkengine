@@ -110,6 +110,7 @@ void copy_tilemap(const Node& source_node, Node& destination_node) {
     // field by field. Nothing in the play session mutates the authored map, so a
     // copy is correct and keeps the two independent.
     destination->cells = source->cells;
+    destination->solid_tiles = source->solid_tiles;
 }
 
 void copy_collider(const Node& source_node, Node& destination_node) {

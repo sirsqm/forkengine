@@ -19,6 +19,7 @@
 #include "fe/rhi/Types.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Tilemap.h"
 
 #include <cmath>
 
@@ -115,6 +116,26 @@ TEST_CASE("a 2D circle collider becomes a wire circle on the xy plane") {
         CHECK(line.a.z == doctest::Approx(0.0f));
         CHECK(line.b.z == doctest::Approx(0.0f));
         CHECK(std::sqrt(line.a.x * line.a.x + line.a.y * line.a.y) == doctest::Approx(2.0f));
+    }
+}
+
+TEST_CASE("a tilemap's solid cells are drawn as wire boxes on the xy plane") {
+    Scene scene;
+    Node* node = scene.create_node("Level");
+    auto* map = node->add_component<Tilemap>();
+    map->tile_size = Vec2{1.0f, 1.0f};
+    map->columns = 4;
+    map->rows = 4;
+    map->resize(2, 1, 0);
+
+    debugdraw::DebugDrawList list;
+    REQUIRE(debugdraw::append_tilemap_wireframes_2d(scene, list) == 2);
+    // One box per cell: four lines each.
+    CHECK(list.size() == 8U);
+    for (const auto& line : list.lines()) {
+        CHECK(line.a.z == doctest::Approx(0.0f));
+        CHECK(line.b.z == doctest::Approx(0.0f));
+        CHECK(line.color == debugdraw::static_collider_color());
     }
 }
 

@@ -131,5 +131,11 @@ usize append_collider_wireframes(const Scene& scene, DebugDrawList& out);
 // drawn.
 usize append_collider_wireframes_2d(const Scene& scene, DebugDrawList& out);
 
+// Appends a wireframe for every solid tile cell of every `Tilemap` in `scene`,
+// drawn on the z = 0 plane like the 2D colliders above. A tile has no
+// `Collider2D` of its own, so it would otherwise be invisible to the debug
+// overlay even though the solver collides it. Returns the number of cells drawn.
+usize append_tilemap_wireframes_2d(const Scene& scene, DebugDrawList& out);
+
 } // namespace debugdraw
 } // namespace fe

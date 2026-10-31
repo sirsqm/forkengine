@@ -234,6 +234,7 @@ TEST_CASE("the play copy carries an authored tilemap") {
     map->resize(3, 2);
     map->set(0, 0, 1);
     map->set(2, 1, 6);
+    map->solid_tiles = {6};
 
     EditorContext context;
     context.register_default_component_factories();
@@ -254,4 +255,9 @@ TEST_CASE("the play copy carries an authored tilemap") {
     CHECK(play_map->at(0, 0) == 1);
     CHECK(play_map->at(1, 0) == Tilemap::kEmpty);
     CHECK(play_map->at(2, 1) == 6);
+    // The solid tile list came across too, so play mode's collision matches the
+    // authored map rather than defaulting every non-empty tile to ground.
+    CHECK(play_map->solid_tiles == std::vector<i32>{6});
+    CHECK_FALSE(play_map->is_solid(0, 0));
+    CHECK(play_map->is_solid(2, 1));
 }

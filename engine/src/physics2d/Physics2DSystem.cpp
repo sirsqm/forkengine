@@ -32,6 +32,11 @@ constexpr f32 kPenetrationSlop = 0.005f;
 // with infinite mass) is never a vertex in the island graph, so it maps to this.
 constexpr usize kNoVertex = static_cast<usize>(-1);
 
+// The friction a tile cell carries. A tile has no material of its own -- the
+// `Tilemap` component has no per-tile friction -- so every tile uses one value,
+// the conventional ground friction, which makes a body stand and walk on it.
+constexpr f32 kTileFriction = 0.7f;
+
 [[nodiscard]] f32 clamp_unit(f32 value) noexcept {
     return std::clamp(value, 0.0f, 1.0f);
 }
@@ -183,6 +188,54 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         }
         bodies_.push_back(entry);
     });
+
+    node_body_count_ = bodies_.size();
+
+    // Solid tile cells are static geometry too, gathered from the same grid the
+    // renderer draws. A tile is a box collider with infinite mass, so it joins
+    // the broad phase and the solver like any static collider, but it has no
+    // node: its contact is attributed to the map node, and it is excluded from
+    // the contact-event stream (which is keyed by node, and several tiles of one
+    // map can touch the same body at once). `tile_shapes_` owns the shapes; the
+    // pool is reused across steps so a steady-state step does not allocate.
+    tile_colliders_.clear();
+    append_tilemap_colliders(scene, tile_colliders_);
+    if (tile_shapes_.size() < tile_colliders_.size()) {
+        tile_shapes_.reserve(tile_colliders_.size());
+    }
+    while (tile_shapes_.size() < tile_colliders_.size()) {
+        tile_shapes_.push_back(std::make_unique<Collider2D>());
+    }
+    for (usize t = 0; t < tile_colliders_.size(); ++t) {
+        const TileCollider& tile = tile_colliders_[t];
+        // `Collider2D` is a `Component` (non-copyable, non-movable), so its
+        // fields are set in place rather than assigned from a temporary. Only
+        // the fields the solver reads matter; the rest keep their defaults.
+        Collider2D& shape = *tile_shapes_[t];
+        shape.shape = ShapeType::Box;
+        shape.half_extent = tile.box.half_extent;
+        shape.radius = 0.0f;
+        shape.offset = Vec2{};
+        shape.restitution = 0.0f;
+        shape.friction = kTileFriction;
+        shape.layer = 1u;
+        shape.mask = 0xFFFFFFFFu;
+        shape.is_trigger = false;
+
+        Body entry{};
+        entry.collider = &shape;
+        entry.body = nullptr;
+        entry.node = tile.node;
+        entry.position = tile.box.center;
+        entry.rotation = tile.box.rotation;
+        entry.inv_mass = 0.0f;
+        entry.inv_inertia = 0.0f;
+        entry.restitution = 0.0f;
+        entry.friction = kTileFriction;
+        entry.is_tile = true;
+        bodies_.push_back(entry);
+        asleep_.push_back(false);
+    }
 
     if (bodies_.empty()) {
         // No colliders at all: there can be no contacts. Reconcile against an
@@ -340,7 +393,13 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             // recorded -- its position does not change, so they neither begin
             // nor end, and the event stream stays quiet -- but no impulse is
             // applied to it below.
-            if (first_iteration) {
+            //
+            // A tile pair is not recorded: a tile has no node of its own (it is
+            // attributed to the map node), and several tiles of one map can
+            // touch the same body at once, so a tile contact would report as a
+            // Begin/End against the map node for each cell and the diff would
+            // thrash. The pair is still solved; only the event is skipped.
+            if (first_iteration && !a.is_tile && !b.is_tile) {
                 ++contacts_;
                 BodyPair pair;
                 // Order the pair by raw id bytes so the key is stable and
@@ -752,12 +811,16 @@ void Physics2DSystem::build_islands() {
     // step. The order is bodies in array order, so the link order -- and
     // therefore the islands -- is deterministic.
     island_links_.clear();
-    for (usize i = 0; i < bodies_.size(); ++i) {
+    // Only node bodies are considered: a tile body is static (never a vertex),
+    // so including it would only add bounds tests that can never produce a
+    // link. Bounding the scan at `node_body_count_` keeps the O(n^2) pass off a
+    // map's thousands of tiles.
+    for (usize i = 0; i < node_body_count_; ++i) {
         if (body_vertex_[i] == kNoVertex || bodies_[i].collider == nullptr) {
             continue;
         }
         const Aabb2D bounds_a = bodies_[i].collider->bounds(bodies_[i].position, bodies_[i].rotation);
-        for (usize j = i + 1; j < bodies_.size(); ++j) {
+        for (usize j = i + 1; j < node_body_count_; ++j) {
             if (body_vertex_[j] == kNoVertex || bodies_[j].collider == nullptr) {
                 continue;
             }

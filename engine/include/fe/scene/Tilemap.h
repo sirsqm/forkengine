@@ -82,6 +82,18 @@ public:
     u32 height = 0;
     std::vector<i32> cells;
 
+    // The tile indices that act as solid ground. Empty (the default) means every
+    // non-empty cell is solid, so a map authored before this field behaves as
+    // ground and a purely decorative map is the only one that has to say so. A
+    // non-empty list narrows solidity to exactly those tiles, so a decorative
+    // tile in the same tileset contributes no collision. `kEmpty` is never
+    // solid, whatever the list says.
+    //
+    // This is the level's collision, derived from the same grid the renderer
+    // draws: one component and one rule, rather than a second collider grid that
+    // could drift from the visual one (ADR-0062).
+    std::vector<i32> solid_tiles;
+
     [[nodiscard]] bool has_texture() const noexcept { return texture != nullptr; }
 
     // Total cells the grid describes.
@@ -100,6 +112,11 @@ public:
     // Writes the tile index at (x, y). Out-of-bounds writes are ignored, so a
     // tool that walks a rectangle past the edge cannot corrupt the grid.
     void set(u32 x, u32 y, i32 tile) noexcept;
+
+    // True when the tile at (x, y) is solid ground: a non-empty cell whose tile
+    // is in `solid_tiles` (or, when that list is empty, any non-empty tile).
+    // Out of bounds is not solid. This is the one rule a collision build reads.
+    [[nodiscard]] bool is_solid(u32 x, u32 y) const noexcept;
 
     // Resizes the grid, filling every cell with `fill`. This discards existing
     // cells: resizing a map is a structural edit, not a crop.

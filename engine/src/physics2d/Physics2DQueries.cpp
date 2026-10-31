@@ -6,6 +6,7 @@
 #include "fe/physics2d/Geometry.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Tilemap.h"
 
 #include <cmath>
 
@@ -149,6 +150,55 @@ bool overlap_point(const Scene& scene, const Vec2& point, OverlapHit* out) noexc
         }
     });
     return found;
+}
+
+void append_tilemap_colliders(const Node& node, std::vector<TileCollider>& out) {
+    const auto* map = node.get_component<Tilemap>();
+    if (map == nullptr) {
+        return;
+    }
+    if (map->cell_count() == 0 || map->tile_size.x == 0.0f || map->tile_size.y == 0.0f) {
+        return;
+    }
+
+    const Mat4 world = node.world_matrix();
+    // The world-space size of a cell: the local tile axes mapped through the
+    // matrix's linear part. The renderer scales the tile quad by the same
+    // matrix, so the box matches the drawn tile. For a rotation the two axes
+    // stay perpendicular and the box is exact; a non-uniform scale shears them,
+    // which an `Obb2D` approximates by its axis extents.
+    const Vec3 axis_x = transform_direction(world, Vec3{map->tile_size.x, 0.0f, 0.0f});
+    const Vec3 axis_y = transform_direction(world, Vec3{0.0f, map->tile_size.y, 0.0f});
+    const Vec2 half{0.5f * std::sqrt(axis_x.x * axis_x.x + axis_x.y * axis_x.y),
+                    0.5f * std::sqrt(axis_y.x * axis_y.x + axis_y.y * axis_y.y)};
+    if (half.x == 0.0f || half.y == 0.0f) {
+        return; // a degenerate cell contributes no box
+    }
+    // The cell's orientation is the map's own Z rotation, taken from the world
+    // matrix's first column, so a rotated map's cells collide rotated.
+    const f32 rotation = std::atan2(world.at(1, 0), world.at(0, 0));
+
+    for (u32 y = 0; y < map->height; ++y) {
+        for (u32 x = 0; x < map->width; ++x) {
+            if (!map->is_solid(x, y)) {
+                continue;
+            }
+            const f32 local_x = (static_cast<f32>(x) + 0.5f) * map->tile_size.x;
+            const f32 local_y = -(static_cast<f32>(y) + 0.5f) * map->tile_size.y;
+            const Vec3 center = transform_point(world, Vec3{local_x, local_y, 0.0f});
+
+            TileCollider collider;
+            collider.box = Obb2D{Vec2{center.x, center.y}, half, rotation};
+            collider.node = const_cast<Node*>(&node);
+            collider.cell_x = x;
+            collider.cell_y = y;
+            out.push_back(collider);
+        }
+    }
+}
+
+void append_tilemap_colliders(const Scene& scene, std::vector<TileCollider>& out) {
+    scene.for_each_node([&](Node& node) { append_tilemap_colliders(node, out); });
 }
 
 } // namespace fe::physics2d

@@ -15,6 +15,7 @@
 #include "fe/reflect/Registry.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
+#include "fe/scene/Tilemap.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
 
@@ -1931,4 +1932,251 @@ TEST_CASE("a slow body against a wall is resolved by the discrete pass, not the 
     CHECK(box_node->transform().position.x < 4.2f);
     CHECK(box_node->transform().position.x > 3.5f);
     CHECK_FALSE(any_sweep);
+}
+
+// ---------------------------------------------------------------------------
+// Tilemap collision: a level's solid cells become static boxes the solver
+// collides against, placed exactly where the renderer draws the tile.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A tilemap whose cells are all one solid tile. `columns`/`rows` describe the
+// tileset grid; the map grid is `width` x `height`. Placed at `origin` so the
+// top-left corner is there (the map spans +X and -Y from the node).
+Node* add_tilemap(Scene& scene, const Vec2& origin, u32 width, u32 height, const Vec2& tile_size) {
+    Node* node = scene.create_node("Level");
+    auto* map = node->add_component<Tilemap>();
+    map->tile_size = tile_size;
+    map->columns = 4;
+    map->rows = 4;
+    map->resize(width, height, 0);
+    node->transform().position = Vec3{origin.x, origin.y, 0.0f};
+    return node;
+}
+
+} // namespace
+
+TEST_CASE("is_solid treats every non-empty tile as ground by default") {
+    Tilemap map;
+    map.resize(2, 2, Tilemap::kEmpty);
+    map.set(1, 0, 3);
+
+    CHECK_FALSE(map.is_solid(0, 0));
+    CHECK_FALSE(map.is_solid(1, 1));
+    CHECK(map.is_solid(1, 0));
+    // Out of bounds is never solid.
+    CHECK_FALSE(map.is_solid(9, 9));
+}
+
+TEST_CASE("an explicit solid tile list narrows solidity to those tiles") {
+    Tilemap map;
+    map.resize(3, 1, Tilemap::kEmpty);
+    map.set(0, 0, 1);
+    map.set(1, 0, 2);
+    map.set(2, 0, 3);
+    map.solid_tiles = {1, 3};
+
+    CHECK(map.is_solid(0, 0));
+    CHECK_FALSE(map.is_solid(1, 0));
+    CHECK(map.is_solid(2, 0));
+}
+
+TEST_CASE("kEmpty is never solid even when it is listed") {
+    Tilemap map;
+    map.resize(2, 1, Tilemap::kEmpty);
+    map.set(0, 0, 5);
+    map.solid_tiles = {Tilemap::kEmpty, 5};
+
+    CHECK(map.is_solid(0, 0));
+    CHECK_FALSE(map.is_solid(1, 0));
+}
+
+TEST_CASE("the solid tile list round-trips through the grid document") {
+    Tilemap original;
+    original.resize(2, 2, 0);
+    original.set(0, 1, 4);
+    original.solid_tiles = {4, 7};
+
+    Tilemap restored;
+    REQUIRE(restored.from_json(original.to_json()));
+    CHECK(restored.solid_tiles == std::vector<i32>{4, 7});
+    CHECK(restored.is_solid(0, 1));
+
+    // A document written before solidity existed still loads, with the default
+    // (every non-empty tile is solid).
+    Tilemap legacy;
+    REQUIRE(legacy.from_json(R"({"width":1,"height":1,"cells":[2]})"));
+    CHECK(legacy.solid_tiles.empty());
+    CHECK(legacy.is_solid(0, 0));
+}
+
+TEST_CASE("a tilemap builds one collider box per solid cell, placed where the tile is drawn") {
+    Scene scene;
+    // 3x2 map, tile 16x16, origin at (100, 200). Every cell solid.
+    Node* node = add_tilemap(scene, Vec2{100.0f, 200.0f}, 3, 2, Vec2{16.0f, 16.0f});
+
+    std::vector<physics2d::TileCollider> colliders;
+    physics2d::append_tilemap_colliders(scene, colliders);
+    REQUIRE(colliders.size() == 6);
+
+    // Cell (0, 0) is the top-left: its centre is half a tile right and half a
+    // tile down from the node origin, and its box is the tile's size.
+    const physics2d::TileCollider* top_left = nullptr;
+    for (const auto& collider : colliders) {
+        if (collider.cell_x == 0 && collider.cell_y == 0) {
+            top_left = &collider;
+        }
+    }
+    REQUIRE(top_left != nullptr);
+    CHECK(top_left->node == node);
+    CHECK(top_left->box.center.x == doctest::Approx(108.0f));
+    CHECK(top_left->box.center.y == doctest::Approx(192.0f));
+    CHECK(top_left->box.half_extent.x == doctest::Approx(8.0f));
+    CHECK(top_left->box.half_extent.y == doctest::Approx(8.0f));
+    CHECK(top_left->box.rotation == doctest::Approx(0.0f));
+}
+
+TEST_CASE("empty and non-solid tiles contribute no collider") {
+    Scene scene;
+    Node* node = add_tilemap(scene, Vec2{0.0f, 0.0f}, 3, 1, Vec2{10.0f, 10.0f});
+    auto* map = node->get_component<Tilemap>();
+    map->set(1, 0, Tilemap::kEmpty); // already empty, but explicit
+    map->set(2, 0, 9);
+    map->solid_tiles = {9}; // only tile 9 is ground, so cell (0, 0) is not
+
+    std::vector<physics2d::TileCollider> colliders;
+    physics2d::append_tilemap_colliders(scene, colliders);
+    REQUIRE(colliders.size() == 1);
+    CHECK(colliders[0].cell_x == 2);
+    CHECK(colliders[0].cell_y == 0);
+}
+
+TEST_CASE("a body rests on the solid tiles of a tilemap") {
+    Scene scene;
+    // A floor of tiles: 4 cells wide, 1 tall, 1-unit tiles, top-left at (-2, 0).
+    // So the top row of tiles spans y in [-1, 0] and x in [-2, 2]; the top face
+    // is at y = 0.
+    add_tilemap(scene, Vec2{-2.0f, 0.0f}, 4, 1, Vec2{1.0f, 1.0f});
+
+    // A dynamic box dropped from above.
+    Node* crate = add_dynamic_box(scene, Vec2{0.0f, 3.0f}, 0.5f, 1.0f);
+    auto* body = crate->get_component<physics2d::RigidBody2D>();
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+
+    for (int i = 0; i < 240; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    // The crate settled on the tiles: its centre rests half a tile above the top
+    // face (its half-height), so near y = 0.5, and did not fall through.
+    CHECK(crate->transform().position.y > 0.4f);
+    CHECK(crate->transform().position.y < 0.6f);
+}
+
+TEST_CASE("a tilemap with no solid cells contributes no collider and no body falls") {
+    Scene scene;
+    Node* node = add_tilemap(scene, Vec2{0.0f, 0.0f}, 2, 2, Vec2{1.0f, 1.0f});
+    auto* map = node->get_component<Tilemap>();
+    map->clear(Tilemap::kEmpty); // every cell empty
+
+    Node* crate = add_dynamic_box(scene, Vec2{0.0f, 3.0f}, 0.5f, 1.0f);
+    auto* body = crate->get_component<physics2d::RigidBody2D>();
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+
+    for (int i = 0; i < 60; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(physics.tile_collider_count() == 0);
+    // Nothing to land on: the crate kept falling.
+    CHECK(crate->transform().position.y < 0.0f);
+}
+
+TEST_CASE("a tilemap collider count reflects the solid cells the solver gathered") {
+    Scene scene;
+    Node* node = add_tilemap(scene, Vec2{0.0f, 0.0f}, 3, 3, Vec2{1.0f, 1.0f});
+    auto* map = node->get_component<Tilemap>();
+    map->clear(Tilemap::kEmpty);
+    map->set(0, 0, 1);
+    map->set(2, 2, 1);
+    (void)node;
+
+    physics2d::Physics2DSystem physics;
+    physics.update(step(1.0f / 60.0f), scene);
+    CHECK(physics.tile_collider_count() == 2);
+}
+
+TEST_CASE("tile contacts do not pollute the contact-event stream") {
+    Scene scene;
+    add_tilemap(scene, Vec2{-2.0f, 0.0f}, 4, 1, Vec2{1.0f, 1.0f});
+    Node* crate = add_dynamic_box(scene, Vec2{0.0f, 1.5f}, 0.5f, 1.0f);
+    auto* body = crate->get_component<physics2d::RigidBody2D>();
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+
+    bool any_event = false;
+    for (int i = 0; i < 120; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+        any_event = any_event || physics.contact_event_count() > 0;
+    }
+
+    // The crate landed on the tiles, but a tile has no node of its own, so no
+    // contact event is reported for it.
+    CHECK_FALSE(any_event);
+    CHECK(crate->transform().position.y > 0.4f);
+}
+
+TEST_CASE("a large tilemap still collides a body without quadratic blowup") {
+    Scene scene;
+    // A 100x50 level: 5000 cells, one row of ground at the bottom. The island
+    // pass is O(n^2) over dynamic bodies and must not walk the static tiles, so
+    // this stays fast; the body rests on the bottom row.
+    Node* node = add_tilemap(scene, Vec2{-50.0f, 0.0f}, 100, 50, Vec2{1.0f, 1.0f});
+    auto* map = node->get_component<Tilemap>();
+    map->clear(Tilemap::kEmpty);
+    for (u32 x = 0; x < 100; ++x) {
+        map->set(x, 49, 1); // bottom row
+    }
+
+    Node* crate = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+    auto* body = crate->get_component<physics2d::RigidBody2D>();
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, -10.0f};
+
+    for (int i = 0; i < 240; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    // 100 ground cells, the rest of the 5000-cell grid empty.
+    CHECK(physics.tile_collider_count() == 100);
+    // The bottom row's top face is at y = -49; the crate's centre rests half a
+    // tile above it.
+    CHECK(crate->transform().position.y > -48.7f);
+    CHECK(crate->transform().position.y < -48.4f);
+}
+
+TEST_CASE("a rotated tilemap's cells collide as rotated boxes") {
+    Scene scene;
+    Node* node = add_tilemap(scene, Vec2{0.0f, 0.0f}, 1, 1, Vec2{2.0f, 2.0f});
+    // Rotate the map 45 degrees about Z.
+    node->transform().rotation.z = 0.7853981634f;
+
+    std::vector<physics2d::TileCollider> colliders;
+    physics2d::append_tilemap_colliders(scene, colliders);
+    REQUIRE(colliders.size() == 1);
+    CHECK(colliders[0].box.rotation == doctest::Approx(0.7853981634f));
+    // The cell is a 2x2 square, so its half-extent is unchanged by the rotation.
+    CHECK(colliders[0].box.half_extent.x == doctest::Approx(1.0f));
+    CHECK(colliders[0].box.half_extent.y == doctest::Approx(1.0f));
 }

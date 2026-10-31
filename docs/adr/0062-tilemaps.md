@@ -108,9 +108,16 @@ edge is an authoring query, not a bug.
   `from_json` is the only validator. A dedicated tile editor — a grid view, a
   tileset picker, a paint tool — is a follow-up and is what would motivate a real
   array kind in the reflection model.
-- **Tile collisions are not here.** The grid is draw data. Giving it collision
-  means generating colliders or a query over the cells, which belongs with the
-  physics module and a follow-up cut.
+- **Tile collisions landed on top, from the same grid.** `Tilemap::is_solid`
+  says which cells are ground (a non-empty cell whose tile is in `solid_tiles`,
+  or any non-empty tile when that list is empty), and
+  `physics2d::append_tilemap_colliders` turns each solid cell into a world-space
+  box placed exactly where the renderer draws the tile. `Physics2DSystem`
+  gathers those cells as static bodies, so a body stands on the level's visible
+  surface with no second collider grid to keep in sync. A tile has no node of its
+  own, so a tile contact is solved but kept out of the node-keyed contact-event
+  stream. The solid list rides in the same `grid` JSON document, so the picture
+  and its collision cannot disagree after a load.
 - **Only uniform tile sizes.** Every tile is `tile_size`; mixed tile sizes, tile
   flags (flip, rotate), and multiple layers per map are deliberately out of this
   cut. The `layer` field orders a map against sprites, which is the ordering the

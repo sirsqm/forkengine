@@ -319,6 +319,19 @@ third-party solver (Jolt) can replace it without touching gameplay or the editor
 See [ADR-0031](adr/0031-physics3d-and-backend-seam.md) for the seam and
 [ADR-0043](adr/0043-physics3d-angular-dynamics.md) for the angular cut.
 
+**Tilemap collision** turns a level's grid into ground. `Tilemap::is_solid`
+marks which cells collide (a non-empty tile in the map's `solid_tiles` list, or
+any non-empty tile when that list is empty) and
+`physics2d::append_tilemap_colliders` (in `Physics2DQueries`) turns each solid
+cell into a world-space box placed exactly where the renderer draws the tile, so
+the picture and the collision come from one grid and cannot drift. The system
+gathers those cells as static bodies with infinite mass, so they join the broad
+phase and the solver like any static collider. A tile has no node of its own, so
+a tile contact is solved but kept out of the node-keyed contact-event stream
+(several tiles of one map can touch the same body at once). The solid list rides
+in the same `grid` JSON document, so an old map still loads. See
+[ADR-0062](adr/0062-tilemaps.md).
+
 **In the editor**, play-in-editor runs both physics systems: `PlaySession`'s
 default schedule registers `Physics2DSystem` and `Physics3DSystem`, and
 `EditorContext` registers copy factories for `Collider2D`, `RigidBody2D`,
@@ -1243,9 +1256,10 @@ Every milestone must build and pass its tests before the next one begins.
 - The editor's asset browser, 3D viewport, scripting workflow, and project
   settings (the editor shell, hierarchy, inspector, 2D viewport,
   play-in-editor, and undo/redo exist; see section 9).
-- The parts of 2D authoring beyond tilemaps: particles, tile collisions,
-  mixed tile sizes and tile flags (flip/rotate), and multiple tilemap layers
-  per map (see [ADR-0062](adr/0062-tilemaps.md)).
+- The parts of 2D authoring beyond tilemaps: particles, mixed tile sizes and
+  tile flags (flip/rotate), and multiple tilemap layers per map (see
+  [ADR-0062](adr/0062-tilemaps.md)). Tile collisions landed: a solid cell is a
+  static box the solver collides against.
 - The scripting seam and the C++ path exist (section 10,
   [ADR-0044](adr/0044-scripting-seam.md)): C++ gameplay modules load and
   hot-reload through `ScriptLibrary`
