@@ -81,10 +81,13 @@ operation like any other. This is the first operation kind that is not a
 component or script edit, and it establishes the shape for the next one: a
 non-component target gets its own kind rather than a synthetic component.
 
-The editor's viewport is still hardcoded 2D (`Camera2D` and `Renderer2D`), so
-drag-to-move moves a node in the XY plane and a 3D authoring view is not yet
-possible; that is a separate piece of work. The 3D renderer and 3D physics
-exist, but the editor cannot show them.
+The 3D authoring view has since landed: the viewport renders a 3D scene
+through `Renderer3D`/`Camera3D` alongside the 2D path, with an orbit/pan/dolly
+rig and ray/AABB picking (`Viewport3D`, `ViewportPanel`'s 3D path). So
+drag-to-move now moves a node in a 3D scene too, in the camera-facing plane
+rather than only the XY plane. This record's own decision is unchanged — an edit
+is still a serializable, undoable operation — and the 3D view reuses it rather
+than adding a second editing model.
 
 Only the editor's own drag is a single coalesced step. A script or another
 client that writes a transform one axis at a time still produces one operation

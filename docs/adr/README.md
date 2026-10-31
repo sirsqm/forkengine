@@ -126,6 +126,7 @@ rather than editing it.
 | [0118](0118-windows-zip.md) | A self-contained Windows zip, played in CI with the null backend | Accepted |
 | [0119](0119-macos-app-bundle.md) | A macOS app bundle and DMG, smoke-run from the mounted image | Accepted |
 | [0120](0120-gamepad-input-seam.md) | The gamepad input seam | Accepted |
+| [0121](0121-3d-authoring-view.md) | The 3D authoring view | Accepted |
 
 ## Format
 

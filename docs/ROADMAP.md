@@ -71,8 +71,9 @@ line; the milestones below hold the detail.
 4. **Guard the performance claims** — the benchmark as a CI regression gate
    (M9) and sanitizer builds (ASan/UBSan, TSan), while the codebase is still
    small enough to keep them cheaply green.
-5. **Editor and rendering depth** — a 3D authoring view (M2) and the render
-   graph (M4, M9), which together unblock skeletal animation and instancing.
+5. **Editor and rendering depth** — the render graph (M4, M9), which unblocks
+   skeletal animation and instancing. The 3D authoring view landed, so the editor
+   can show a 3D scene; the render graph is the remaining depth item.
 6. **More platforms** — desktop artifacts and mobile (M8), after the above.
 
 The intent: finish the small things. The engines that last are the ones whose
@@ -119,11 +120,11 @@ usable, not merely present.
 - [x] Project asset root — `EditorContext::set_project_root` + `--project`, indexing the asset database so the browser and GUID references resolve
 - [x] Project settings — `ProjectSettings` (headless) + `fork.project.json`, opened with `--project`/`--project-file`; name, asset root, and startup scene, with portable relative paths ([ADR-0025](adr/0025-project-file.md))
 - [x] Asset import settings per asset type — typed settings stored in the asset's sidecar (`ImportSettings`, `AssetDatabase::import(path, scheme, settings)`) and applied at load via the `ResourceManager`; a texture's filter/wrap/mipmaps are honoured by the GPU ([ADR-0027](adr/0027-asset-import-settings.md))
-- [ ] **3D authoring view** — the editor's viewport is hardcoded 2D (`Camera2D` + `Renderer2D`), so a 3D scene cannot be seen or placed in the editor even though the 3D renderer and physics exist. This is the largest remaining editor gap and the precondition for authoring a 3D game.
+- [x] **3D authoring view** — the viewport renders a 3D scene through `Renderer3D`/`Camera3D` alongside the 2D path, with an orbit/pan/dolly rig, ray/AABB picking, framing, and a projected selection box; the mode is 2D, 3D, or Auto (3D when the scene has a 3D camera), so opening a 3D scene shows it without a click. The maths lives in a headless `Viewport3D` the panel drives, so it is tested without a window or a GPU (`Viewport3D.cpp`/`.h`, `ViewportPanel`'s 3D path).
 - [ ] Build/export path — moved to M8, where the packaging, pack format, and per-target export templates live ([ADR-0018](adr/0018-multi-platform-shipping.md))
 
 **Done when** a scene can be built, edited, saved, reloaded, and played from the
-editor without hand-editing a file. *Met for 2D; 3D authoring is open.*
+editor without hand-editing a file. *Met for 2D and 3D.*
 
 ### M2 prerequisite — reflection (done)
 
