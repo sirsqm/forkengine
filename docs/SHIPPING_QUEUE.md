@@ -492,11 +492,24 @@ is self-contained and needs no VC++ redistributable on a clean machine; and CI
 packages and *plays* the zip on every push — the same script the release runs,
 with the game started against the null backend (`--null-window`, ADR-0041) so a
 headless runner with no GL context still exercises the whole artifact. See
-[ADR-0117](adr/0118-windows-zip.md).
+[ADR-0118](adr/0118-windows-zip.md).
 
 ### `macos-app-bundle`
 
 Produce a `.app` bundle, then a DMG, with the runtime's dependencies bundled.
+
+Landed as `packaging/package_macos.cmake`: it builds `Fork Engine Breakout.app`
+(with a `Contents/Info.plist`, an entry-point script that `cd`s into
+`Contents/Resources` because macOS launches an app with the working directory at
+`/`, and the game, editor, and content inside), ad-hoc signs it, and writes a
+UDZO DMG holding it. The library rule is the inverse of Linux's — the OS's own
+`libc++` and frameworks stay on the host, and any third-party dylib linked by a
+build-host path is bundled into `Contents/Frameworks` and rewritten to `@rpath`.
+The smoke mounts the DMG, runs the bundle from inside it, and plays the game
+against the null backend, so a headless runner exercises the whole artifact; the
+release workflow builds it and the `macos_packaging` test guards the decisions.
+See [ADR-0119](adr/0119-macos-app-bundle.md). Signing with a Developer ID and
+notarizing are the remaining gap, recorded in the ADR.
 
 **Done when** the DMG builds in CI and the game launches from it on a clean
 machine.

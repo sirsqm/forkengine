@@ -218,6 +218,21 @@ add_test(
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_appimage_packaging.cmake
 )
 
+# The macOS app bundle and DMG are built only on a macOS release runner, so the
+# desktop suite cannot observe them by building. Like the AppImage guard it is
+# checked by reading the script and asserting the decisions it has to make: the
+# bundle layout, the content it stages, the libraries it bundles (and the OS ones
+# it must not), the DMG trailer, the mounted-DMG smoke, and the wiring in the
+# release workflow. (docs/SHIPPING_QUEUE.md, `macos-app-bundle`).
+add_test(
+  NAME macos_packaging
+  COMMAND
+    ${CMAKE_COMMAND}
+    -DMACOS_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_macos.cmake
+    -DRELEASE_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/release.yml -P
+    ${CMAKE_SOURCE_DIR}/cmake/tests/test_macos_packaging.cmake
+)
+
 # ---------------------------------------------------------------------------
 # Editor tests.
 #

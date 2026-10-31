@@ -199,6 +199,12 @@ must use your GPU's driver. On a machine with no display it runs headless —
 `--editor --headless --frames 60` for the editor, `--headless 300` for the game —
 and the binaries accept the same flags as their build-tree counterparts.
 
+**macOS** — `fork-engine-<version>-macos-<arch>.dmg`. Open it and drag
+`Fork Engine Breakout.app` out, or run it from the mounted volume. It carries the
+game and the editor; the game is the default and `--editor` opens the editor on
+the bundled demo project. The bundle is ad-hoc signed, so Gatekeeper may ask you
+to confirm it once (it is not signed with a Developer ID or notarized yet).
+
 **Other platforms** — `fork-engine-<version>-<platform>-<arch>-game.tar.gz` (or
 `.zip`) is a directory holding the game, a launcher, and the example's content;
 unpack it and run the launcher from inside the directory (`run.sh` on

@@ -81,8 +81,13 @@ jobs:
             os: macos-latest
             platform: macos
             arch: aarch64
+            # The game is played against the null backend (--null-window,
+            # ADR-0041), so the bundle from the mounted DMG is exercised with no
+            # display. The DMG's smoke mounts it, runs the bundle, and plays; the
+            # tarball smoke plays the same way.
             smoke_prefix: ""
-            smoke_game: "OFF"
+            smoke_game: "ON"
+            smoke_null_window: "ON"
 
     steps:
       - uses: actions/checkout@v4
@@ -171,6 +176,24 @@ jobs:
             -DFE_SMOKE_PREFIX="${{ matrix.smoke_prefix }}" \
             -P packaging/package_appimage.cmake
 
+      # The macOS bundle and DMG (ADR-0118). macOS ships an app as a bundle, so
+      # this turns the build tree into `Fork Engine Breakout.app` and a DMG
+      # holding it, then mounts the DMG and runs the bundle from inside it -- the
+      # path a downloader takes. The game is played with the null backend, so a
+      # headless runner exercises the whole artifact. It is written into dist/
+      # before the upload, so the DMG travels with the other artifacts.
+      - name: Package a macOS app bundle and DMG (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=dist \
+            -DFE_ARCH=${{ matrix.arch }} \
+            -DFE_CONFIG=Release \
+            -DFE_SMOKE_GAME=${{ matrix.smoke_game }} \
+            -P packaging/package_macos.cmake
+
       - name: Upload the packaged artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -212,7 +235,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.dmg' \) -exec cp {} release/ \;
           cd release
           ls -la
           sha256sum * > SHA256SUMS

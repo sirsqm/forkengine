@@ -124,6 +124,7 @@ rather than editing it.
 | [0116](0116-prebuilt-runtime-archive.md) | A prebuilt runtime archive for `fork_export --player` | Accepted |
 | [0117](0117-path-keyed-references-resolve-against-the-project.md) | A path-keyed reference resolves against the project, not the working directory | Accepted |
 | [0118](0118-windows-zip.md) | A self-contained Windows zip, played in CI with the null backend | Accepted |
+| [0119](0119-macos-app-bundle.md) | A macOS app bundle and DMG, smoke-run from the mounted image | Accepted |
 
 ## Format
 
