@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/anim/SkeletalAnimationTypes.h"
 
+#include "fe/anim/AnimationBlendTree.h"
 #include "fe/anim/AnimationClip.h"
 #include "fe/anim/Animator.h"
 #include "fe/anim/SkeletalStateMachine.h"
@@ -282,9 +283,38 @@ void register_skeletal_state_machine(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+// The blend tree's clips and thresholds, exposed as one String property, exactly
+// as the state machines' graphs are. The clip references travel as their keys
+// inside the JSON, and the system resolves them through the manager, because a
+// resource reference is a property on the component and a sample is a
+// sub-value the reflection model has no list-of-struct kind for.
+void register_animation_blend_tree(Registry& registry) {
+    TypeDesc desc;
+    desc.name = anim::AnimationBlendTree::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<anim::AnimationBlendTree>()); };
+
+    Property property;
+    property.name = "tree";
+    property.value_kind = ValueKind::String;
+    property.getter = [](const void* object) -> Value {
+        return static_cast<const anim::AnimationBlendTree*>(object)->to_json();
+    };
+    property.setter = [](void* object, const Value& value) -> bool {
+        const auto* as_string = std::get_if<std::string>(&value);
+        if (as_string == nullptr) {
+            return false;
+        }
+        return static_cast<anim::AnimationBlendTree*>(object)->from_json(*as_string);
+    };
+    property.hint = Hint::Multiline;
+    property.default_value = std::string{};
+    desc.properties.push_back(std::move(property));
+
+    registry.register_type(std::move(desc));
+}
+
 void register_skinned_mesh_renderer(Registry& registry) {
     anim::SkinnedMeshRenderer3D defaults;
-
     TypeDesc desc;
     desc.name = anim::SkinnedMeshRenderer3D::kTypeName;
     desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<anim::SkinnedMeshRenderer3D>()); };
@@ -327,6 +357,7 @@ void register_skeletal_animation_types() {
     register_animator(registry);
     register_skinned_mesh_renderer(registry);
     register_skeletal_state_machine(registry);
+    register_animation_blend_tree(registry);
 }
 
 } // namespace fe::reflect

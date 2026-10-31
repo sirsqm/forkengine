@@ -142,6 +142,8 @@ set(FE_ENGINE_SOURCES
     src/systems/SpriteAnimationSystem.cpp
     src/anim/AnimationStateMachine.cpp
     src/anim/AnimationStateMachineSystem.cpp
+    src/anim/AnimationBlendTree.cpp
+    src/anim/AnimationBlendTreeSystem.cpp
     src/anim/AnimationTypes.cpp
     src/anim/AnimationClip.cpp
     src/anim/Animator.cpp

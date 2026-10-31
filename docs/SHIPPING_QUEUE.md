@@ -755,6 +755,12 @@ clip, transitions gated on finish and triggers — advances in the frame step an
 drives the animator's clip, with a test covering entry, a trigger transition, and
 a finish-gated return.
 
+Landed as `SkeletalStateMachine` + `SkeletalStateMachineSystem` and a `graph`
+reflection property carrying the whole document as one JSON string, mirroring the
+sprite machine's shape ([ADR-0123](adr/0123-skeletal-state-machines.md)). The
+system resolves clip keys through the frame's manager, advances each machine,
+and rebinds the node's `Animator` on a state change when `drive_animator` is set.
+
 ### `animation-blend-tree`
 
 The same row names blend trees and additive layers: locomotion wants a
@@ -764,6 +770,16 @@ layer over whatever is playing.
 **Done when** a blend tree samples two clips by a continuous parameter and an
 additive layer composes over the base, both proven by a test that checks the
 palette at the extremes and the midpoint.
+
+Landed as `AnimationBlendTree` + `AnimationBlendTreeSystem` ([ADR-0124](adr/0124-animation-blend-trees.md)).
+Each sample carries a threshold pair, so the weight is the parameter's position
+between two authored values rather than a bare 0-to-1 lerp; the additive clip is
+sampled over the identity pose (a joint its tracks do not mention is a no-op) and
+composed with the rotation applied as a quaternion, not an Euler add. The system
+runs after `SkeletonAnimationSystem`, replaces the pose with the blend when
+`drive_animator` is set, composes the additive layer, and recomputes the palette
+so the renderer reads the blend. The pure pose functions are free functions, so
+the whole behaviour is testable with no scene.
 
 ### `audio-front-back`
 
@@ -798,9 +814,14 @@ the alias and the non-overlap.
 ## Backlog — not yet ordered
 
 - Additional graphics backends (Vulkan, Metal, WebGPU) as targets demand.
-- Skeletal animation, continued: blend trees, additive layers, and skeletal
-  state machines, building on the landed runtime, glTF import, and skinned draw
-  ([ADR-0104](adr/0104-skeletal-animation.md)).
+- Skeletal animation, continued: the one-axis blend tree, the additive layer, and
+  the skeletal state machine have landed on the runtime, glTF import, and skinned
+  draw ([ADR-0104](adr/0104-skeletal-animation.md),
+  [ADR-0123](adr/0123-skeletal-state-machines.md),
+  [ADR-0124](adr/0124-animation-blend-trees.md)). What remains is the wider shape:
+  a two-axis blend (a locomotion grid of idle/walk/run strafe), a blend of more
+  than two clips, a tree feeding a tree, additive-on-additive, and a per-layer
+  joint mask.
 - More example games beyond the breakout slice, once the first one ships.
 
 ## Ongoing
