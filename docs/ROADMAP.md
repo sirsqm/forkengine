@@ -37,7 +37,7 @@ many of its items are checked.
 | # | Milestone | Depends on | Status |
 | --- | --- | --- | --- |
 | M1 | Foundation | — | done |
-| M2 | Editor foundation | M1 | mostly done (export moved to M8) |
+| M2 | Editor foundation | M1 | done (export moved to M8, where it landed) |
 | M2.5 | A vertical slice | M2 | done |
 | M3 | Reflection and a real asset pipeline | M2 | done |
 | M4 | 3D rendering | M1, M3 | mostly done (render-target ownership open) |
@@ -72,9 +72,11 @@ line; the milestones below hold the detail.
 4. **Guard the performance claims** — the benchmark as a CI regression gate
    (M9) and sanitizer builds (ASan/UBSan, TSan), while the codebase is still
    small enough to keep them cheaply green.
-5. **Editor and rendering depth** — the render graph (M4, M9), which unblocks
-   skeletal animation and instancing. The 3D authoring view landed, so the editor
-   can show a 3D scene; the render graph is the remaining depth item.
+5. **Editor and rendering depth** — the render graph (M4, M9). Skeletal
+   animation and instancing have landed on the existing render path, so the graph
+   is no longer what blocks them; what remains is render-target ownership — the
+   graph owning, allocating, and aliasing the targets it names — which is the
+   queue's `render-graph-target-ownership` and the last `[~]` in M4 and M9.
 6. **More platforms** — mobile (M8) and the remaining desktop polish (signing,
    installers), after the above.
 
@@ -82,13 +84,14 @@ The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
 
 **The queue is nearly drained.** Every Phase 1–4 item is done, and Phase 5 is
-down to its last few: `audio-front-back`, `pack-compression`, and
-`render-graph-target-ownership`. Once those land the ordered queue is empty and
-the remaining work is the *un-ordered* backlog (the bullet list at the end of the
-shipping queue) plus the `[~]` rows above — mobile native surfaces, the Windows
-installer and macOS notarization, more graphics backends, and a second example
-game. Those are chosen fresh rather than queued, because each is a larger,
-less-coupled step than a queue item.
+down to its last few: `gamepad-input` (landed under a `platform:` subject, so the
+slug check does not see it — treat it as finished and start at the next item),
+`audio-front-back`, `pack-compression`, and `render-graph-target-ownership`. Once
+those land the ordered queue is empty and the remaining work is the *un-ordered*
+backlog (the bullet list at the end of the shipping queue) plus the `[~]` rows
+above — mobile native surfaces, the Windows installer and macOS notarization,
+more graphics backends, and a second example game. Those are chosen fresh rather
+than queued, because each is a larger, less-coupled step than a queue item.
 
 ---
 
@@ -109,7 +112,7 @@ Everything later assumes this exists.
 
 **Done when** the sandbox runs, draws sprites, and `ctest` is green. *Met.*
 
-## M2 — Editor foundation
+## M2 — Editor foundation (done)
 
 The editor becomes real before the engine grows much further, so the runtime is
 built editor-friendly from the start rather than adapted later. Retrofitting an
