@@ -18,6 +18,11 @@ jobs:
   build-and-test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # A hanging test must fail the job, not hold a runner for hours. The whole
+    # job is bounded here and each test gets its own ctest timeout below, so a
+    # stuck test is named by `--output-on-failure` rather than silently running
+    # until the workflow is cancelled.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -80,11 +85,11 @@ jobs:
 
       - name: Test (Linux, with a virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build --output-on-failure --timeout 300 -C ${{ matrix.build_type }}
 
       - name: Test (macOS/Windows)
         if: runner.os != 'Linux'
-        run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
+        run: ctest --test-dir build --output-on-failure --timeout 300 -C ${{ matrix.build_type }}
 
       # The Windows artifact is a zip (ADR-0102), and the release path that
       # produces it only runs on a tag, so without this step a break in the zip
@@ -504,13 +509,13 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-asan --output-on-failure -R 'engine_tests|editor_tests'
+        run: ctest --test-dir build-asan --output-on-failure --timeout 300 -R 'engine_tests|editor_tests'
 
       - name: Test (full suite, with a virtual display)
         env:
           ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build-asan --output-on-failure
+        run: xvfb-run -a -s "-screen 0 640x480x24" ctest --test-dir build-asan --output-on-failure --timeout 300
 
       - name: ccache stats
         if: always()
@@ -577,7 +582,7 @@ jobs:
       - name: Test (pure-logic suite, no display)
         env:
           TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
-        run: ctest --test-dir build-tsan --output-on-failure -R 'engine_tests'
+        run: ctest --test-dir build-tsan --output-on-failure --timeout 300 -R 'engine_tests'
 
       - name: ccache stats
         if: always()
