@@ -38,13 +38,13 @@ many of its items are checked.
 | --- | --- | --- | --- |
 | M1 | Foundation | — | done |
 | M2 | Editor foundation | M1 | mostly done (export moved to M8) |
-| M2.5 | A vertical slice | M2 | in progress |
+| M2.5 | A vertical slice | M2 | done |
 | M3 | Reflection and a real asset pipeline | M2 | done |
 | M4 | 3D rendering | M1, M3 | mostly done (pass culling open) |
 | M5 | Physics | M1, M3 | mostly done (3D parity open) |
 | M6 | Animation and audio | M4 | mostly done (audio refinements open) |
 | M7 | Scripting | M2, M5 | core done (debugger integration open) |
-| M8 | Ship anywhere | M2.5, M3 | partly done (web done, mobile open) |
+| M8 | Ship anywhere | M2.5, M3 | partly done (web and desktop done, mobile open) |
 | M9 | Performance | M1 | mostly done (pass culling open) |
 
 The dependencies are real: M4 needs the asset pipeline from M3 to load a mesh,
@@ -57,10 +57,11 @@ The order the next work is actually taken in, chosen so that a small number of
 things get *finished* rather than many get started. This is the roadmap's front
 line; the milestones below hold the detail.
 
-1. **Make the slice a game worth shipping** — the breakout slice becomes a game
-   a stranger can play: a title, a score, lives, levels, persistence, and
-   settings (M2.5 and the [shipping queue](SHIPPING_QUEUE.md)'s Phase 4).
-   Everything else is secondary to having one thing that is genuinely finished.
+1. **Make the slice a game worth shipping** — *done*: the breakout slice is a
+   game a stranger can play (a title, a score, lives, levels, persistence, and
+   settings), the work M2.5 and the [shipping queue](SHIPPING_QUEUE.md)'s Phase 4
+   named. The front line moves to the queue's Phase 5, closing the engine gaps
+   each subsystem's first cut left open.
 2. **Honest scope** — the "ship anywhere" claim is scoped to desktop for now, in
    [ADR-0032](adr/0032-near-term-platform-scope.md), so the README does not
    promise more than the engine delivers.
@@ -74,7 +75,8 @@ line; the milestones below hold the detail.
 5. **Editor and rendering depth** — the render graph (M4, M9), which unblocks
    skeletal animation and instancing. The 3D authoring view landed, so the editor
    can show a 3D scene; the render graph is the remaining depth item.
-6. **More platforms** — desktop artifacts and mobile (M8), after the above.
+6. **More platforms** — mobile (M8) and the remaining desktop polish (signing,
+   installers), after the above.
 
 The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
@@ -146,9 +148,10 @@ needed a concrete mechanism before gameplay could grow. See
 
 ## M2.5 — A vertical slice: one small game, end to end
 
-**In progress.** The first complete game (`examples/breakout`) ships and is the
-integration test. What remains is not engine work but game work: making the slice
-a game a stranger can play (the [shipping queue](SHIPPING_QUEUE.md)'s Phase 4).
+**Done.** The first complete game (`examples/breakout`) ships and is the
+integration test — a title, a score, lives, levels that get harder, and a
+persisted best score and settings, all built from the public API. The game-side
+work the [shipping queue](SHIPPING_QUEUE.md)'s Phase 4 named has landed.
 
 The single highest-value next step, and deliberately inserted before the later
 milestones. Infrastructure that has only ever passed its own unit tests has not
@@ -169,12 +172,11 @@ contributors, because people contribute around something finished.
       cumulative mixer peak, and nothing else
 - [x] Write a short "how this game was built" walkthrough, which doubles as the
       first real tutorial and the contributor on-ramp: `examples/breakout/README.md`
-- [~] Make the slice a *game*, not a demo — a title, a score, lives, levels that
-      get harder, persistence, and settings. The engine pieces this needs
-      (`TextLabel`, `UiCanvas`/`UiElement`) have landed; the game-side state
-      machine and scoring are the queue's Phase 4 items
+- [x] Make the slice a *game*, not a demo — a title, a score, lives, levels that
+      get harder, persistence, and settings. Landed as the queue's Phase 4 items
       (`slice-title-and-menus`, `slice-scoring-and-progression`,
-      `slice-persistence`, `slice-settings`).
+      `slice-persistence`, `slice-settings`), on top of the `TextLabel` and
+      `UiCanvas`/`UiElement` engine pieces.
 
 *Why here:* before more engine breadth. One shipped game teaches more about what
 is missing than ten roadmap items, and it is the precondition for a community.
@@ -282,12 +284,15 @@ use, not merely that the editor runs on several OSes. Plan and trade-offs: the
 [strategy](STRATEGY.md) and [ADR-0018](adr/0018-multi-platform-shipping.md).
 
 **Where this stands:** web is done end to end (the queue's Phase 1), desktop
-install rules are done, and the packaging and export path is done. What remains
-is per-OS artifacts and mobile.
+install rules are done, the packaging and export path is done, and every desktop
+target produces an artifact (a Linux AppImage, a Windows zip, a macOS DMG, and a
+per-OS prebuilt runtime) — the queue's Phase 3. What remains is the mobile
+targets (the queue's Phase 2), desktop parity, and the additional graphics
+backends.
 
 - [x] Platform interface audit: the full OS contract (window/surface, input incl. touch and gamepad, filesystem, threads, time, dynamic libraries, lifecycle) is recorded concern by concern, with what is implemented now and what is deferred, and a **null/headless** window backend exists for CI and servers ([ADR-0041](adr/0041-platform-contract-and-null-backend.md)). The engine's frame loop and its systems run with no display and no GL context; the `fork_headless` example is the executable proof.
 - [x] Headless rendering: a null RHI device so the render extraction, batching, and draw submission run with no context, selected by an explicit `Engine::Config::headless_render` opt-in ([ADR-0042](adr/0042-null-rhi-device.md)).
-- [~] The gamepad and suspend/resume rows of the platform contract, each implemented behind the existing seam. Touch is done end to end: the web backend feeds `InputState` from DOM touch events, and gameplay reaches it through the action layer, so a phone plays the same code a keyboard does ([ADR-0075](adr/0075-gameplay-actions-input-seam.md)). The gamepad row has landed too: `InputState` carries slot-keyed button and axis state fed by a polled backend, and `ActionMap` binds a pad button or one direction of a stick or trigger to an action, so a pad drives the same actions a key does and the desktop backend reads it through GLFW's standard-layout gamepad API ([ADR-0120](adr/0120-gamepad-input-seam.md)). The dynamic-library row landed with `platform::DynamicLibrary` ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Suspend/resume remains.
+- [x] The gamepad and suspend/resume rows of the platform contract, each implemented behind the existing seam. Touch is done end to end: the web backend feeds `InputState` from DOM touch events, and gameplay reaches it through the action layer, so a phone plays the same code a keyboard does ([ADR-0075](adr/0075-gameplay-actions-input-seam.md)). The gamepad row has landed too: `InputState` carries slot-keyed button and axis state fed by a polled backend, and `ActionMap` binds a pad button or one direction of a stick or trigger to an action, so a pad drives the same actions a key does and the desktop backend reads it through GLFW's standard-layout gamepad API ([ADR-0120](adr/0120-gamepad-input-seam.md)). The dynamic-library row landed with `platform::DynamicLibrary` ([ADR-0061](adr/0061-cpp-gameplay-modules-hot-reload.md)). Suspend/resume landed too: `Engine::notify_suspend` marks the background span and `Engine::notify_resume` rebaselines the clock, so the first active frame after a long pause steps by one frame rather than by the whole gap, and `Application::step_frame` gates the update and render phases while suspended so gameplay state is frozen rather than stepped against a stopped clock — the mobile counterpart of the web tab-visibility path ([ADR-0041](adr/0041-platform-contract-and-null-backend.md)).
 - [x] Asset packaging: a versioned pack format (`PackFile`), a writer that turns a project's asset tree and startup scene into one file, and a `PackSource` the runtime mounts so the loaders and the scene reader read from a pack as transparently as from disk ([ADR-0030](adr/0030-asset-pack-format.md))
 - [~] `fork_pack` tooling polish: compression and streaming a large pack. Reachability — packing only what the startup scene references — landed on `fork_pack` and `fork_export`: a scene's references are traced through reflection and only those paths are packed ([ADR-0065](adr/0065-pack-reachability-pruning.md)). Pruning is the default; `--no-prune` restores whole-tree packing. A packed asset's own references are followed too: a container's internal references (a glTF's external `.bin` and images) are expanded through a per-format reader the caller supplies ([ADR-0088](adr/0088-transitive-pack-references.md)). Compression and streaming remain.
 - [x] The export path: `fork_player` mounts a pack and runs the game loop, and `fork_export` assembles a runnable build (the player, a fresh pack, and a manifest) from a project ([ADR-0064](adr/0064-export-runtime-and-player.md)). The runtime is generic and driven by the pack, so export has no compiler in it. The exported build is exercised end to end in CI.
@@ -299,8 +304,8 @@ is per-OS artifacts and mobile.
 - [ ] Consoles: architecture-ready; implementation only when SDK access permits
 
 **Done when** the same game is exported and runs on desktop, web, and mobile from
-one project. *Web and the export path are met; desktop artifacts and mobile are
-open.*
+one project. *Web and the export path are met, and desktop artifacts are met — a
+per-OS download runs the game; mobile is open.*
 
 ## M9 — Performance (a product feature)
 

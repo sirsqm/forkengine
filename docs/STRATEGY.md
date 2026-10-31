@@ -201,12 +201,15 @@ demonstrate costs more than it buys.
 - **S5 — Mobile.** Android and iOS: lifecycle, touch, GLES/Vulkan/Metal backends,
   app packaging. **Open** — the queue's Phase 2.
 - **S6 — Desktop packaging.** Per-OS runtimes, cross-compilation, and app bundles
-  (`.app`, MSI, AppImage). **Partly landed** — install rules are done
-  ([ADR-0084](adr/0084-install-rules.md)) and per-OS release archives with an
-  installed SDK ship from a tag ([ADR-0102](adr/0102-downloadable-release-builds.md));
-  the Linux single-file download is an AppImage
-  ([ADR-0103](adr/0103-linux-appimage.md)). The `.app` bundle and the Windows
-  installer are still the queue's Phase 3.
+  (`.app`, MSI, AppImage). **Landed** — install rules are done
+  ([ADR-0084](adr/0084-install-rules.md)); a tag produces per-OS release archives
+  with an installed SDK and a prebuilt runtime
+  ([ADR-0102](adr/0102-downloadable-release-builds.md),
+  [ADR-0116](adr/0116-prebuilt-runtime-archive.md)); Linux gets a single-file
+  AppImage ([ADR-0103](adr/0103-linux-appimage.md)), Windows a self-contained zip
+  ([ADR-0118](adr/0118-windows-zip.md)), and macOS an app bundle and DMG
+  ([ADR-0119](adr/0119-macos-app-bundle.md)). Signing, notarization, the Windows
+  installer, and cross-compilation remain.
 - **S7 — Backends as needed.** Vulkan/Metal/WebGPU, chosen by what S5 and desktop
   parity actually require.
 - **S8 — Consoles.** Architecture-ready; implementation only when SDK access
@@ -297,19 +300,19 @@ The pillars pull the milestones in a clear direction:
 
 ### What comes first
 
-The pillars are the *direction*, not the next step. The next step is the
-**vertical slice** — one small game built end to end (roadmap
-[M2.5](ROADMAP.md#m25--a-vertical-slice-one-small-game-end-to-end)) — and then
-making that slice a game a stranger can play (the
-[shipping queue](SHIPPING_QUEUE.md)'s Phase 4). Nothing in the pillars is worth
-building before the engine has proven, in one finished artifact, that the parts
-work together; and nothing makes the engine usable to anyone but its author until
-a game in it is worth playing.
+The pillars are the *direction*, not the next step. The **vertical slice** — one
+small game built end to end (roadmap
+[M2.5](ROADMAP.md#m25--a-vertical-slice-one-small-game-end-to-end)) — is done,
+and so is making that slice a game a stranger can play (the
+[shipping queue](SHIPPING_QUEUE.md)'s Phase 4). The engine has proven, in one
+finished artifact, that the parts work together. The front line is now the queue's
+Phase 5, closing the engine gaps each subsystem's first cut left open, before the
+next breadth step.
 
-The near-term order is therefore: finish the slice, make it worth shipping, keep
-scripting (M7) as the next breadth step, then resume the pillars. This is the
-project's own guiding rule applied at the project level — **a few genuinely
-working systems beat a long list of half-finished features.**
+The near-term order is therefore: keep scripting (M7) as the next breadth step,
+close the Phase 5 engine gaps, then resume the pillars. This is the project's own
+guiding rule applied at the project level — **a few genuinely working systems beat
+a long list of half-finished features.**
 
 Nothing here is a promise of a date. It is the order in which the engine earns
 each capability, with every step independently testable.

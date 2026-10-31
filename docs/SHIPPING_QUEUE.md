@@ -41,6 +41,7 @@ paths early ([ADR-0071](adr/0071-web-first-2d-shipping-path.md)).
 | 2 — the same game on a phone | The same game accepts touch and runs on a mobile browser |
 | 3 — a downloadable desktop build | A per-OS artifact a player can download and run |
 | 4 — the game is worth shipping | The slice is a real game, not a demo |
+| 5 — engine completeness | The refinements each subsystem's first cut left open are closed, each with a test |
 
 Each phase's bar is deliberately a *runnable* artifact, not a merge. A phase that
 ends with code that compiles but has never run on its target is not finished.
@@ -660,6 +661,138 @@ executed; a second case proves the same document is inert (and not fatal) with n
 module loaded. Reload was already covered. Verified end to end as well: a real
 `fork_export --module` writes a manifest naming the module, and the real
 `fork_player --export` loads it and reports `1 script(s)`.
+
+---
+## Phase 5 — engine completeness
+
+Phase 4 made the slice a game. Phase 5 closes the *engine* gaps the roadmap's
+remaining rows name — the refinements each subsystem's first cut left open — so
+the next game does not have to work around them. Every item is a headless,
+pure-logic increment with a test, drawn from a `[~]`/`[ ]` roadmap row.
+
+### `gamepad-input`
+
+The platform contract's gamepad row (ADR-0041) is the last unwired input device.
+Touch reaches gameplay through the action layer; a controller does not exist, so
+a game cannot offer one.
+
+**Done when** `InputState` takes gamepad connection/button/axis events keyed by a
+device slot and reads them back, `ActionMap` binds a button and a signed axis
+direction (with a deadzone) to an action, `declare_builtin_actions` binds the
+conventional controller layout, and a test proves a gamepad button drives the
+same action a key does and a stick drives a pair of opposite actions.
+
+Landed as `InputState`'s slot-keyed gamepad state plus the action-layer binding
+and a polled desktop backend reading GLFW's standard-layout pad
+([ADR-0120](adr/0120-gamepad-input-seam.md)). It landed under the subject
+`platform: a gamepad is a device on the input seam`, not an `fe-task:` subject,
+so the slug-in-history check does not see it done: treat this item as finished
+and start at `suspend-resume`.
+
+### `suspend-resume`
+
+The platform contract's lifecycle row (ADR-0041): a mobile app is suspended and
+resumed by the OS, and a long background pause must not become one enormous
+physics step on resume. The frame loop caps a single delta, but nothing tells
+the systems the app was away or re-baselines the clock cleanly.
+
+**Done when** the engine exposes an explicit suspend/resume seam that pauses the
+schedule, and a test proves a resume after a long gap advances the simulation by
+one step, not by the whole gap.
+
+Landed as `Engine::notify_suspend` / `notify_resume` (the latter rebaselines the
+clock) and `Application::step_frame` gating the update and render phases while
+suspended ([ADR-0041](adr/0041-platform-contract-and-null-backend.md)).
+
+### `physics2d-ccd`
+
+The 2D refinement row (ADR-0037) leaves continuous collision detection open, so a
+fast body (a bullet) tunnels through a thin wall between steps.
+
+**Done when** a test fires a small body at a thin static wall fast enough to pass
+through it in one step and proves it is stopped at the surface, while a slow body
+behaves exactly as before.
+
+Landed as a swept test against static geometry, clamping a fast body to its first
+touch; a body already touching at the start of the step is left to the discrete
+solver ([ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md)).
+
+### `physics3d-oriented-box`
+
+The 3D refinement row (ADR-0043) leaves oriented colliders open: the solver
+integrates a body's orientation but collides its axis-aligned bounding box, so a
+rotated crate collides as if unrotated.
+
+**Done when** a test collides two boxes at an angle and proves the contact uses
+the true rotated shape (a separating-axis test over the oriented boxes), not the
+axis-aligned bounds.
+
+Landed as an `Obb3D` separating-axis test over the fifteen candidate axes, with
+the world-aligned bounds used only to gather broad-phase candidates
+([ADR-0043](adr/0043-physics3d-angular-dynamics.md)).
+
+### `tilemap-collision`
+
+The tilemap row (ADR-0062) leaves tile collisions open: a level made of tiles has
+no solid geometry, so a platformer cannot stand on its ground.
+
+**Done when** a test builds a collider set from a tilemap's solid cells and proves
+a body rests on the tiles' surface, with `kEmpty` and non-solid tiles contributing
+nothing.
+
+Landed as `Tilemap::is_solid` plus `physics2d::append_tilemap_colliders`, which
+turns each solid cell into a static box placed exactly where the renderer draws
+the tile, gathered by `Physics2DSystem` and bounded so the O(n²) island pass never
+walks a map's thousands of tiles ([ADR-0062](adr/0062-tilemaps.md)).
+
+### `skeletal-state-machine`
+
+The skeletal animation row (ADR-0104) names skeletal state machines as remaining,
+mirroring the sprite machine (ADR-0059) that already exists.
+
+**Done when** a state machine over an `Animator` — named states each naming a
+clip, transitions gated on finish and triggers — advances in the frame step and
+drives the animator's clip, with a test covering entry, a trigger transition, and
+a finish-gated return.
+
+### `animation-blend-tree`
+
+The same row names blend trees and additive layers: locomotion wants a
+speed-parameterised blend of walk and run, and a hit reaction wants an additive
+layer over whatever is playing.
+
+**Done when** a blend tree samples two clips by a continuous parameter and an
+additive layer composes over the base, both proven by a test that checks the
+palette at the extremes and the midpoint.
+
+### `audio-front-back`
+
+The audio refinement row (ADR-0112) leaves a head-related filter for front/back
+cues: a source directly in front and one directly behind pan identically, so a
+player cannot tell them apart.
+
+**Done when** a source in front and an identical one behind produce measurably
+different output (a shadow/comb filter keyed on the elevation angle), while a
+source to the side is unchanged from the pre-filter mix.
+
+### `pack-compression`
+
+The `fork_pack` polish row (ADR-0030) leaves compression open, so a shipped pack
+is as large as its assets.
+
+**Done when** the pack writer can compress an entry and the reader decompresses
+it transparently, a round-trip test proves the bytes survive, and an uncompressed
+pack still loads byte for byte.
+
+### `render-graph-target-ownership`
+
+The render-graph row (ADR-0100, ADR-0110) leaves render-target ownership open:
+the graph reasons about resource *names* but does not own, allocate, or alias
+targets.
+
+**Done when** the graph owns its render targets, allocates them from a declared
+description, and aliases two whose lifetimes do not overlap, with a test proving
+the alias and the non-overlap.
 
 ---
 ## Backlog — not yet ordered
