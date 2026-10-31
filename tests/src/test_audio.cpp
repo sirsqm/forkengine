@@ -688,12 +688,224 @@ TEST_CASE("a streamed positional voice pans the same as a clip voice") {
 
     const f32 samples[1] = {1.0f};
     f32 output[2] = {};
-    static_cast<void>(audio::add_streamed_voice(voice, samples, 1, 1, output, 2, 1.0, params));
+    static_cast<void>(audio::add_streamed_voice(voice, samples, 1, 1, output, 2, 1.0, 8000, params));
 
     const f32 attenuation = 0.45f / 0.95f;
     CHECK(output[1] > output[0]);
     CHECK(output[1] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 1)));
     CHECK(output[0] == doctest::Approx(attenuation * audio::pan_gain(1.0f, 0)));
+}
+
+// ---------------------------------------------------------------------------
+// Head shadow: the front/back cue (pure)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("shadow_strength is one behind the listener, zero in front, and zero to the side") {
+    // Listener at the origin looking down -Z with world up. A source at +Z is
+    // directly behind, at -Z directly ahead, at +/-X level with the ear.
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    params.front_back_enabled = true;
+
+    audio::Voice voice;
+    voice.spatial = true;
+
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f}; // directly behind
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(1.0f));
+
+    voice.world_position = Vec3{0.0f, 0.0f, -5.0f}; // straight ahead
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(0.0f));
+
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f}; // level, to the right
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(0.0f));
+
+    voice.world_position = Vec3{-5.0f, 0.0f, 0.0f}; // level, to the left
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(0.0f));
+
+    // Directly overhead: the direction is along the up axis, perpendicular to
+    // forward, so there is no front/back component and no shadow.
+    voice.world_position = Vec3{0.0f, 5.0f, 0.0f};
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(0.0f));
+
+    // Halfway between the side and the rear (45 degrees behind), the shadow is
+    // the cosine of the angle: sqrt(2)/2. This is what makes the cue smooth
+    // rather than a step at the halfway point.
+    voice.world_position = Vec3{5.0f, 0.0f, 5.0f};
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(std::sqrt(0.5f)));
+}
+
+TEST_CASE("shadow_strength follows the listener's facing, not the world axes") {
+    // Turn the listener a quarter turn to the right (now looking down +X). A
+    // source along -X is now directly behind, and the source that was behind
+    // (+Z) is now level with the ear.
+    audio::MixParams params;
+    params.listener_forward = Vec3{1.0f, 0.0f, 0.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    params.front_back_enabled = true;
+
+    audio::Voice voice;
+    voice.spatial = true;
+
+    voice.world_position = Vec3{-5.0f, 0.0f, 0.0f}; // behind the turned listener
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(1.0f));
+
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f}; // level now
+    CHECK(audio::shadow_strength(voice, params) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("shadow_strength is zero when disabled, non-positional, or with no facing") {
+    audio::Voice voice;
+    voice.spatial = true;
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f}; // behind
+
+    // Cue disabled (the default): the filter is bypassed, so the mix is
+    // unchanged even for a source directly behind.
+    audio::MixParams disabled;
+    disabled.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    CHECK_FALSE(disabled.front_back_enabled);
+    CHECK(audio::shadow_strength(voice, disabled) == doctest::Approx(0.0f));
+
+    // No facing: no front and no back, so no shadow even with the cue enabled.
+    audio::MixParams no_orientation;
+    no_orientation.front_back_enabled = true;
+    CHECK_FALSE(no_orientation.has_orientation());
+    CHECK(audio::shadow_strength(voice, no_orientation) == doctest::Approx(0.0f));
+
+    // A non-positional voice has no place in space.
+    audio::MixParams enabled;
+    enabled.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    enabled.front_back_enabled = true;
+    voice.spatial = false;
+    CHECK(audio::shadow_strength(voice, enabled) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("head_shadow_coefficient falls as the cutoff falls and passes a degenerate config") {
+    // A higher cutoff means less smoothing (a coefficient nearer 1); a lower
+    // cutoff means more (nearer 0). This is what turns "stronger shadow" into
+    // "darker sound".
+    const f32 high = audio::head_shadow_coefficient(6000.0f, 8000);
+    const f32 mid = audio::head_shadow_coefficient(2000.0f, 8000);
+    const f32 low = audio::head_shadow_coefficient(500.0f, 8000);
+    CHECK(high > mid);
+    CHECK(mid > low);
+    CHECK(low > 0.0f);
+    CHECK(high < 1.0f);
+
+    // Degenerate inputs pass the signal rather than silencing it.
+    CHECK(audio::head_shadow_coefficient(0.0f, 8000) == doctest::Approx(1.0f));
+    CHECK(audio::head_shadow_coefficient(-100.0f, 8000) == doctest::Approx(1.0f));
+    CHECK(audio::head_shadow_coefficient(2000.0f, 0) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a source behind the listener is filtered and an identical one in front is not") {
+    // The acceptance test for the cue: front and behind pan identically (both
+    // centre), so panning cannot tell them apart; the head shadow must. A DC
+    // signal would not show it - the low-pass settles to the same value - so
+    // feed an alternating signal, a high frequency the low-pass attenuates. The
+    // rear copy then comes out measurably smaller while its level (the pan) is
+    // the same.
+    auto clip = mono_clip(8000, [&] {
+        std::vector<f32> s(64);
+        for (usize i = 0; i < s.size(); ++i) {
+            s[i] = (i % 2 == 0) ? 1.0f : -1.0f;
+        }
+        return s;
+    }());
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    params.front_back_enabled = true;
+    params.head_shadow_cutoff_hz = 2000.0f;
+
+    const auto mix_at = [&](const Vec3& position) {
+        audio::Voice voice;
+        voice.clip = clip.get();
+        voice.spatial = true;
+        voice.world_position = position;
+        voice.min_distance = 10.0f; // inside min: attenuation is exactly 1
+        voice.max_distance = 20.0f;
+
+        std::vector<f32> output(64 * 2, 0.0f);
+        static_cast<void>(audio::mix_voices(&voice, 1, output.data(), 64, 2, 8000, params));
+        // Peak of the left channel over the run: the alternating signal's
+        // envelope after the filter.
+        f32 peak = 0.0f;
+        for (usize i = 0; i < 64; ++i) {
+            peak = std::max(peak, std::abs(output[i * 2]));
+        }
+        return peak;
+    };
+
+    const f32 front = mix_at(Vec3{0.0f, 0.0f, -5.0f});
+    const f32 behind = mix_at(Vec3{0.0f, 0.0f, 5.0f});
+
+    // Both are centred (pan 0) - the pan cannot distinguish them.
+    // The front source passes unattenuated by the shadow (its peak is the pan
+    // law's centre times 1); the rear is measurably smaller.
+    CHECK(front > behind);
+    CHECK(behind < front * 0.9f);                     // a real, not marginal, difference
+    CHECK(front == doctest::Approx(std::sqrt(0.5f))); // pan centre, no shadow
+}
+
+TEST_CASE("a source to the side is unchanged by enabling the front/back cue") {
+    // The compatibility guarantee: opting into the cue must not touch a source
+    // level with the ear, whose shadow is exactly zero.
+    auto clip = mono_clip(8000, {1.0f});
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+
+    const auto mix_side = [&](bool front_back) {
+        audio::Voice voice;
+        voice.clip = clip.get();
+        voice.spatial = true;
+        voice.world_position = Vec3{5.0f, 0.0f, 0.0f}; // level, to the right
+        voice.min_distance = 1.0f;
+        voice.max_distance = 20.0f;
+
+        audio::MixParams p = params;
+        p.front_back_enabled = front_back;
+        f32 output[2] = {};
+        static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 2, 8000, p));
+        CHECK(voice.shadow == doctest::Approx(0.0f));
+        return std::array<f32, 2>{output[0], output[1]};
+    };
+
+    const std::array<f32, 2> without = mix_side(false);
+    const std::array<f32, 2> with = mix_side(true);
+
+    CHECK(with[0] == doctest::Approx(without[0]));
+    CHECK(with[1] == doctest::Approx(without[1]));
+}
+
+TEST_CASE("the front/back cue is off by default, so a mix is unchanged") {
+    // The strongest compatibility statement: with nothing set, a source behind
+    // the listener mixes exactly as it did before the cue existed.
+    auto clip = mono_clip(8000, {1.0f, -1.0f, 1.0f, -1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{0.0f, 0.0f, 5.0f}; // directly behind
+    voice.min_distance = 10.0f;
+    voice.max_distance = 20.0f;
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    // front_back_enabled left false.
+
+    f32 output[8] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 4, 2, 8000, params));
+
+    CHECK(voice.shadow == doctest::Approx(0.0f));
+    // Each sample is the clip value times the pan centre; no shadow term.
+    const f32 centre = std::sqrt(0.5f);
+    CHECK(output[0] == doctest::Approx(centre));
+    CHECK(output[2] == doctest::Approx(-centre));
 }
 
 // ---------------------------------------------------------------------------
@@ -1498,7 +1710,7 @@ TEST_CASE("add_streamed_voice adds a mono block to every output channel") {
     const f32 samples[3] = {0.5f, -0.25f, 0.125f};
     f32 output[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     audio::MixParams params;
-    const f32 peak = audio::add_streamed_voice(voice, samples, 3, 3, output, 2, 1.0, params);
+    const f32 peak = audio::add_streamed_voice(voice, samples, 3, 3, output, 2, 1.0, 8000, params);
 
     CHECK(peak == doctest::Approx(0.5f));
     CHECK(output[0] == doctest::Approx(0.5f));
@@ -1516,7 +1728,7 @@ TEST_CASE("add_streamed_voice resamples a block by the rate ratio") {
     const f32 samples[3] = {0.5f, 0.25f, 0.125f};
     f32 output[2] = {0.0f, 0.0f};
     audio::MixParams params;
-    const f32 peak = audio::add_streamed_voice(voice, samples, 3, 2, output, 1, 2.0, params);
+    const f32 peak = audio::add_streamed_voice(voice, samples, 3, 2, output, 1, 2.0, 8000, params);
 
     CHECK(peak == doctest::Approx(0.5f));
     CHECK(output[0] == doctest::Approx(0.5f));
@@ -1531,7 +1743,7 @@ TEST_CASE("add_streamed_voice adds to the existing sum rather than replacing it"
     const f32 samples[1] = {0.25f};
     f32 output[1] = {0.5f}; // a clip voice already contributed here
     audio::MixParams params;
-    static_cast<void>(audio::add_streamed_voice(voice, samples, 1, 1, output, 1, 1.0, params));
+    static_cast<void>(audio::add_streamed_voice(voice, samples, 1, 1, output, 1, 1.0, 8000, params));
     CHECK(output[0] == doctest::Approx(0.75f));
 }
 

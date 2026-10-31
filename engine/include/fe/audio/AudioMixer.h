@@ -108,6 +108,23 @@ struct Voice {
     // effect is. Exposed for diagnostics and tests.
     f32 doppler = 1.0f;
 
+    // --- Head shadow (front/back) ------------------------------------------
+    // The strength of the front/back cue the mixer applied on the last call, in
+    // [0, 1]: 0 for a source in front of or level with the listener, 1 for one
+    // directly behind. 0 when the voice is non-positional, the listener has no
+    // orientation, or the cue is disabled, so the mix is unchanged. Exposed for
+    // diagnostics and tests, like `pan`.
+    f32 shadow = 0.0f;
+
+    // One-pole low-pass state for the head-shadow filter, one per ear. The
+    // filter darkens a rear source - the head shadows a sound behind the ear -
+    // and the state carries that across calls so a steady tone stays dark rather
+    // than re-attacking every frame. Untouched (and left at zero) while `shadow`
+    // is 0, which is the bypass case: the output is then bit-for-bit the
+    // pre-filter sample.
+    f32 shadow_state_left = 0.0f;
+    f32 shadow_state_right = 0.0f;
+
     // --- Streaming ---------------------------------------------------------
     // The channel count of the decoded samples for a streaming voice (a voice
     // whose frames come from an AudioStream rather than an AudioClip). Zero for
@@ -260,6 +277,22 @@ struct MixParams {
     // direction.
     [[nodiscard]] bool has_orientation() const noexcept { return listener_forward.length_squared() > 0.0f; }
 
+    // Whether the front/back head-shadow cue is applied. Off by default, and
+    // only meaningful together with a facing, so a scene authored before this
+    // refinement - and every 2D scene - mixes byte for byte as it did. A game
+    // with an ear direction opts in once and every positional voice gains the
+    // front/back cue; a voice whose `shadow` resolves to 0 is still bypassed, so
+    // opting in does not touch a source in front of or level with the listener.
+    bool front_back_enabled = false;
+
+    // The cutoff of the head-shadow low-pass, in Hz, at full shadow. A source
+    // directly behind the listener is darkened by a one-pole low-pass at this
+    // frequency, mixed in by its shadow strength (1 directly behind, 0 in front,
+    // so the filter fades in as the source swings rearward). The default
+    // (2000 Hz) is the dull, occluded timbre of a sound behind the head while
+    // leaving a front source untouched. A game can lower it for a darker cue.
+    f32 head_shadow_cutoff_hz = 2000.0f;
+
     // The group-bus table. `buses[voice.bus].gain` scales the voice when its bus
     // index is in range. The master bus is *not* in this table: its gain travels
     // in `master_gain`, so there is a single source of truth for the master. An
@@ -318,6 +351,40 @@ struct MixParams {
 // leaves front/back and elevation to a future head-related filter.
 [[nodiscard]] f32 voice_pan(const Voice& voice, const MixParams& params) noexcept;
 
+// The front/back head-shadow strength for a voice, in [0, 1], and recorded on
+// `voice.shadow`.
+//
+// Panning alone cannot tell a source in front from one behind: both project to
+// the same point on the listener's right axis, so both centre. The missing cue
+// is the *head shadow*: the head sits between a rear source and the ears and
+// dulls its high frequencies, while a front source reaches the ears unoccluded.
+// This function computes how much of that shadow to apply - the component of the
+// direction from the listener to the voice along the listener's *backward* axis
+// (-forward). It is 0 for a source in front of or level with the listener, 1 for
+// one directly behind, and rises smoothly between, so a source swung from the
+// side toward the rear darkens as it goes.
+//
+// The value is 0 for a non-positional voice, for a listener with no facing, or
+// when the cue is disabled, so the filter is bypassed and the mix is unchanged.
+// It is total and pure, so it is called directly by the tests.
+[[nodiscard]] f32 shadow_strength(const Voice& voice, const MixParams& params) noexcept;
+
+// The one-pole low-pass coefficient for a head-shadow cutoff at `cutoff_hz`
+// against an output rate of `sample_rate`.
+//
+// A one-pole low-pass `y[n] = y[n-1] + a * (x[n] - y[n-1])` has `a = 1 -
+// exp(-2*pi*fc/fs)`: near 1 when the cutoff is a large fraction of the sample
+// rate (little smoothing, so the filter passes nearly everything) and small when
+// the cutoff is low (heavy smoothing, so it darkens). The mixer resolves this
+// once per voice from the shadow cutoff; a stronger shadow mixes more of the
+// filter's output in (see shadow_strength), so a smaller coefficient is a darker
+// sound.
+//
+// Total and pure: a non-positive sample rate or cutoff returns 1 (no filtering),
+// so a degenerate configuration passes the signal rather than silencing it, and
+// the result is clamped to [0, 1] so the filter is always stable.
+[[nodiscard]] f32 head_shadow_coefficient(f32 cutoff_hz, u32 sample_rate) noexcept;
+
 // Adds one streaming voice's already-decoded interleaved samples to `output`,
 // which is *not* cleared and must already hold the clip voices' contribution:
 // mix_voices applies the master gain over the whole sum, so a streaming voice is
@@ -327,10 +394,12 @@ struct MixParams {
 // `ratio = stream_rate / output_rate` - the same nearest-sample resampling
 // mix_voices applies to a clip. Samples are scaled by voice_level() and the
 // master gain. The stream cursor is owned by the caller, so nothing is advanced
-// here. Returns the peak absolute sample in `output` after the addition, for the
-// caller's metering.
+// here. `output_sample_rate` is needed only to resolve the head-shadow filter's
+// coefficient for this voice. Returns the peak absolute sample in `output` after
+// the addition, for the caller's metering.
 [[nodiscard]] f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 frames, f32* output,
-                                     u32 out_channels, f64 ratio, const MixParams& params = {}) noexcept;
+                                     u32 out_channels, f64 ratio, u32 output_sample_rate,
+                                     const MixParams& params = {}) noexcept;
 
 // Mixes `voice_count` voices into `output` and advances their read positions.
 //

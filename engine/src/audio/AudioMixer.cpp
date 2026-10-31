@@ -78,6 +78,39 @@ f32 voice_pan(const Voice& voice, const MixParams& params) noexcept {
     return (offset / distance).dot(right / right_len);
 }
 
+f32 shadow_strength(const Voice& voice, const MixParams& params) noexcept {
+    // A non-positional voice has no place in space; a listener with no facing
+    // has no front or back; and the cue is opt-in. Each of those leaves the
+    // filter bypassed, so the mix is unchanged.
+    if (!voice.spatial || !params.front_back_enabled || !params.has_orientation()) {
+        return 0.0f;
+    }
+
+    const Vec3 forward = params.listener_forward.normalized();
+    const Vec3 offset = voice.world_position - params.listener_position;
+    const f32 distance = offset.length();
+    if (distance <= 0.0f) {
+        // At the ear there is no direction to be in front of or behind.
+        return 0.0f;
+    }
+
+    // How far along the backward axis (-forward) the source sits: 1 directly
+    // behind, 0 to the side or in front. Clamped at 0 so a front source is never
+    // filtered - only the rear half casts a head shadow.
+    const f32 behind = -(offset / distance).dot(forward);
+    return behind > 0.0f ? behind : 0.0f;
+}
+
+f32 head_shadow_coefficient(f32 cutoff_hz, u32 sample_rate) noexcept {
+    // A non-positive rate or cutoff has no meaningful pole; pass the signal
+    // rather than silencing it.
+    if (cutoff_hz <= 0.0f || sample_rate == 0) {
+        return 1.0f;
+    }
+    const f32 coefficient = 1.0f - std::exp(-2.0f * kPi * cutoff_hz / static_cast<f32>(sample_rate));
+    return std::clamp(coefficient, 0.0f, 1.0f);
+}
+
 f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept {
     // Full gain at or inside min_distance, silence at or past max_distance. The
     // curve in between is the inverse-distance falloff rescaled so it reaches
@@ -109,10 +142,12 @@ f32 voice_level(Voice& voice, const MixParams& params) noexcept {
     voice.attenuation = 1.0f;
     voice.pan = 0.0f;
     voice.cone_gain = 1.0f;
+    voice.shadow = 0.0f;
     if (voice.spatial) {
         const Vec3 offset = voice.world_position - params.listener_position;
         voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
         voice.pan = voice_pan(voice, params);
+        voice.shadow = shadow_strength(voice, params);
 
         // Directivity: the angle between the source's cone axis and the direction
         // from the source to the listener. A zero cone axis is "no cone" (the
@@ -196,8 +231,27 @@ f32 doppler_factor(f32 speed_of_sound, const Vec3& source_position, const Vec3& 
     return std::clamp(factor, 0.25f, 4.0f);
 }
 
+// Applies the head-shadow low-pass to one already-scaled sample, per ear.
+//
+// `strength` is the front/back shadow in [0, 1] (see shadow_strength). A zero
+// strength is the bypass: the input is returned untouched and the filter state is
+// left alone, so a source in front of or level with the listener - and every mix
+// before this cue existed - comes out bit for bit as it went in. A positive
+// strength mixes in a one-pole low-pass at a cutoff that falls as the strength
+// rises, so a rear source is progressively darkened; the filter's own state
+// carries the tail across calls. A source exactly behind keeps a real (if dull)
+// signal, never silence, so the cue is a timbre change rather than a level one
+// that would double distance attenuation.
+f32 head_shadow_sample(f32 sample, f32 strength, f32 coefficient, f32& state) noexcept {
+    if (strength <= 0.0f) {
+        return sample;
+    }
+    state += coefficient * (sample - state);
+    return sample + strength * (state - sample);
+}
+
 f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 frames, f32* output, u32 out_channels,
-                       f64 ratio, const MixParams& params) noexcept {
+                       f64 ratio, u32 output_sample_rate, const MixParams& params) noexcept {
     if (samples == nullptr || output == nullptr || source_frames == 0 || frames == 0 || out_channels == 0) {
         return 0.0f;
     }
@@ -227,6 +281,12 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
     const f32 left_gain = pan_active ? pan_gain(voice.pan, 0) : 1.0f;
     const f32 right_gain = pan_active ? pan_gain(voice.pan, 1) : 1.0f;
 
+    // The head-shadow cutoff for this voice, resolved once: a stronger shadow is
+    // a lower cutoff is a smaller coefficient is a darker sound. Bypassed when
+    // the voice's shadow is 0 (the front half), in which case the filter is
+    // never touched.
+    const f32 shadow_coefficient = head_shadow_coefficient(params.head_shadow_cutoff_hz, output_sample_rate);
+
     for (u32 f = 0; f < frames; ++f) {
         const u64 source_frame = static_cast<u64>(static_cast<f64>(f) * ratio);
         if (source_frame >= source_frames) {
@@ -237,7 +297,10 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
         const usize base = static_cast<usize>(f) * out_channels;
         for (u32 c = 0; c < out_channels; ++c) {
             const f32 channel_gain = c == 0 ? left_gain : (c == 1 ? right_gain : 1.0f);
-            output[base + c] += block_sample(samples, source_channels, source_frame, c) * level * channel_gain;
+            const f32 raw = block_sample(samples, source_channels, source_frame, c) * level * channel_gain;
+            f32& state =
+                c == 0 ? voice.shadow_state_left : (c == 1 ? voice.shadow_state_right : voice.shadow_state_left);
+            output[base + c] += head_shadow_sample(raw, voice.shadow, shadow_coefficient, state);
         }
     }
 
@@ -287,6 +350,10 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         const f32 left_gain = pan_active ? pan_gain(voice.pan, 0) : 1.0f;
         const f32 right_gain = pan_active ? pan_gain(voice.pan, 1) : 1.0f;
 
+        // The head-shadow cutoff for this voice, resolved once (see the streamed
+        // path). A zero shadow bypasses the filter entirely.
+        const f32 shadow_coefficient = head_shadow_coefficient(params.head_shadow_cutoff_hz, output_sample_rate);
+
         const AudioClip& clip = *voice.clip;
         const u64 clip_frames = clip.frame_count();
         if (clip_frames == 0) {
@@ -330,7 +397,10 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
                 // centred (pan_gain returns 1 for it), and a mono output never
                 // reaches here with pan_active true.
                 const f32 channel_gain = c == 0 ? left_gain : (c == 1 ? right_gain : 1.0f);
-                output[base + c] += clip_sample(clip, read_frame, c) * level * channel_gain;
+                const f32 raw = clip_sample(clip, read_frame, c) * level * channel_gain;
+                f32& state =
+                    c == 0 ? voice.shadow_state_left : (c == 1 ? voice.shadow_state_right : voice.shadow_state_left);
+                output[base + c] += head_shadow_sample(raw, voice.shadow, shadow_coefficient, state);
             }
             voice.position += ratio;
             ++voice.frames_played;

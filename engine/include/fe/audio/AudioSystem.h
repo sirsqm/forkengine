@@ -124,6 +124,23 @@ public:
     void set_doppler_enabled(bool enabled) noexcept { doppler_enabled_ = enabled; }
     [[nodiscard]] bool doppler_enabled() const noexcept { return doppler_enabled_; }
 
+    // Whether the front/back head-shadow cue is applied. Off by default, so
+    // every existing scene mixes byte for byte: a game with a real ear direction
+    // opts in once, and then every positional voice behind the listener is
+    // darkened (a source in front or level with the listener is untouched, since
+    // its shadow resolves to zero). Meaningful only with a listener orientation;
+    // a scene with no facing has no front or back and is unaffected either way.
+    void set_front_back_enabled(bool enabled) noexcept { front_back_enabled_ = enabled; }
+    [[nodiscard]] bool front_back_enabled() const noexcept { return front_back_enabled_; }
+
+    // The cutoff, in Hz, of the head-shadow low-pass at full shadow: a source
+    // directly behind the listener is darkened by a one-pole low-pass at this
+    // frequency, and the cutoff rises toward the front. Lower is a stronger,
+    // duller cue. The default (2000) is a clearly occluded rear source; ignored
+    // while the cue is off.
+    void set_head_shadow_cutoff(f32 cutoff_hz) noexcept { head_shadow_cutoff_hz_ = cutoff_hz; }
+    [[nodiscard]] f32 head_shadow_cutoff() const noexcept { return head_shadow_cutoff_hz_; }
+
     // The gain of the master bus, applied to the summed output. 1 is unity.
     void set_master_gain(f32 gain) noexcept { master_gain_ = gain; }
     [[nodiscard]] f32 master_gain() const noexcept { return master_gain_; }
@@ -203,6 +220,8 @@ private:
     Vec3 listener_velocity_{};
     f32 speed_of_sound_ = 343.0f;
     bool doppler_enabled_ = false;
+    bool front_back_enabled_ = false;
+    f32 head_shadow_cutoff_hz_ = 2000.0f;
     f32 master_gain_ = 1.0f;
     std::vector<AudioBus> buses_;
 

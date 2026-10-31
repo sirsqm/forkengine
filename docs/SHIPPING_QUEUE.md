@@ -791,6 +791,15 @@ player cannot tell them apart.
 different output (a shadow/comb filter keyed on the elevation angle), while a
 source to the side is unchanged from the pre-filter mix.
 
+Landed as a per-voice head-shadow low-pass in the pure mixer
+([ADR-0125](adr/0125-audio-head-shadow-front-back.md)). `shadow_strength` is the
+listener-to-source direction's component along the listener's backward axis, so
+it is 0 in front, 1 directly behind, and the cosine between; the mixer resolves a
+one-pole coefficient from `head_shadow_cutoff_hz` and mixes the filtered signal
+in by that strength, so the side (strength 0) is a bit-for-bit bypass and the
+filter state carries the tail across calls. `AudioSystem::set_front_back_enabled`
+opts a scene in; it is off by default, so an existing mix is unchanged.
+
 ### `pack-compression`
 
 The `fork_pack` polish row (ADR-0030) leaves compression open, so a shipped pack
