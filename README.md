@@ -213,8 +213,12 @@ archive is the installed engine for building against — it also contains the
 editor shell (`bin/fork_editor_shell`), which needs a display and a project to
 open. `SHA256SUMS` covers every published file.
 
-The Windows zip is self-contained: the build links the C runtime statically, so
-the game runs on a clean machine with no VC++ redistributable and no compiler. A
+The Windows zip is self-contained: the redistributable C runtime DLLs are
+installed beside the binaries and carried in the archive, so the game runs on a
+clean machine with no VC++ redistributable and no compiler. (The runtime is left
+*shared* rather than linked statically, because a gameplay module is a DLL that
+exchanges `std::` objects with the engine and needs one heap — see
+[ADR-0122](docs/adr/0122-msvc-runtime-shared-and-bundled.md).) A
 game that must run where there is no display — a dedicated server, or a CI check
 of a shipped build — can be started with `fork_breakout --null-window --headless
 N`, which selects the null platform backend ([ADR-0041](docs/adr/0041-platform-contract-and-null-backend.md)).

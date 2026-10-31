@@ -190,6 +190,18 @@ set(FE_SDK_STAGE "${FE_OUT_DIR}/stage-sdk/${FE_STEM}")
 file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-sdk")
 file(MAKE_DIRECTORY "${FE_SDK_STAGE}")
 fe_run("${CMAKE_COMMAND}" --install "${FE_BUILD_DIR}" ${FE_INSTALL_CONFIG_ARG} --prefix "${FE_SDK_STAGE}")
+
+# Keep the redistributable MSVC runtime DLLs the install put under `bin/` before
+# the SDK stage is deleted, so the game archive can carry them beside the game
+# binary too (ADR-0122). `bin` is GNUInstallDirs' Windows default and the
+# directory the DLL-search rule needs; a non-Windows install has no DLLs here.
+file(REMOVE_RECURSE "${FE_OUT_DIR}/msvc-runtime")
+file(GLOB FE_INSTALLED_CRT_DLLS "${FE_SDK_STAGE}/bin/*.dll")
+if(FE_INSTALLED_CRT_DLLS)
+  file(MAKE_DIRECTORY "${FE_OUT_DIR}/msvc-runtime")
+  file(COPY ${FE_INSTALLED_CRT_DLLS} DESTINATION "${FE_OUT_DIR}/msvc-runtime")
+endif()
+
 fe_run("${CMAKE_COMMAND}" -E tar "${FE_TAR_OP}" "${FE_SDK_ARCHIVE}" "--format=${FE_ARCHIVE_FORMAT}" "${FE_STEM}"
        WORKING_DIRECTORY "${FE_OUT_DIR}/stage-sdk")
 file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-sdk")
@@ -213,6 +225,15 @@ if(NOT EXISTS "${FE_BIN_DIR}/${FE_GAME_BINARY}")
   message(FATAL_ERROR "no ${FE_GAME_BINARY} in ${FE_BIN_DIR}; build with FE_BUILD_EXAMPLES=ON")
 endif()
 file(COPY "${FE_BIN_DIR}/${FE_GAME_BINARY}" DESTINATION "${FE_GAME_STAGE}")
+# The game is linked against the shared MSVC runtime, so the redistributable CRT
+# DLLs must sit beside it or the zip fails to start on a machine with no Visual
+# C++ redistributable -- the exact clean-machine failure the archive exists to
+# avoid (ADR-0122). They were captured from the SDK install above; a non-Windows
+# tree has none.
+file(GLOB FE_GAME_CRT_DLLS "${FE_OUT_DIR}/msvc-runtime/*.dll")
+if(FE_GAME_CRT_DLLS)
+  file(COPY ${FE_GAME_CRT_DLLS} DESTINATION "${FE_GAME_STAGE}")
+endif()
 foreach(_dir assets scenes)
   file(COPY "${CMAKE_CURRENT_LIST_DIR}/../examples/breakout/${_dir}"
        DESTINATION "${FE_GAME_STAGE}/examples/breakout")
@@ -256,7 +277,7 @@ Fork Engine is MIT licensed; see LICENSE.
 
 fe_run("${CMAKE_COMMAND}" -E tar "${FE_TAR_OP}" "${FE_GAME_ARCHIVE}" "--format=${FE_ARCHIVE_FORMAT}" "${FE_STEM}"
        WORKING_DIRECTORY "${FE_OUT_DIR}/stage-game")
-file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-game")
+file(REMOVE_RECURSE "${FE_OUT_DIR}/stage-game" "${FE_OUT_DIR}/msvc-runtime")
 fe_assert_archive_format("${FE_GAME_ARCHIVE}")
 
 # ---------------------------------------------------------------------------

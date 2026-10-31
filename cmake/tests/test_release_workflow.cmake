@@ -17,10 +17,10 @@
 #
 # Run by tests/CMakeLists.txt:
 #   cmake -DRELEASE_WORKFLOW=<path> -DPACKAGE_SCRIPT=<path> \
-#         -DSETTINGS_SCRIPT=<path> -DDEPENDENCIES_SCRIPT=<path> \
+#         -DSETTINGS_SCRIPT=<path> -DINSTALL_SCRIPT=<path> \
 #         -DCI_WORKFLOW=<path> -P cmake/tests/test_release_workflow.cmake
 
-foreach(_required RELEASE_WORKFLOW PACKAGE_SCRIPT SETTINGS_SCRIPT DEPENDENCIES_SCRIPT CI_WORKFLOW)
+foreach(_required RELEASE_WORKFLOW PACKAGE_SCRIPT SETTINGS_SCRIPT INSTALL_SCRIPT CI_WORKFLOW)
   if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
     message(FATAL_ERROR "${_required} must be set (see the header of this file)")
   endif()
@@ -194,21 +194,38 @@ if(NOT _package MATCHES "FE_SMOKE_NULL_WINDOW")
     "no GL context.")
 endif()
 
-# The static CRT is what makes the zip self-contained on a clean machine: the
-# DLL runtime needs the VC++ redistributable, which a player may not have. Assert
-# both the runtime choice and that GLFW is built with it, because a mismatch
-# between our targets and the dependency is undefined behaviour, not a link error.
+# The Windows zip is self-contained, but *not* by linking the CRT statically: a
+# gameplay module is a DLL that exchanges `std::` objects with the host, so the
+# runtime must be shared (ADR-0061), and a static CRT hangs the module tests on
+# Windows (ADR-0122). Self-containment comes from installing the redistributable
+# runtime DLLs beside the binaries instead. Assert both halves, because each is a
+# decision that a later change could quietly reverse: a static CRT reintroduces
+# the hang, and dropping the runtime install reintroduces the clean-machine
+# `VCRUNTIME140.dll` failure the zip exists to avoid.
 file(READ "${SETTINGS_SCRIPT}" _settings)
-if(NOT _settings MATCHES "CMAKE_MSVC_RUNTIME_LIBRARY")
+if(_settings MATCHES "CMAKE_MSVC_RUNTIME_LIBRARY")
   message(FATAL_ERROR
-    "the build no longer links the MSVC runtime statically; the Windows zip would "
-    "then depend on the VC++ redistributable being installed on a clean machine.")
+    "the build links the MSVC runtime statically again; that gives a gameplay "
+    "module and the host separate heaps, and the module tests hang on Windows "
+    "(ADR-0122). Keep the runtime shared and bundle the redistributable DLLs.")
 endif()
-file(READ "${DEPENDENCIES_SCRIPT}" _deps)
-if(NOT _deps MATCHES "USE_MSVC_RUNTIME_LIBRARY_DLL OFF")
+file(READ "${INSTALL_SCRIPT}" _install)
+if(NOT _install MATCHES "fe_install_msvc_runtime")
   message(FATAL_ERROR
-    "GLFW is no longer built with the static MSVC runtime while our targets are; "
-    "mixing /MT and /MD across a memory boundary is undefined behaviour.")
+    "the install no longer carries the redistributable MSVC runtime; the Windows "
+    "zip would then need the VC++ redistributable installed on a clean machine "
+    "(ADR-0122).")
+endif()
+if(NOT _install MATCHES "InstallRequiredSystemLibraries")
+  message(FATAL_ERROR
+    "the MSVC runtime install no longer asks the toolchain which DLLs it needs; a "
+    "hand-written list is the fragility ADR-0118 rejected.")
+endif()
+if(NOT _package MATCHES "FE_GAME_CRT_DLLS")
+  message(FATAL_ERROR
+    "the game archive no longer carries the MSVC runtime DLLs beside the game; "
+    "the zip would fail to start on a machine with no VC++ redistributable "
+    "(ADR-0122).")
 endif()
 
 # A downloadable build has to say which version it is (ADR-0094). The packaging

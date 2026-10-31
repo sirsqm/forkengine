@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10
+- **Superseded in part by:** [ADR-0122](0122-msvc-runtime-shared-and-bundled.md).
+  Decision 1 (the static CRT) was reversed there: linking the runtime statically
+  broke the gameplay-module boundary and hung the Windows module tests. The rest
+  of this record — the zip, the null-backend smoke, and the CI job — stands.
 - **Related:** [ADR-0041](0041-platform-contract-and-null-backend.md),
   [ADR-0102](0102-downloadable-release-builds.md),
   [ADR-0103](0103-linux-appimage.md)

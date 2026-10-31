@@ -487,11 +487,14 @@ machine.
 
 Landed as the Windows platform of `packaging/package_release.cmake`, which
 already writes the zip ([ADR-0102](adr/0102-downloadable-release-builds.md)). Two
-gaps closed the item. The build now links the MSVC runtime statically, so the zip
-is self-contained and needs no VC++ redistributable on a clean machine; and CI
-packages and *plays* the zip on every push — the same script the release runs,
-with the game started against the null backend (`--null-window`, ADR-0041) so a
-headless runner with no GL context still exercises the whole artifact. See
+gaps closed the item. The zip is self-contained and needs no VC++ redistributable
+on a clean machine — the redistributable C runtime DLLs are installed beside the
+binaries and carried in the archive, with the runtime kept *shared* because a
+gameplay module exchanges `std::` objects with the host ([ADR-0122](adr/0122-msvc-runtime-shared-and-bundled.md),
+which supersedes the static-CRT approach first tried in [ADR-0118](adr/0118-windows-zip.md));
+and CI packages and *plays* the zip on every push — the same script the release
+runs, with the game started against the null backend (`--null-window`, ADR-0041)
+so a headless runner with no GL context still exercises the whole artifact. See
 [ADR-0118](adr/0118-windows-zip.md).
 
 ### `macos-app-bundle`

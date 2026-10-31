@@ -123,10 +123,11 @@ rather than editing it.
 | [0115](0115-ios-export-template.md) | The iOS export template | Accepted |
 | [0116](0116-prebuilt-runtime-archive.md) | A prebuilt runtime archive for `fork_export --player` | Accepted |
 | [0117](0117-path-keyed-references-resolve-against-the-project.md) | A path-keyed reference resolves against the project, not the working directory | Accepted |
-| [0118](0118-windows-zip.md) | A self-contained Windows zip, played in CI with the null backend | Accepted |
+| [0118](0118-windows-zip.md) | A self-contained Windows zip, played in CI with the null backend | Accepted (decision 1 superseded by [0122](0122-msvc-runtime-shared-and-bundled.md)) |
 | [0119](0119-macos-app-bundle.md) | A macOS app bundle and DMG, smoke-run from the mounted image | Accepted |
 | [0120](0120-gamepad-input-seam.md) | The gamepad input seam | Accepted |
 | [0121](0121-3d-authoring-view.md) | The 3D authoring view | Accepted |
+| [0122](0122-msvc-runtime-shared-and-bundled.md) | The MSVC runtime stays shared, and the zip bundles it | Accepted |
 
 ## Format
 

@@ -134,6 +134,11 @@ if(FE_INSTALL)
   install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
   install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION "${CMAKE_INSTALL_DATADIR}/fork-engine")
 
+  # The redistributable MSVC runtime, beside the binaries, so a Windows tree
+  # runs with no Visual C++ redistributable installed (ADR-0122). A no-op off
+  # MSVC.
+  fe_install_msvc_runtime()
+
   # The SDK payload: dependency headers and archives plus a CMake package config,
   # so an installed tree is linkable and not merely runnable (ADR-0102). Called
   # here, after every dependency target exists, so it can see them.

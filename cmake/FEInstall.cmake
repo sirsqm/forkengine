@@ -74,3 +74,29 @@ function(fe_install_header_tree dir)
     PATTERN "*.hpp"
   )
 endfunction()
+
+# Installs the redistributable MSVC runtime DLLs beside the executables, so an
+# installed tree -- and the Windows zip staged from it -- runs on a machine with
+# no Visual C++ redistributable installed (ADR-0122). This is the counterpart of
+# leaving the runtime shared (`/MD`): the engine must not link the CRT
+# statically, because a gameplay module is a DLL that exchanges `std::` objects
+# with the host (ADR-0061), but the download still has to be self-contained.
+#
+# The list is not hand-written. `InstallRequiredSystemLibraries` asks the
+# toolchain for the exact DLLs this compiler needs and which build type needs
+# them, which is the fragility a hand-maintained list has and ADR-0118 rejected
+# it for. The UCRT (`ucrtbase.dll` and its api-ms-win-crt-* forwarders) is
+# included too, because app-local deployment needs it on a machine that has no
+# Universal CRT, which is the same clean-machine case.
+#
+# It installs the *release* runtime, which is what a download is built from; a
+# Debug tree needs the non-redistributable debug CRT, so it is not a shipping
+# configuration and this deliberately does not try to make it one.
+function(fe_install_msvc_runtime)
+  if(NOT FE_INSTALL OR NOT MSVC)
+    return()
+  endif()
+  set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  include(InstallRequiredSystemLibraries)
+endfunction()

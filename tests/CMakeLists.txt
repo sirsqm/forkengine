@@ -182,7 +182,7 @@ add_test(
     -DRELEASE_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/release.yml
     -DPACKAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_release.cmake
     -DSETTINGS_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/FESettings.cmake
-    -DDEPENDENCIES_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/FEDependencies.cmake
+    -DINSTALL_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/FEInstall.cmake
     -DCI_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/ci.yml -P
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_release_workflow.cmake
 )

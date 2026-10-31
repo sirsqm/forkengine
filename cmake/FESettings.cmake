@@ -14,16 +14,17 @@ if(MSVC)
     WIN32_LEAN_AND_MEAN
   )
 
-  # Link the C runtime statically (docs/SHIPPING_QUEUE.md, `windows-zip`). The
-  # Windows download is a zip a player unzips and runs, and the DLL runtime
-  # (`/MD`, MSVC's default) makes it depend on the VC++ redistributable being
-  # installed, which a clean machine may not have -- the game then fails to start
-  # with a missing `VCRUNTIME140.dll` and nothing in the archive is wrong. The
-  # static runtime folds the CRT into the binary, so the zip is self-contained.
-  # This must match the runtime the dependencies are built with: a target built
-  # `/MT` that frees memory allocated by one built `/MD` is undefined, so GLFW is
-  # told to use the static runtime too (see FEDependencies.cmake).
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  # The MSVC runtime is deliberately left at its default (the DLL runtime,
+  # `/MD`). A gameplay module is a DLL that exchanges `std::` types and the
+  # Script vtable with the executable, so the C++ runtime must be *shared*
+  # between them (see cmake/FEModules.cmake): a statically linked runtime gives
+  # the module and the host separate heaps, and a `std::string` or
+  # `std::function` allocated on one side and freed on the other corrupts the
+  # debug heap -- which aborts and hangs a headless run rather than failing a
+  # test. The Windows zip stays self-contained a different way: the
+  # redistributable CRT DLLs are installed beside the binaries and carried in
+  # the archive (ADR-0122, superseding the static-runtime decision of
+  # ADR-0118).
 endif()
 
 # NOTE: warning flags are deliberately NOT set here with add_compile_options().
