@@ -437,4 +437,100 @@ bool contains_shape(ShapeType type, const Aabb2D& box, const Circle2D& circle, c
     return type == ShapeType::Circle ? contains(circle, point) : contains(box, point);
 }
 
+Sweep2D sweep_shape(const Aabb2D& moving_bounds, const Vec2& displacement, const Aabb2D& target) noexcept {
+    // Minkowski slab test. Shrinking the moving shape to its centre point and
+    // growing the target by the moving half-extents turns "does the moving box
+    // overlap the target during the sweep" into "does the moving *point* cross
+    // the expanded target" -- a ray cast against an AABB, which is exact.
+    const Aabb2D expanded{target.center, target.half_extent + moving_bounds.half_extent};
+
+    // The point is already inside the expanded box: the shapes overlap at the
+    // start of the sweep, so the contact time is zero. The normal is chosen on
+    // the axis of least penetration, which is the direction that separates them
+    // with the smallest push -- the same choice the discrete solver makes.
+    if (contains(expanded, moving_bounds.center)) {
+        const f32 dx_left = moving_bounds.center.x - expanded.min_x();
+        const f32 dx_right = expanded.max_x() - moving_bounds.center.x;
+        const f32 dy_bottom = moving_bounds.center.y - expanded.min_y();
+        const f32 dy_top = expanded.max_y() - moving_bounds.center.y;
+        const f32 min_x = std::min(dx_left, dx_right);
+        const f32 min_y = std::min(dy_bottom, dy_top);
+        Sweep2D overlap;
+        overlap.hit = true;
+        overlap.time = 0.0f;
+        if (min_x <= min_y) {
+            overlap.normal = Vec2{dx_left < dx_right ? -1.0f : 1.0f, 0.0f};
+        } else {
+            overlap.normal = Vec2{0.0f, dy_bottom < dy_top ? -1.0f : 1.0f};
+        }
+        return overlap;
+    }
+
+    // Entry times per axis. A zero displacement component means the point never
+    // moves on that axis, so it can only be inside the slab for the whole sweep
+    // (handled by the containment test above) or never; treat it as an infinite
+    // entry time so it never becomes the limiting axis.
+    f32 t_enter = 0.0f;
+    int enter_axis = -1;
+    f32 enter_sign = 0.0f;
+    const f32 center_axis[2] = {moving_bounds.center.x, moving_bounds.center.y};
+    const f32 move_axis[2] = {displacement.x, displacement.y};
+    const f32 min_axis[2] = {expanded.min_x(), expanded.min_y()};
+    const f32 max_axis[2] = {expanded.max_x(), expanded.max_y()};
+
+    for (int axis = 0; axis < 2; ++axis) {
+        const f32 d = move_axis[axis];
+        if (std::abs(d) < kDirectionEpsilon) {
+            continue; // parallel to this slab and not inside it: cannot enter
+        }
+        const f32 inv = 1.0f / d;
+        f32 t0 = (min_axis[axis] - center_axis[axis]) * inv;
+        f32 t1 = (max_axis[axis] - center_axis[axis]) * inv;
+        // The face the point enters through: the near slab in the direction of
+        // travel. Track its sign for the normal.
+        f32 near_sign = -1.0f;
+        if (t0 > t1) {
+            std::swap(t0, t1);
+            near_sign = 1.0f;
+        }
+        if (t0 > t_enter) {
+            t_enter = t0;
+            enter_axis = axis;
+            enter_sign = near_sign;
+        }
+    }
+
+    if (enter_axis < 0 || t_enter > 1.0f || t_enter < 0.0f) {
+        return Sweep2D{}; // never enters within the sweep
+    }
+
+    // Confirm the entry is not past the exit on the other axis: the point must
+    // be inside both slabs at t_enter.
+    for (int axis = 0; axis < 2; ++axis) {
+        const f32 d = move_axis[axis];
+        if (std::abs(d) < kDirectionEpsilon) {
+            continue;
+        }
+        const f32 inv = 1.0f / d;
+        const f32 t0 = (min_axis[axis] - center_axis[axis]) * inv;
+        const f32 t1 = (max_axis[axis] - center_axis[axis]) * inv;
+        const f32 t_exit = std::max(t0, t1);
+        if (t_exit < t_enter) {
+            return Sweep2D{}; // enters one slab after leaving another
+        }
+    }
+
+    Sweep2D hit;
+    hit.hit = true;
+    hit.time = t_enter;
+    // The normal points from the target back towards the moving shape: opposite
+    // the travel direction along the axis of entry.
+    if (enter_axis == 0) {
+        hit.normal = Vec2{enter_sign, 0.0f};
+    } else {
+        hit.normal = Vec2{0.0f, enter_sign};
+    }
+    return hit;
+}
+
 } // namespace fe::physics2d

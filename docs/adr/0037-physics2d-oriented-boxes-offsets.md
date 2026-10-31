@@ -130,8 +130,11 @@ origin while its surface is where the offset puts it.
   projections instead of two interval tests). It is still constant per pair, and
   the axis-aligned case pays it too because it routes through the oriented test.
   The extra cost is a handful of multiplies per candidate pair.
-- **A rotated box is not swept.** Fast rotation can still tunnel; continuous
-  collision detection remains the next refinement and is not in this cut.
+- **A rotated box is not swept.** The continuous pass (added after this record;
+  see below) sweeps the axis-aligned *bounds* of the moving shape, so it is
+  exact for a translating axis-aligned box and conservative for a rotated one or
+  a circle. Fast *rotation* on its own still tunnels; sweeping the angular
+  motion is a further refinement.
 - **A circle's shape does not depend on rotation**, so a rotated circle only
   moves by its offset. There is no oriented ellipse or capsule; those are not
   requested and are not added speculatively.
@@ -163,6 +166,11 @@ origin while its surface is where the offset puts it.
   not rejected: the conservative axis-aligned cell is correct and simple, and a
   tighter partition is an optimisation to make only when a profile asks for it
   (ADR-0017).
-- **Continuous collision detection in the same change.** Deferred: it is an
-  independent refinement with its own tests and its own trade-offs, and this
-  change should be reviewable on its own.
+- **Continuous collision detection in the same change.** Deferred at the time,
+  then landed separately as `Physics2DSystem::apply_continuous_collisions` and
+  `sweep_shape` (`Geometry.h`): it is an independent refinement with its own
+  tests and its own trade-offs, and this change should be reviewable on its own.
+  It sweeps a fast body's motion against static geometry and clamps it to the
+  first touch, so a bullet cannot cross a thin wall in one step; a contact that
+  already exists at the start of the step is left to the discrete solver, so a
+  resting or sliding body is unaffected.

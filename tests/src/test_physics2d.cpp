@@ -1827,3 +1827,108 @@ TEST_CASE("friction combines as a geometric mean, so both surfaces must be rough
     // solver's iteration count, so this asserts the direction, not a number.)
     CHECK(body->velocity.x < 100.0f);
 }
+
+// ---------------------------------------------------------------------------
+// Continuous collision detection (ADR-0037's remaining refinement): a fast body
+// must not tunnel through a thin static wall between two steps.
+// ---------------------------------------------------------------------------
+
+// A thin static wall: a tall, narrow box collider with no rigid body. A body
+// moving fast along x would cross it entirely within one step.
+Node* add_thin_wall(Scene& scene, f32 x, f32 half_thickness, f32 half_height) {
+    Node* node = scene.create_node("Wall");
+    auto* collider = node->add_component<physics2d::Collider2D>();
+    collider->shape = physics2d::ShapeType::Box;
+    collider->half_extent = Vec2{half_thickness, half_height};
+    node->transform().position = Vec3{x, 0.0f, 0.0f};
+    return node;
+}
+
+TEST_CASE("sweep_shape reports the first touch time along the motion") {
+    // A one-unit box moving right by ten units towards a target centred at
+    // x = 5. The moving half-extent is 0.5, the target's is 0.5, so the surfaces
+    // touch when the centres are one unit apart: the mover's centre reaches
+    // x = 4, which is 4 units of the 10-unit motion, i.e. t = 0.4.
+    const physics2d::Aabb2D mover = box(0.0f, 0.0f, 0.5f, 0.5f);
+    const physics2d::Aabb2D target = box(5.0f, 0.0f, 0.5f, 0.5f);
+    const physics2d::Sweep2D sweep = physics2d::sweep_shape(mover, Vec2{10.0f, 0.0f}, target);
+
+    REQUIRE(sweep.hit);
+    CHECK(sweep.time == doctest::Approx(0.4f));
+    // The normal points back towards the mover: -x.
+    CHECK(sweep.normal.x == doctest::Approx(-1.0f));
+    CHECK(sweep.normal.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("sweep_shape misses a target the motion never reaches") {
+    const physics2d::Aabb2D mover = box(0.0f, 0.0f, 0.5f, 0.5f);
+    const physics2d::Aabb2D target = box(5.0f, 0.0f, 0.5f, 0.5f);
+    // A short motion that stops well short of the target.
+    const physics2d::Sweep2D sweep = physics2d::sweep_shape(mover, Vec2{1.0f, 0.0f}, target);
+    CHECK_FALSE(sweep.hit);
+}
+
+TEST_CASE("sweep_shape reports an overlap at the start as time zero") {
+    const physics2d::Aabb2D mover = box(0.0f, 0.0f, 0.5f, 0.5f);
+    const physics2d::Aabb2D target = box(0.25f, 0.0f, 0.5f, 0.5f);
+    const physics2d::Sweep2D sweep = physics2d::sweep_shape(mover, Vec2{10.0f, 0.0f}, target);
+    REQUIRE(sweep.hit);
+    CHECK(sweep.time == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a fast body is stopped by a thin wall it would tunnel through") {
+    Scene scene;
+    // A wall a hair thick at x = 5. A bullet moving at 600 units/s crosses 10
+    // units in one 1/60 s step, far past the wall, so the discrete pass alone
+    // would let it through.
+    add_thin_wall(scene, 5.0f, 0.05f, 5.0f);
+    Node* bullet = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.1f, 1.0f);
+    auto* body = bullet->get_component<physics2d::RigidBody2D>();
+    body->velocity = Vec2{600.0f, 0.0f};
+    body->affected_by_gravity = false;
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, 0.0f};
+
+    bool clamped = false;
+    for (int i = 0; i < 3; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+        clamped = clamped || physics.continuous_hit_count() > 0;
+    }
+
+    // The bullet was clamped at the wall and did not appear on the far side.
+    CHECK(clamped);
+    CHECK(bullet->transform().position.x < 5.0f);
+    // It is at the wall's near surface, not short of it or through it: the wall
+    // face is at x = 4.95 and the bullet's half-width is 0.1, so its centre
+    // rests at 4.85.
+    CHECK(bullet->transform().position.x > 4.7f);
+    CHECK(bullet->transform().position.x <= 4.86f);
+}
+
+TEST_CASE("a slow body against a wall is resolved by the discrete pass, not the sweep") {
+    Scene scene;
+    add_thin_wall(scene, 5.0f, 0.5f, 5.0f);
+    Node* box_node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = box_node->get_component<physics2d::RigidBody2D>();
+    body->velocity = Vec2{24.0f, 0.0f}; // 0.4 units per step: below the body's own size
+    body->affected_by_gravity = false;
+    body->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, 0.0f};
+
+    bool any_sweep = false;
+    for (int i = 0; i < 60; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+        any_sweep = any_sweep || physics.continuous_hit_count() > 0;
+    }
+
+    // The body stopped at the wall (its half-width plus the wall's is 1.0, so
+    // its centre rests near x = 4.0) and the continuous pass never fired, because
+    // the motion per step was smaller than the body.
+    CHECK(box_node->transform().position.x < 4.2f);
+    CHECK(box_node->transform().position.x > 3.5f);
+    CHECK_FALSE(any_sweep);
+}

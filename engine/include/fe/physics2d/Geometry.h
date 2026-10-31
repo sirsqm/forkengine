@@ -197,4 +197,33 @@ struct Contact2D {
 [[nodiscard]] bool contains_shape(ShapeType type, const Aabb2D& box, const Circle2D& circle,
                                   const Vec2& point) noexcept;
 
+// --- Swept (continuous) tests ----------------------------------------------
+
+// The result of a swept test between a moving shape and a static one.
+//
+// `time` is the fraction of the displacement at which the two first touch, in
+// [0, 1]; 0 means the moving shape already overlaps the target at the start of
+// the sweep. `normal` points back towards the moving shape (the direction that
+// separates them), matching `Contact2D`'s convention so a caller can stop the
+// motion the same way a discrete contact would.
+struct Sweep2D {
+    bool hit = false;
+    f32 time = 0.0f;
+    Vec2 normal{};
+};
+
+// The first time a moving shape touches `target` along `displacement`.
+//
+// This is the continuous counterpart of `intersect`: the discrete narrow phase
+// asks "do these overlap now", which a fast body can pass through between two
+// steps (a bullet through a thin wall). The swept test asks "do these touch at
+// any point along the motion", which cannot be tunnelled through.
+//
+// The shapes are taken as their axis-aligned bounds, so the sweep is exact for
+// two axis-aligned boxes and conservative for a circle or an oriented box (a
+// box bound around a disc): it may report a contact a hair early near a corner,
+// but it never misses one, which is the property a continuous test must have.
+// `displacement` is the full motion for the step, not a unit direction.
+[[nodiscard]] Sweep2D sweep_shape(const Aabb2D& moving_bounds, const Vec2& displacement, const Aabb2D& target) noexcept;
+
 } // namespace fe::physics2d

@@ -106,6 +106,7 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     body_index_.clear();
     asleep_.clear();
     sleeping_bodies_ = 0;
+    continuous_hits_ = 0;
 
     // Gather. Walk the scene once and keep every node that can participate in a
     // collision, with its world position and material data flattened out. The
@@ -236,12 +237,16 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         }
     }
 
-    // Integrate position and rotation from the updated velocities.
+    // Integrate position and rotation from the updated velocities. The previous
+    // position is kept for the continuous pass below, which needs the start of
+    // the motion, not only its end.
+    previous_positions_.assign(bodies_.size(), Vec2{});
     for (usize i = 0; i < bodies_.size(); ++i) {
         Body& entry = bodies_[i];
         if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
+        previous_positions_[i] = entry.position;
         entry.position += entry.velocity * delta_time;
         // A fixed-rotation body keeps its authored rotation regardless of its
         // angular velocity; the body's angular state is carried through so a
@@ -250,6 +255,13 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             entry.rotation += entry.angular_velocity * delta_time;
         }
     }
+
+    // Continuous collision detection, before the discrete pass. A fast body can
+    // move past a thin static wall in one step; the discrete narrow phase only
+    // sees the endpoints and would let the body tunnel through. Sweeping each
+    // awake body's motion and clamping it to the first touch stops a bullet at
+    // the wall's surface instead (ADR-0037's remaining refinement).
+    apply_continuous_collisions(delta_time);
 
     // Broad phase: find the candidate overlapping pairs once, before the
     // iteration loop, so the solver does not re-enumerate the whole pair set on
@@ -502,6 +514,88 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     apply_sleep_checks(delta_time);
 
     reconcile_contacts(scene);
+}
+
+void Physics2DSystem::apply_continuous_collisions(f32 delta_time) {
+    (void)delta_time;
+    continuous_hits_ = 0;
+    for (usize i = 0; i < bodies_.size(); ++i) {
+        Body& mover = bodies_[i];
+        if (mover.inv_mass <= 0.0f || asleep_[i] || mover.collider == nullptr) {
+            continue;
+        }
+        const Vec2 start = previous_positions_[i];
+        const Vec2 displacement = mover.position - start;
+
+        // Only a body moving a meaningful fraction of its own size in one step
+        // can tunnel: the discrete pass sees both endpoints, so a slow body is
+        // caught by it. Sweeping every resting body as well would double the
+        // cost and, worse, clamp a body that is merely settling against the
+        // ground. The threshold scales with the body, so it holds in any world
+        // unit.
+        const f32 size = mover.collider->shape == ShapeType::Circle
+                             ? mover.collider->radius
+                             : std::min(mover.collider->half_extent.x, mover.collider->half_extent.y);
+        if (displacement.length_squared() <= size * size) {
+            continue;
+        }
+
+        f32 earliest = 1.0f;
+        Vec2 hit_normal{};
+        f32 hit_restitution = 0.0f;
+        bool hit = false;
+        for (usize j = 0; j < bodies_.size(); ++j) {
+            if (j == i) {
+                continue;
+            }
+            const Body& target = bodies_[j];
+            if (target.collider == nullptr) {
+                continue;
+            }
+            // Only static geometry is swept against for now. A moving pair is
+            // still resolved by the discrete pass; sweeping both would need
+            // their relative motion, which is a later refinement.
+            if (target.inv_mass > 0.0f) {
+                continue;
+            }
+            if (!mover.collider->can_collide_with(*target.collider)) {
+                continue;
+            }
+            if (mover.collider->is_trigger || target.collider->is_trigger) {
+                continue; // a sensor does not stop motion
+            }
+
+            const Aabb2D mover_bounds = mover.collider->bounds(start, mover.rotation);
+            const Aabb2D target_bounds = target.collider->bounds(target.position, target.rotation);
+            const Sweep2D sweep = sweep_shape(mover_bounds, displacement, target_bounds);
+            // A sweep that starts already touching (time zero) is a resting
+            // contact, not a crossing: the discrete solver owns it, and clamping
+            // here would freeze a body sliding along the ground it rests on.
+            // Only a contact first reached partway through the motion is a
+            // tunnelling case the continuous pass must stop.
+            if (sweep.hit && sweep.time > 0.0f && sweep.time < earliest) {
+                earliest = sweep.time;
+                hit_normal = sweep.normal;
+                hit_restitution = std::max(mover.restitution, target.restitution);
+                hit = true;
+            }
+        }
+
+        if (!hit) {
+            continue;
+        }
+
+        // Clamp the motion to the first touch, leaving the body at the surface,
+        // and apply the same restitution rule the discrete solver uses to the
+        // velocity component into the surface. Without this the body would
+        // accumulate speed through the wall and be even deeper next step.
+        mover.position = start + displacement * earliest;
+        const f32 into = mover.velocity.dot(hit_normal);
+        if (into < 0.0f) {
+            mover.velocity -= hit_normal * ((1.0f + hit_restitution) * into);
+        }
+        ++continuous_hits_;
+    }
 }
 
 void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
