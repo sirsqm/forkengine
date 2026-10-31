@@ -17,9 +17,10 @@
 #
 # Run by tests/CMakeLists.txt:
 #   cmake -DRELEASE_WORKFLOW=<path> -DPACKAGE_SCRIPT=<path> \
-#         -P cmake/tests/test_release_workflow.cmake
+#         -DSETTINGS_SCRIPT=<path> -DDEPENDENCIES_SCRIPT=<path> \
+#         -DCI_WORKFLOW=<path> -P cmake/tests/test_release_workflow.cmake
 
-foreach(_required RELEASE_WORKFLOW PACKAGE_SCRIPT)
+foreach(_required RELEASE_WORKFLOW PACKAGE_SCRIPT SETTINGS_SCRIPT DEPENDENCIES_SCRIPT CI_WORKFLOW)
   if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
     message(FATAL_ERROR "${_required} must be set (see the header of this file)")
   endif()
@@ -171,10 +172,72 @@ if(NOT _package MATCHES "file\\(CHMOD \"\\$\\{FE_GAME_STAGE\\}/run\\.sh\"")
     "unpacked tarball then fails on the documented './run.sh' with "
     "'Permission denied'.")
 endif()
-if(NOT _package MATCHES "FE_SMOKE_RUNNER")
+if(NOT _package MATCHES "FE_SMOKE_LAUNCH")
   message(FATAL_ERROR
     "the packaging smoke run no longer goes through the launcher; running the "
     "binary directly hides a launcher that ships non-executable.")
 endif()
 
+# The Windows artifact is a zip, and the game is played from it against the null
+# backend so a headless runner can exercise the whole artifact (docs/SHIPPING_QUEUE.md,
+# `windows-zip`). Both halves are decisions the script has to keep making: zip
+# from the platform, and the null-backend flag reaching the game.
+if(NOT _package MATCHES "set\\(FE_ARCHIVE_FORMAT \"zip\"\\)")
+  message(FATAL_ERROR
+    "the packaging script no longer selects the zip format for Windows; the "
+    "artifact a player unzips would be a tarball.")
+endif()
+if(NOT _package MATCHES "FE_SMOKE_NULL_WINDOW")
+  message(FATAL_ERROR
+    "the packaging script no longer offers the null-window game smoke; the "
+    "Windows artifact could then only be started, never played, on a runner with "
+    "no GL context.")
+endif()
+
+# The static CRT is what makes the zip self-contained on a clean machine: the
+# DLL runtime needs the VC++ redistributable, which a player may not have. Assert
+# both the runtime choice and that GLFW is built with it, because a mismatch
+# between our targets and the dependency is undefined behaviour, not a link error.
+file(READ "${SETTINGS_SCRIPT}" _settings)
+if(NOT _settings MATCHES "CMAKE_MSVC_RUNTIME_LIBRARY")
+  message(FATAL_ERROR
+    "the build no longer links the MSVC runtime statically; the Windows zip would "
+    "then depend on the VC++ redistributable being installed on a clean machine.")
+endif()
+file(READ "${DEPENDENCIES_SCRIPT}" _deps)
+if(NOT _deps MATCHES "USE_MSVC_RUNTIME_LIBRARY_DLL OFF")
+  message(FATAL_ERROR
+    "GLFW is no longer built with the static MSVC runtime while our targets are; "
+    "mixing /MT and /MD across a memory boundary is undefined behaviour.")
+endif()
+
 message(STATUS "release: every platform packages, the tag is checked, and the archives are compressed")
+
+# ---------------------------------------------------------------------------
+# The Windows zip is exercised on every push, not only at a tag.
+#
+# The release workflow produces the zip, but it only runs on a tag, so a break in
+# the zip path would not be seen until a release was cut. The CI job packages the
+# same artifact and plays it against the null backend, which is the only way to
+# exercise the whole zip on a headless Windows runner (docs/SHIPPING_QUEUE.md,
+# `windows-zip`). Assert the step exists and asks for the null-window smoke, or
+# the Windows artifact is only ever started, never played.
+# ---------------------------------------------------------------------------
+file(READ "${CI_WORKFLOW}" _ci)
+string(REPLACE "\r\n" "\n" _ci "${_ci}")
+set(_ci_checks
+    "packages the Windows zip in CI|package_release.cmake"
+    "builds the Windows zip|-DFE_PLATFORM=windows"
+    "plays the Windows game with no display|-DFE_SMOKE_NULL_WINDOW=ON"
+    "turns the Windows game smoke on|-DFE_SMOKE_GAME=ON"
+)
+foreach(_check IN LISTS _ci_checks)
+  string(REPLACE "|" ";" _parts "${_check}")
+  list(GET _parts 0 _label)
+  list(GET _parts 1 _needle)
+  string(FIND "${_ci}" "${_needle}" _at)
+  if(_at EQUAL -1)
+    message(FATAL_ERROR "the CI workflow is missing '${_label}' (looked for: ${_needle})")
+  endif()
+endforeach()
+message(STATUS "release: the Windows zip is packaged and played in CI")

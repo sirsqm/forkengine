@@ -13,6 +13,17 @@ if(MSVC)
     NOMINMAX
     WIN32_LEAN_AND_MEAN
   )
+
+  # Link the C runtime statically (docs/SHIPPING_QUEUE.md, `windows-zip`). The
+  # Windows download is a zip a player unzips and runs, and the DLL runtime
+  # (`/MD`, MSVC's default) makes it depend on the VC++ redistributable being
+  # installed, which a clean machine may not have -- the game then fails to start
+  # with a missing `VCRUNTIME140.dll` and nothing in the archive is wrong. The
+  # static runtime folds the CRT into the binary, so the zip is self-contained.
+  # This must match the runtime the dependencies are built with: a target built
+  # `/MT` that frees memory allocated by one built `/MD` is undefined, so GLFW is
+  # told to use the static runtime too (see FEDependencies.cmake).
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 # NOTE: warning flags are deliberately NOT set here with add_compile_options().

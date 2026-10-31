@@ -201,10 +201,17 @@ and the binaries accept the same flags as their build-tree counterparts.
 
 **Other platforms** — `fork-engine-<version>-<platform>-<arch>-game.tar.gz` (or
 `.zip`) is a directory holding the game, a launcher, and the example's content;
-unpack it and run the launcher from inside the directory. The matching `-sdk`
+unpack it and run the launcher from inside the directory (`run.sh` on
+Linux/macOS, `run.bat` on Windows). The matching `-sdk`
 archive is the installed engine for building against — it also contains the
 editor shell (`bin/fork_editor_shell`), which needs a display and a project to
 open. `SHA256SUMS` covers every published file.
+
+The Windows zip is self-contained: the build links the C runtime statically, so
+the game runs on a clean machine with no VC++ redistributable and no compiler. A
+game that must run where there is no display — a dedicated server, or a CI check
+of a shipped build — can be started with `fork_breakout --null-window --headless
+N`, which selects the null platform backend ([ADR-0041](docs/adr/0041-platform-contract-and-null-backend.md)).
 
 ## Building and testing
 

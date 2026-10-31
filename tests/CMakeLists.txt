@@ -180,7 +180,10 @@ add_test(
   COMMAND
     ${CMAKE_COMMAND}
     -DRELEASE_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/release.yml
-    -DPACKAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_release.cmake -P
+    -DPACKAGE_SCRIPT=${CMAKE_SOURCE_DIR}/packaging/package_release.cmake
+    -DSETTINGS_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/FESettings.cmake
+    -DDEPENDENCIES_SCRIPT=${CMAKE_SOURCE_DIR}/cmake/FEDependencies.cmake
+    -DCI_WORKFLOW=${CMAKE_SOURCE_DIR}/.github/workflows/ci.yml -P
     ${CMAKE_SOURCE_DIR}/cmake/tests/test_release_workflow.cmake
 )
 

@@ -69,10 +69,14 @@ jobs:
             os: windows-latest
             platform: windows
             arch: x86_64
-            # No GL 3.3 context on a headless runner, so the artifact is checked
-            # and started but not played (see the smoke section of the script).
+            # No GL 3.3 context on a headless runner, so the game is played
+            # against the null backend (`--null-window`, ADR-0041) rather than a
+            # real window. That still exercises the whole artifact -- the zip is
+            # unpacked, the launcher runs, and the game loads its pack and steps
+            # frames -- without a display.
             smoke_prefix: ""
-            smoke_game: "OFF"
+            smoke_game: "ON"
+            smoke_null_window: "ON"
           - name: macOS / arm64
             os: macos-latest
             platform: macos
@@ -143,6 +147,7 @@ jobs:
             -DFE_ARCH=${{ matrix.arch }} \
             -DFE_CONFIG=Release \
             -DFE_SMOKE_GAME=${{ matrix.smoke_game }} \
+            -DFE_SMOKE_NULL_WINDOW=${{ matrix.smoke_null_window || 'OFF' }} \
             -DFE_SMOKE_PREFIX="${{ matrix.smoke_prefix }}" \
             -P packaging/package_release.cmake
 

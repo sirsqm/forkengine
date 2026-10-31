@@ -282,6 +282,12 @@ private:
 struct Options {
     bool headless = false;
     fe::u32 headless_frames = 0;
+    // Create the null platform backend, so the game runs with no display and no
+    // GL context. `--headless` bounds the run but still opens a real window, so
+    // it needs a display; this is what lets a packaged build be started on a
+    // machine (or a CI runner) that has none, which is the Windows zip's
+    // acceptance test.
+    bool null_window = false;
     std::string scene_to_save;
     fe::LogLevel log_level = fe::LogLevel::Info;
 };
@@ -296,6 +302,8 @@ struct Options {
             if (i + 1 < argc && argv[i + 1][0] != '-') {
                 options.headless_frames = static_cast<fe::u32>(std::stoul(argv[++i]));
             }
+        } else if (arg == "--null-window") {
+            options.null_window = true;
         } else if (arg == "--save-scene" && i + 1 < argc) {
             options.scene_to_save = argv[++i];
         } else if (arg == "--verbose") {
@@ -303,7 +311,8 @@ struct Options {
         } else if (arg == "--quiet") {
             options.log_level = fe::LogLevel::Warn;
         } else if (arg == "--help" || arg == "-h") {
-            std::puts("usage: fork_breakout [--headless [frames]] [--save-scene PATH] [--verbose] [--quiet]");
+            std::puts("usage: fork_breakout [--headless [frames]] [--null-window] [--save-scene PATH] "
+                      "[--verbose] [--quiet]");
             std::exit(0);
         }
     }
@@ -351,6 +360,14 @@ int main(int argc, char** argv) {
         config.app_id = breakout::config::kAppId;
     }
     if (options.headless) {
+        config.window.visible = false;
+        config.window.vsync = false;
+    }
+    if (options.null_window) {
+        // No OS window and no GL context (ADR-0041), so the packaged game starts
+        // on a machine with no display. The render path draws blank against the
+        // null device, which is what a startup smoke wants.
+        config.window.backend = fe::WindowBackend::Null;
         config.window.visible = false;
         config.window.vsync = false;
     }

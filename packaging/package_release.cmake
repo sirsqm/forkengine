@@ -81,6 +81,11 @@ set(FE_SMOKE "ON" CACHE STRING "")
 # do not. Off by default so a caller without a display still exercises the
 # artifact, and turned on where a context exists (Linux CI via Xvfb).
 set(FE_SMOKE_GAME "OFF" CACHE STRING "")
+# Play the packaged game against the null platform backend instead of a real
+# window, so it runs with no display and no GL context on any platform (ADR-0041).
+# This is how the Windows zip's game is launched in CI, where there is no GL 3.3
+# context and no Xvfb to supply one.
+set(FE_SMOKE_NULL_WINDOW "OFF" CACHE STRING "")
 set(FE_SMOKE_FRAMES "60" CACHE STRING "")
 
 # Multi-config generators (Visual Studio, Xcode, Ninja Multi-Config) place
@@ -392,15 +397,20 @@ if(FE_SMOKE)
   # relative paths are all exercised. Running `${FE_GAME_BINARY}` directly would
   # pass even when `run.sh` shipped mode 0644 and failed for a player.
   #
-  # On Windows the launcher is a `.bat`, which `execute_process` does not launch
-  # reliably without a shell, and there is no executable bit to lose in a zip; so
-  # Windows runs the binary directly. The failure this guards against is
-  # POSIX-only.
-  set(FE_SMOKE_RUNNER "${FE_SMOKE_ROOT}/run.sh")
+  # On Windows the launcher is a `.bat`, which needs a shell to run: it is
+  # launched through `cmd /c` so the same launcher path a player uses is what the
+  # smoke exercises. There is no executable bit to lose in a zip, so the failure
+  # this guards against on POSIX does not apply, but the launcher's own `cd /d`
+  # and its argument forwarding still do.
+  #
+  # The launch is a *list* (command plus its arguments), so a platform that needs
+  # a shell can prepend one. It is expanded unquoted, so each element is one
+  # argument.
+  set(FE_SMOKE_LAUNCH "${FE_SMOKE_ROOT}/run.sh")
   if(FE_PLATFORM STREQUAL "windows")
-    set(FE_SMOKE_RUNNER "${FE_SMOKE_ROOT}/${FE_GAME_BINARY}")
+    set(FE_SMOKE_LAUNCH "cmd" "/c" "${FE_SMOKE_ROOT}/run.bat")
   endif()
-  execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_SMOKE_RUNNER}" --help
+  execute_process(COMMAND ${FE_SMOKE_PREFIX} ${FE_SMOKE_LAUNCH} --help
                   WORKING_DIRECTORY "${FE_SMOKE_ROOT}"
                   RESULT_VARIABLE _help_rc)
   if(NOT _help_rc EQUAL 0)
@@ -411,7 +421,15 @@ if(FE_SMOKE)
   # Level two: actually play it. Needs a GL context, so the caller turns it on
   # where one exists.
   if(FE_SMOKE_GAME)
-    execute_process(COMMAND ${FE_SMOKE_PREFIX} "${FE_SMOKE_RUNNER}" --headless "${FE_SMOKE_FRAMES}"
+    # A caller with no GL context (the Windows runner) can still play the game by
+    # asking for the null backend, which is what the game's own `--null-window`
+    # selects. The flag is passed to the game, not the launcher, so the launcher
+    # path stays what a player runs.
+    set(FE_SMOKE_GAME_ARGS "--headless" "${FE_SMOKE_FRAMES}")
+    if(FE_SMOKE_NULL_WINDOW)
+      list(APPEND FE_SMOKE_GAME_ARGS "--null-window")
+    endif()
+    execute_process(COMMAND ${FE_SMOKE_PREFIX} ${FE_SMOKE_LAUNCH} ${FE_SMOKE_GAME_ARGS}
                     WORKING_DIRECTORY "${FE_SMOKE_ROOT}"
                     RESULT_VARIABLE _smoke_rc)
     if(NOT _smoke_rc EQUAL 0)

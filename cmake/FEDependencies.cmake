@@ -81,6 +81,11 @@ if(NOT FE_TARGETS_WEB)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+    # GLFW is compiled into our binaries, so it must use the same C runtime we do.
+    # We link the static CRT on MSVC (`windows-zip`), and a target built `/MT`
+    # that frees memory a `/MD` target allocated is undefined; the flag has to
+    # agree on both sides. GLFW defaults to the DLL runtime.
+    set(USE_MSVC_RUNTIME_LIBRARY_DLL OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
       glfw
       GIT_REPOSITORY https://github.com/glfw/glfw.git

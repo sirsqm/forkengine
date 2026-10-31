@@ -485,6 +485,15 @@ Produce a Windows artifact a player can unzip and run.
 **Done when** the zip builds in CI and the game launches from it on a clean
 machine.
 
+Landed as the Windows platform of `packaging/package_release.cmake`, which
+already writes the zip ([ADR-0102](adr/0102-downloadable-release-builds.md)). Two
+gaps closed the item. The build now links the MSVC runtime statically, so the zip
+is self-contained and needs no VC++ redistributable on a clean machine; and CI
+packages and *plays* the zip on every push — the same script the release runs,
+with the game started against the null backend (`--null-window`, ADR-0041) so a
+headless runner with no GL context still exercises the whole artifact. See
+[ADR-0117](adr/0118-windows-zip.md).
+
 ### `macos-app-bundle`
 
 Produce a `.app` bundle, then a DMG, with the runtime's dependencies bundled.

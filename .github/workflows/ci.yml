@@ -86,6 +86,29 @@ jobs:
         if: runner.os != 'Linux'
         run: ctest --test-dir build --output-on-failure -C ${{ matrix.build_type }}
 
+      # The Windows artifact is a zip (ADR-0102), and the release path that
+      # produces it only runs on a tag, so without this step a break in the zip
+      # path would not be caught until a release was cut. The same packaging
+      # script the release runs builds the archives here, asserts each is really
+      # a zip, unpacks the game archive, and plays it against the null backend --
+      # no GL context and no display on a headless runner (ADR-0041), which is
+      # what lets the whole artifact be exercised on Windows.
+      - name: Package a Windows zip and run it (Windows smoke test)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cmake \
+            -DFE_BUILD_DIR=build \
+            -DFE_OUT_DIR=dist \
+            -DFE_PLATFORM=windows \
+            -DFE_ARCH=x86_64 \
+            -DFE_CONFIG=${{ matrix.build_type }} \
+            -DFE_SMOKE_GAME=ON \
+            -DFE_SMOKE_NULL_WINDOW=ON \
+            -P packaging/package_release.cmake
+          ls -la dist
+          test -f dist/SHA256SUMS
+
       - name: Run the sandbox headless (Linux smoke test)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 640x480x24" ./build/bin/fork_sandbox --headless 30
