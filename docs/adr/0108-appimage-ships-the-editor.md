@@ -66,9 +66,12 @@ bundle exists to prevent.
 **The sample `assets/` tree is shipped so the path-keyed reference resolves.** The
 AppDir root is the working directory `AppRun` sets, so placing `assets/` there
 makes the download match the layout CI runs the editor against from the repository
-root. This is a packaging fix, not a fix for the underlying path semantics: a
-`tex:<path>` reference is still resolved against the working directory rather than
-the project's asset root.
+root. This is a packaging fix, not a fix for the underlying path semantics: at
+the time, a `tex:<path>` reference was still resolved against the working
+directory rather than the project's asset root. (That semantics change has since
+landed as [ADR-0117](0117-path-keyed-references-resolve-against-the-project.md);
+the `assets/` copy is now a convenience for the built-in sample scene rather than
+a requirement.)
 
 **The smoke test exercises both entry points.** After `--help`, the script plays
 the game headless and *also* runs the editor headless (`--editor --headless
@@ -95,12 +98,12 @@ runs the editor in the clean container for the same reason.
   entry point fails on a machine with no display where the game's `--headless`
   mode would have worked. The headless flags are documented in the README for
   that case.
-- Shipping `assets/` treats a symptom. The path-keyed reference's
-  working-directory dependence is real and remains; a project opened from
-  somewhere without an `assets/` beside it still renders the demo scene
-  untextured. A follow-up should resolve a path-keyed `tex:` reference against
-  the project's asset root, the way a `guid:` identity already is, and this ADR
-  does not do that.
+- Shipping `assets/` treated a symptom. The path-keyed reference's
+  working-directory dependence was real; ADR-0117 resolves a path-keyed
+  reference against the project directory, the way a `guid:` identity already
+  was, so a project now opens correctly from anywhere. The `assets/` copy
+  remains in the AppDir, but as a convenience for the built-in sample scene
+  rather than as a correctness requirement.
 
 ## Alternatives considered
 
@@ -117,8 +120,8 @@ subsystem that was just polished and the thing with the most to show; opening it
 first, on a project that is already loaded, is the stronger first run.
 
 **Fix the `tex:` path semantics in this change instead of shipping `assets/`.**
-Considered and deferred. The correct fix is to resolve a path-keyed reference
-against the project's asset root, which touches `ResourceManager`'s resolution
-order and needs its own tests; it is a resource-system change, not a packaging
-one, and bundling it here would mix two concerns in one reviewable step. The
-symptom is removed for the download now; the follow-up is named above.
+Considered and deferred at the time. The correct fix is to resolve a path-keyed
+reference against the project's asset root, which touches `ResourceManager`'s
+resolution order and needs its own tests; it is a resource-system change, not a
+packaging one, and bundling it here would mix two concerns in one reviewable
+step. It was taken up separately and is now [ADR-0117](0117-path-keyed-references-resolve-against-the-project.md).

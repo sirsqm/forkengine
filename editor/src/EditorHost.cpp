@@ -75,6 +75,11 @@ Error EditorHost::initialize() {
         }
     } else if (!config_.project_root.empty()) {
         context_.set_project_root(config_.project_root, &engine_.resources());
+        // Without a project file there is no project directory to speak of, so a
+        // path-keyed reference is resolved against the asset root the caller
+        // named. That is the closest thing to "where the references were written
+        // relative to" available in this mode.
+        engine_.resources().set_reference_base(config_.project_root);
     }
 
     if (!scene_to_open.empty()) {

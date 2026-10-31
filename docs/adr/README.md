@@ -122,6 +122,7 @@ rather than editing it.
 | [0114](0114-ios-window-backend.md) | The iOS target's toolchain and platform macro | Accepted |
 | [0115](0115-ios-export-template.md) | The iOS export template | Accepted |
 | [0116](0116-prebuilt-runtime-archive.md) | A prebuilt runtime archive for `fork_export --player` | Accepted |
+| [0117](0117-path-keyed-references-resolve-against-the-project.md) | A path-keyed reference resolves against the project, not the working directory | Accepted |
 
 ## Format
 

@@ -57,6 +57,24 @@ public:
     void mount(std::shared_ptr<ResourceSource> source);
     [[nodiscard]] const std::shared_ptr<ResourceSource>& source() const noexcept { return source_; }
 
+    // The directory a *path-keyed* reference is resolved against ("tex:assets/
+    // hero.png", "obj:assets/meshes/cube.obj", or a bare path). Empty, the
+    // default, resolves against the process working directory.
+    //
+    // A path-keyed reference in a scene is written relative to the project, not
+    // to whatever directory the process happens to run in: the packer keys the
+    // same asset by the same project-relative path, and the export manifest
+    // assumes it. Without this, opening a project from anywhere but its own
+    // directory makes every path-keyed reference miss - the file is there, and
+    // the load still fails - which is silent because a missing texture is a
+    // warning, not an error.
+    //
+    // A `guid:` reference is unaffected: it resolves through the asset database
+    // or a mounted pack, both of which already carry an absolute path. A mounted
+    // pack takes precedence over this base, because a pack's keys are its own.
+    void set_reference_base(std::string directory);
+    [[nodiscard]] const std::string& reference_base() const noexcept { return reference_base_; }
+
     // ResourceSource: the filesystem by default, the mounted source when one is
     // installed. These are what a loader calls to read its input.
     [[nodiscard]] Result<std::vector<u8>> read_binary(std::string_view path) const override;
@@ -162,6 +180,11 @@ public:
     [[nodiscard]] usize loaded_count() const noexcept;
 
 private:
+    // The byte source handed to a loader for the duration of its load. Defined
+    // in the .cpp; it applies the reference base to asset reads so a
+    // project-relative path-keyed reference resolves from any working directory.
+    class LoaderSource;
+
     struct CacheEntry {
         std::weak_ptr<Resource> resource;
         // The absolute path whose bytes produced this resource, or "" when the
@@ -202,6 +225,9 @@ private:
     // The mounted byte source, or null to read from the filesystem. Set by
     // mount(); consulted by read_binary()/read_text()/exists()/resolve_asset().
     std::shared_ptr<ResourceSource> source_;
+    // The directory a path-keyed reference resolves against, or "" for the
+    // process working directory. Set by set_reference_base().
+    std::string reference_base_;
     // The settings for the load currently running, or nullptr. Set and cleared
     // around each loader call in load_file(); see current_import_settings().
     const ImportSettings* current_settings_ = nullptr;

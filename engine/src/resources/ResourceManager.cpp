@@ -21,6 +21,70 @@ void ResourceManager::mount(std::shared_ptr<ResourceSource> source) {
     source_ = std::move(source);
 }
 
+void ResourceManager::set_reference_base(std::string directory) {
+    reference_base_ = fs::normalize(std::move(directory));
+    // A base change invalidates nothing that is cached: the cache key is the
+    // reference as written, and a resolved resource's identity is its path. A
+    // caller that changes the base mid-flight is changing which project the
+    // same reference names, which is exactly the situation the cache would be
+    // wrong about - so it is the caller's job to load a fresh scene (as opening
+    // a project does) rather than to silently reuse an entry from the old one.
+}
+
+// Joins a path-keyed reference onto the reference base. An absolute path, or an
+// empty base, is returned unchanged, so a caller that names a full path (a test,
+// an absolute reference in a scene) is unaffected.
+[[nodiscard]] static std::string resolve_against_base(const std::string& base, std::string_view path) {
+    if (base.empty() || fs::is_absolute(path)) {
+        return std::string(path);
+    }
+    return fs::join(base, path);
+}
+
+// The byte source handed to a loader for the duration of its load.
+//
+// It exists so the reference base applies to *asset* reads only. A loader reads
+// through this, so a path-keyed reference in a scene ("tex:assets/hero.png")
+// resolves against the project directory the manager was told about; the scene
+// reader, which reads a document by a path it already resolved, calls the
+// manager's own read_text() and is deliberately not joined - joining it would
+// look for the scene inside the project a second time.
+//
+// A mounted pack still wins: its keys are its own, so the base is not applied
+// when a source is mounted.
+class ResourceManager::LoaderSource final : public ResourceSource {
+public:
+    explicit LoaderSource(const ResourceManager& owner) : owner_(&owner) {}
+
+    [[nodiscard]] Result<std::vector<u8>> read_binary(std::string_view path) const override {
+        if (owner_->source_) {
+            return owner_->source_->read_binary(path);
+        }
+        return fs::read_binary_file(resolve_against_base(owner_->reference_base_, path));
+    }
+
+    [[nodiscard]] Result<std::string> read_text(std::string_view path) const override {
+        if (owner_->source_) {
+            return owner_->source_->read_text(path);
+        }
+        return fs::read_text_file(resolve_against_base(owner_->reference_base_, path));
+    }
+
+    [[nodiscard]] bool exists(std::string_view path) const override {
+        if (owner_->source_) {
+            return owner_->source_->exists(path);
+        }
+        return fs::exists(resolve_against_base(owner_->reference_base_, path));
+    }
+
+    [[nodiscard]] const AssetLocation* resolve_asset(const AssetId& id) const override {
+        return owner_->resolve_asset(id);
+    }
+
+private:
+    const ResourceManager* owner_;
+};
+
 Result<std::vector<u8>> ResourceManager::read_binary(std::string_view path) const {
     if (source_) {
         return source_->read_binary(path);
@@ -175,9 +239,12 @@ Result<std::shared_ptr<Resource>> ResourceManager::load_uncached(const std::stri
     if (watched_path != nullptr && !source_) {
         // Resolve the file the loader actually read to an absolute path so a
         // change check does not depend on the process working directory, which
-        // a project load can change.
+        // a project load can change. A path-keyed reference is joined onto the
+        // reference base here too, or the watch would stat a path the loader
+        // never read and never report a change.
         const std::string absolute = assets_.absolute_path_by_path(file_path);
-        *watched_path = absolute.empty() ? fs::normalize(std::string(file_path)) : absolute;
+        *watched_path =
+            absolute.empty() ? resolve_against_base(reference_base_, fs::normalize(std::string(file_path))) : absolute;
     }
     return result.value();
 }
@@ -195,11 +262,23 @@ Result<std::shared_ptr<Resource>> ResourceManager::load_file(std::string_view sc
         // settings), and the engine is single-threaded per ADR-0004. The source
         // is set for the same reason: a loader reads its bytes through it, so a
         // mounted pack is served.
+        //
+        // The source is the manager itself, not `source_.get()`, even when no
+        // pack is mounted: the manager is the piece that knows the reference
+        // base, and a loader that read the filesystem directly would bypass it
+        // and miss a project-relative path-keyed reference. A loader therefore
+        // never resolves a path itself - it asks the manager.
         const ImportSettings* previous = current_settings_;
         current_settings_ = settings;
-        loader->set_source(source_.get());
+        // A fresh source per call, restored on exit rather than cleared: a
+        // loader can re-enter load() (the texture loader fetches the CPU image),
+        // and clearing on the inner return would leave the outer load with no
+        // source at all.
+        const LoaderSource loader_source(*this);
+        const ResourceSource* previous_source = loader->source();
+        loader->set_source(&loader_source);
         auto result = loader->load(file_path);
-        loader->set_source(nullptr);
+        loader->set_source(previous_source);
         current_settings_ = previous;
         if (!result) {
             return result.error();

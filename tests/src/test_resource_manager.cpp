@@ -312,3 +312,90 @@ TEST_CASE("a path load honours the settings of a known asset, and a direct loade
     CHECK(probe_ptr->seen.kind == ImportSettings::Kind::Generic);
     CHECK(probe_ptr->seen.is_default());
 }
+
+// A loader that reads its input through the source the manager gives it, the way
+// a real loader does. It records whether the read succeeded, so a test can prove
+// a project-relative path-keyed reference resolves from outside the project
+// directory.
+class ReadingLoader final : public ResourceLoader {
+public:
+    [[nodiscard]] std::string_view scheme() const noexcept override { return "tex"; }
+    [[nodiscard]] bool supports(std::string_view extension) const noexcept override { return extension == ".fake"; }
+
+    [[nodiscard]] Result<std::shared_ptr<Resource>> load(std::string_view path) override {
+        auto bytes = read_bytes(path);
+        read_ok = static_cast<bool>(bytes);
+        if (bytes) {
+            content.assign(bytes.value().begin(), bytes.value().end());
+        }
+        return std::static_pointer_cast<Resource>(std::make_shared<FakeResource>(std::string(path), 1));
+    }
+
+    bool read_ok = false;
+    std::string content;
+};
+
+TEST_CASE("a path-keyed reference resolves against the reference base, not the working directory") {
+    TempDir dir("refbase");
+    ResourceManager manager;
+    auto loader = std::make_unique<ReadingLoader>();
+    ReadingLoader* loader_ptr = loader.get();
+    manager.register_loader(std::move(loader));
+
+    REQUIRE_FALSE(fs::write_text_file(dir.file("assets/hero.fake"), "payload"));
+
+    // With no base, the reference resolves against the process working directory
+    // and misses (the test's cwd is not `dir`).
+    auto missed = manager.load("tex:assets/hero.fake");
+    REQUIRE(missed);
+    CHECK_FALSE(loader_ptr->read_ok);
+
+    // Pointing the base at the project makes the same reference resolve, with no
+    // change to the reference itself and no change to the working directory. A
+    // fresh manager stands in for "the same load after the base was set", since
+    // the first attempt cached its (failed) result under the reference.
+    ResourceManager base_manager;
+    auto base_loader = std::make_unique<ReadingLoader>();
+    ReadingLoader* base_loader_ptr = base_loader.get();
+    base_manager.register_loader(std::move(base_loader));
+    base_manager.set_reference_base(dir.str());
+    CHECK(base_manager.reference_base() == fs::normalize(dir.str()));
+
+    auto found = base_manager.load("tex:assets/hero.fake");
+    REQUIRE(found);
+    CHECK(base_loader_ptr->read_ok);
+    CHECK(base_loader_ptr->content == "payload");
+}
+
+TEST_CASE("the reference base does not join an absolute reference") {
+    TempDir dir("refbase_abs");
+    ResourceManager manager;
+    auto loader = std::make_unique<ReadingLoader>();
+    ReadingLoader* loader_ptr = loader.get();
+    manager.register_loader(std::move(loader));
+
+    const std::string file = dir.file("assets/hero.fake");
+    REQUIRE_FALSE(fs::write_text_file(file, "absolute"));
+    manager.set_reference_base(dir.str());
+
+    // An absolute reference is used as written; joining the base onto it would
+    // produce a path that does not exist.
+    auto loaded = manager.load("tex:" + file);
+    REQUIRE(loaded);
+    CHECK(loader_ptr->read_ok);
+    CHECK(loader_ptr->content == "absolute");
+}
+
+TEST_CASE("the reference base does not affect a direct manager read") {
+    TempDir dir("refbase_direct");
+    ResourceManager manager;
+    manager.set_reference_base(dir.str());
+    REQUIRE_FALSE(fs::write_text_file(dir.file("scene.fescene"), "{}"));
+
+    // The manager's own read_text is what the scene reader uses, with a path it
+    // has already resolved. The base is for loader reads only; joining it here
+    // would make the scene reader look inside the project a second time.
+    auto direct = manager.read_text(dir.file("scene.fescene"));
+    REQUIRE(direct);
+    CHECK(direct.value() == "{}");
+}

@@ -462,6 +462,15 @@ Error EditorContext::load_project(std::string_view path, ResourceManager* resour
     project_ = std::move(settings.value());
     project_path_ = std::string(path);
     set_project_root(project_.resolved_asset_root(), resources);
+    // Path-keyed references in a scene ("tex:assets/hero.png") are written
+    // relative to the *project directory*, not to the asset root and not to the
+    // process working directory. Point the resource manager at it so opening a
+    // project from anywhere resolves them: without this, running the editor from
+    // outside the project directory silently fails to load every path-keyed
+    // asset, which reads as "the project is empty" rather than as an error.
+    if (resources != nullptr) {
+        resources->set_reference_base(project_.directory());
+    }
     FE_LOG_INFO("editor: opened project '%s' (asset root '%s')", project_path_.c_str(), project_root_.c_str());
     return Error::none();
 }
