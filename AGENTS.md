@@ -287,6 +287,23 @@ defect, not noise.
   container smoke test); a guard test fails if either drifts back to
   `ubuntu-latest`. This fired for real when the runner rotated to 26.04 (glibc
   2.43) against a pinned `ubuntu:24.04` (glibc 2.39) smoke container.
+- The MSVC runtime must stay **shared** (`/MD`), never static (`/MT`). A gameplay
+  module is a DLL that exchanges `std::` types and the Script vtable with the
+  host (`FEModules.cmake`, ADR-0061), so a static CRT gives the executable and
+  each module their own runtime and their own heap: a `std::string` allocated on
+  one side and freed on the other frees a pointer the other heap does not own.
+  Under the debug CRT (`/MTd`, what CI builds) that trips the debug-heap
+  assertion, and a headless runner has nobody to dismiss the dialog, so the
+  process *hangs* rather than failing -- the Windows `engine_tests` step sat for
+  20+ minutes instead of erroring, and looked like a stuck runner. Setting
+  `CMAKE_MSVC_RUNTIME_LIBRARY` (or forcing a dependency such as GLFW onto it)
+  re-introduces this. A self-contained zip bundles the redistributable instead:
+  `InstallRequiredSystemLibraries` installs the CRT DLLs beside the binaries and
+  packaging carries them into the archive (ADR-0122).
+- ctest's default timeout is 1500s, longer than anyone waits before cancelling a
+  run, so a hanging test looks like an infrastructure stall. CI passes
+  `--timeout 300` to every `ctest` and bounds the job with `timeout-minutes`, so
+  a hang fails and is named well inside a job.
 
 ## Commit attribution
 
