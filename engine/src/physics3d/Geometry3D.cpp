@@ -122,6 +122,112 @@ Contact3D intersect_sphere_box(const Sphere3D& sphere, const Aabb3D& box) noexce
     return contact;
 }
 
+// The separating-axis test between two oriented boxes. Fifteen candidate axes:
+// each box's three local axes, and the nine cross products of their pairs. A
+// positive overlap on every axis means the boxes touch; the axis with the
+// smallest overlap is the contact normal, and that overlap is the penetration.
+// This is the standard general box-box test (Ericson, Real-Time Collision
+// Detection), and it is what makes a rotated box collide as its true shape
+// rather than its unrotated bounding box.
+Contact3D intersect_oriented_boxes(const Obb3D& a, const Obb3D& b) noexcept {
+    Vec3 axes_a[3] = {a.axis(0), a.axis(1), a.axis(2)};
+    Vec3 axes_b[3] = {b.axis(0), b.axis(1), b.axis(2)};
+
+    // Rotate each axis to point away from the other box, so the separating axis
+    // (if any) has a consistent sign; a box's projection is symmetric, so the
+    // sign of an axis does not change the overlap, only the normal's direction.
+    for (Vec3& axis : axes_a) {
+        if ((b.center - a.center).dot(axis) < 0.0f) {
+            axis = axis * -1.0f;
+        }
+    }
+    for (Vec3& axis : axes_b) {
+        if ((a.center - b.center).dot(axis) < 0.0f) {
+            axis = axis * -1.0f;
+        }
+    }
+
+    f32 best_overlap = std::numeric_limits<f32>::max();
+    Vec3 best_axis{};
+    bool have_axis = false;
+
+    const auto test_axis = [&](const Vec3& raw_axis) -> bool {
+        const f32 length = raw_axis.length();
+        if (length < 1e-6f) {
+            return true; // parallel or degenerate: this axis is redundant
+        }
+        const Vec3 axis = raw_axis / length;
+        const f32 distance = std::abs((b.center - a.center).dot(axis));
+        f32 radius_a = 0.0f;
+        f32 radius_b = 0.0f;
+        for (usize i = 0; i < 3; ++i) {
+            radius_a += a.half(i) * std::abs(axes_a[i].dot(axis));
+            radius_b += b.half(i) * std::abs(axes_b[i].dot(axis));
+        }
+        const f32 overlap = radius_a + radius_b - distance;
+        if (overlap <= 0.0f) {
+            return false; // a separating axis: the boxes do not touch
+        }
+        if (overlap < best_overlap) {
+            best_overlap = overlap;
+            // Point the normal from A towards B: the axis as oriented (A -> B),
+            // or its negation if B is on the other side.
+            best_axis = (b.center - a.center).dot(axis) >= 0.0f ? axis : axis * -1.0f;
+            have_axis = true;
+        }
+        return true;
+    };
+
+    for (const Vec3& axis : axes_a) {
+        if (!test_axis(axis)) {
+            return Contact3D{};
+        }
+    }
+    for (const Vec3& axis : axes_b) {
+        if (!test_axis(axis)) {
+            return Contact3D{};
+        }
+    }
+    for (usize i = 0; i < 3; ++i) {
+        for (usize j = 0; j < 3; ++j) {
+            if (!test_axis(axes_a[i].cross(axes_b[j]))) {
+                return Contact3D{};
+            }
+        }
+    }
+
+    if (!have_axis) {
+        return Contact3D{};
+    }
+    Contact3D contact;
+    contact.overlapping = true;
+    contact.normal = best_axis;
+    contact.penetration = best_overlap;
+    return contact;
+}
+
+// Sphere against an oriented box: transform the sphere centre into the box's
+// local frame, do the axis-aligned sphere-box test there, then rotate the
+// normal back to world space. Exact, and it reuses the axis-aligned code.
+Contact3D intersect_sphere_oriented_box(const Sphere3D& sphere, const Obb3D& box) noexcept {
+    const Quat q = box.orientation.normalized();
+    // World -> local: the box's centre-relative delta rotated by the inverse
+    // (conjugate) of the orientation.
+    const Vec3 delta = sphere.center - box.center;
+    const Vec3 local_center = rotate_by_quat(delta, q.conjugate());
+    const Aabb3D local_box{Vec3{}, box.half_extent};
+    const Sphere3D local_sphere{local_center, sphere.radius};
+
+    Contact3D contact = intersect_sphere_box(local_sphere, local_box);
+    if (!contact.overlapping) {
+        return contact;
+    }
+    // The local normal points from the sphere towards the box; rotate it back to
+    // world space. The penetration is invariant under the rigid transform.
+    contact.normal = rotate_by_quat(contact.normal, q);
+    return contact;
+}
+
 } // namespace
 
 Contact3D intersect(const Aabb3D& a, const Aabb3D& b) noexcept {
@@ -134,6 +240,22 @@ Contact3D intersect(const Sphere3D& a, const Sphere3D& b) noexcept {
 
 Contact3D intersect(const Sphere3D& a, const Aabb3D& b) noexcept {
     return intersect_sphere_box(a, b);
+}
+
+Contact3D intersect(const Obb3D& a, const Obb3D& b) noexcept {
+    return intersect_oriented_boxes(a, b);
+}
+
+Contact3D intersect(const Sphere3D& a, const Obb3D& b) noexcept {
+    return intersect_sphere_oriented_box(a, b);
+}
+
+Contact3D intersect(const Obb3D& a, const Sphere3D& b) noexcept {
+    // Compute sphere-vs-box and flip the normal so it points from the box
+    // towards the sphere, matching the "from A towards B" convention.
+    Contact3D contact = intersect_sphere_oriented_box(b, a);
+    contact.normal = Vec3{-contact.normal.x, -contact.normal.y, -contact.normal.z};
+    return contact;
 }
 
 bool bounds_overlap(const Aabb3D& a, const Aabb3D& b) noexcept {
@@ -155,6 +277,24 @@ Aabb3D bounds_of(const Aabb3D& box) noexcept {
 
 Contact3D intersect_shapes(ShapeType3D a_type, const Aabb3D& a_box, const Sphere3D& a_sphere, ShapeType3D b_type,
                            const Aabb3D& b_box, const Sphere3D& b_sphere) noexcept {
+    if (a_type == ShapeType3D::Box && b_type == ShapeType3D::Box) {
+        return intersect(a_box, b_box);
+    }
+    if (a_type == ShapeType3D::Sphere && b_type == ShapeType3D::Sphere) {
+        return intersect(a_sphere, b_sphere);
+    }
+    if (a_type == ShapeType3D::Sphere && b_type == ShapeType3D::Box) {
+        return intersect(a_sphere, b_box);
+    }
+    // Box vs sphere: compute sphere-vs-box and flip the normal so it still points
+    // from the first shape towards the second.
+    Contact3D contact = intersect(b_sphere, a_box);
+    contact.normal = Vec3{-contact.normal.x, -contact.normal.y, -contact.normal.z};
+    return contact;
+}
+
+Contact3D intersect_shapes(ShapeType3D a_type, const Obb3D& a_box, const Sphere3D& a_sphere, ShapeType3D b_type,
+                           const Obb3D& b_box, const Sphere3D& b_sphere) noexcept {
     if (a_type == ShapeType3D::Box && b_type == ShapeType3D::Box) {
         return intersect(a_box, b_box);
     }

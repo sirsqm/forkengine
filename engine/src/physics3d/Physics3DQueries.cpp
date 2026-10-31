@@ -15,6 +15,7 @@ namespace {
 struct PlacedShape {
     ShapeType3D type = ShapeType3D::Box;
     Aabb3D box{};
+    Obb3D oriented{};
     Sphere3D sphere{};
 };
 
@@ -23,6 +24,7 @@ struct PlacedShape {
     PlacedShape shape;
     shape.type = collider.shape;
     shape.box = collider.box(position);
+    shape.oriented = collider.oriented_box(position, Quat::from_euler(node.transform().rotation));
     shape.sphere = collider.sphere(position);
     return shape;
 }
@@ -74,7 +76,7 @@ usize overlap_sphere(const Scene& scene, const Vec3& center, f32 radius, std::ve
         // Query sphere first, so the returned normal points from the query
         // towards the collider, matching the documented convention.
         const Contact3D contact =
-            intersect_shapes(ShapeType3D::Sphere, Aabb3D{}, query, shape.type, shape.box, shape.sphere);
+            intersect_shapes(ShapeType3D::Sphere, Obb3D{}, query, shape.type, shape.oriented, shape.sphere);
         if (!contact.overlapping) {
             return;
         }
@@ -85,7 +87,7 @@ usize overlap_sphere(const Scene& scene, const Vec3& center, f32 radius, std::ve
 }
 
 usize overlap_box(const Scene& scene, const Vec3& center, const Vec3& half_extent, std::vector<OverlapHit>& out) {
-    const Aabb3D query{center, half_extent};
+    const Obb3D query{center, half_extent, Quat::identity()};
     usize count = 0;
     scene.for_each_node([&](Node& node) {
         const auto* collider = node.get_component<Collider3D>();
@@ -94,7 +96,7 @@ usize overlap_box(const Scene& scene, const Vec3& center, const Vec3& half_exten
         }
         const PlacedShape shape = place(*collider, node);
         const Contact3D contact =
-            intersect_shapes(ShapeType3D::Box, query, Sphere3D{}, shape.type, shape.box, shape.sphere);
+            intersect_shapes(ShapeType3D::Box, query, Sphere3D{}, shape.type, shape.oriented, shape.sphere);
         if (!contact.overlapping) {
             return;
         }

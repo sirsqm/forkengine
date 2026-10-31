@@ -85,12 +85,45 @@ public:
     // The shape as a box, at the node's world position `center`.
     [[nodiscard]] Aabb3D box(const Vec3& center) const noexcept { return Aabb3D{center, half_extent}; }
 
+    // The shape as an oriented box, at the node's world position `center` with
+    // the node's `orientation`. This is what makes a rotated box collide as its
+    // true shape: `box()` ignores the rotation and collides as the unrotated
+    // bounds, while this carries the rotation into the narrow phase.
+    [[nodiscard]] Obb3D oriented_box(const Vec3& center, const Quat& orientation) const noexcept {
+        return Obb3D{center, half_extent, orientation};
+    }
+
     // The shape as a sphere, at the node's world position `center`.
     [[nodiscard]] Sphere3D sphere(const Vec3& center) const noexcept { return Sphere3D{center, radius}; }
 
     // The bounding box of the shape at `center`, for the broad phase.
     [[nodiscard]] Aabb3D bounds(const Vec3& center) const noexcept {
         return shape == ShapeType3D::Box ? box(center) : bounds_of(sphere(center));
+    }
+
+    // The world bounding box of the shape at `center` with `orientation`, for the
+    // broad phase when a box is rotated. For a sphere this is the same as
+    // `bounds` (a sphere is orientation-invariant); for a box it is the smallest
+    // axis-aligned box containing the oriented box's eight corners, so the grid
+    // stays a conservative superset of the truly-touching pairs.
+    [[nodiscard]] Aabb3D oriented_bounds(const Vec3& center, const Quat& orientation) const noexcept {
+        if (shape != ShapeType3D::Box) {
+            return bounds(center);
+        }
+        const Obb3D oriented = oriented_box(center, orientation);
+        const Vec3 corner0 = oriented.corner(0);
+        Vec3 min = corner0;
+        Vec3 max = corner0;
+        for (usize i = 1; i < 8; ++i) {
+            const Vec3 corner = oriented.corner(i);
+            min.x = std::min(min.x, corner.x);
+            min.y = std::min(min.y, corner.y);
+            min.z = std::min(min.z, corner.z);
+            max.x = std::max(max.x, corner.x);
+            max.y = std::max(max.y, corner.y);
+            max.z = std::max(max.z, corner.z);
+        }
+        return Aabb3D{(min + max) * 0.5f, (max - min) * 0.5f};
     }
 
     // The moment of inertia about the shape's centre for a body of `mass`. This

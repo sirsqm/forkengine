@@ -250,7 +250,7 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     for (usize i = 0; i < bodies_.size(); ++i) {
         const Body& entry = bodies_[i];
         if (entry.collider != nullptr) {
-            broad_phase_bounds_.push_back(entry.collider->bounds(entry.position));
+            broad_phase_bounds_.push_back(entry.collider->oriented_bounds(entry.position, entry.orientation));
             bounds_owner_.push_back(i);
         }
     }
@@ -276,8 +276,11 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
 
             // Sharing a grid cell is necessary but not sufficient: keep the
             // existing bounds prefilter so a pair in the same cell but not
-            // actually close is rejected before the narrow phase.
-            if (!bounds_overlap(a.collider->bounds(a.position), b.collider->bounds(b.position))) {
+            // actually close is rejected before the narrow phase. The bounds are
+            // the oriented bounds, so a rotated box's prefilter is the box that
+            // contains its true shape.
+            if (!bounds_overlap(a.collider->oriented_bounds(a.position, a.orientation),
+                                b.collider->oriented_bounds(b.position, b.orientation))) {
                 continue;
             }
 
@@ -290,9 +293,12 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                 continue;
             }
 
-            const Contact3D contact =
-                intersect_shapes(a.collider->shape, a.collider->box(a.position), a.collider->sphere(a.position),
-                                 b.collider->shape, b.collider->box(b.position), b.collider->sphere(b.position));
+            // Place each shape by its node's world position and orientation, so a
+            // rotated box collides as its true oriented shape rather than its
+            // unrotated bounds.
+            const Contact3D contact = intersect_shapes(
+                a.collider->shape, a.collider->oriented_box(a.position, a.orientation), a.collider->sphere(a.position),
+                b.collider->shape, b.collider->oriented_box(b.position, b.orientation), b.collider->sphere(b.position));
             if (!contact.overlapping) {
                 continue;
             }
@@ -351,15 +357,19 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             // single-point approximation, standard for box and sphere contacts).
             // Angular impulses need the lever arm from each body centre to this
             // point; a contact through a centre produces no torque, which is what
-            // keeps a body resting flat stable. The collider shape is
-            // axis-aligned, so the support distance is the extent along the
-            // normal with no orientation to account for.
-            const Vec3 support = a.collider->shape == ShapeType3D::Sphere
-                                     ? contact.normal * a.collider->radius
-                                     : Vec3{std::abs(contact.normal.x) * a.collider->half_extent.x,
-                                            std::abs(contact.normal.y) * a.collider->half_extent.y,
-                                            std::abs(contact.normal.z) * a.collider->half_extent.z};
-            const f32 support_distance = support.dot(contact.normal);
+            // keeps a body resting flat stable. For a box the support distance is
+            // the projection of the oriented half-extents onto the normal
+            // (sum of |axis_i . n| * half_i), so a rotated box reports its true
+            // surface rather than an unrotated extent.
+            f32 support_distance = 0.0f;
+            if (a.collider->shape == ShapeType3D::Sphere) {
+                support_distance = a.collider->radius;
+            } else {
+                const Obb3D oriented = a.collider->oriented_box(a.position, a.orientation);
+                for (usize axis = 0; axis < 3; ++axis) {
+                    support_distance += oriented.half(axis) * std::abs(oriented.axis(axis).dot(contact.normal));
+                }
+            }
             const Vec3 contact_point = a.position + contact.normal * (support_distance - contact.penetration * 0.5f);
 
             // Lever arms from each body centre to the contact point. The body's

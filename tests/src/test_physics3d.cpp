@@ -801,3 +801,78 @@ TEST_CASE("the 3D distance joint is registered with reflection") {
     reflect::register_physics3d_types();
     CHECK(reflect::Registry::instance().contains("DistanceJoint3D"));
 }
+
+// ---------------------------------------------------------------------------
+// Oriented box collision (ADR-0043's remaining refinement): a rotated box must
+// collide as its true shape, not as its unrotated bounding box.
+// ---------------------------------------------------------------------------
+
+physics3d::Obb3D oriented_box(const Vec3& center, const Vec3& half, const Quat& orientation) {
+    return physics3d::Obb3D{center, half, orientation};
+}
+
+TEST_CASE("two axis-aligned oriented boxes match the axis-aligned test") {
+    const physics3d::Obb3D a = oriented_box(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.5f, 0.5f, 0.5f}, Quat::identity());
+    const physics3d::Obb3D b = oriented_box(Vec3{0.75f, 0.0f, 0.0f}, Vec3{0.5f, 0.5f, 0.5f}, Quat::identity());
+    const physics3d::Contact3D contact = physics3d::intersect(a, b);
+    REQUIRE(contact.overlapping);
+    // The boxes overlap by 0.25 on x; the normal points from A towards B, +x.
+    CHECK(contact.penetration == doctest::Approx(0.25f));
+    CHECK(contact.normal.x == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a rotated box collides as its true shape, not its bounding box") {
+    // A is a 1x1x1 box rotated 45 degrees about z, so its bounding box is
+    // sqrt(2) wide. B is a small box placed in the corner the rotated box no
+    // longer reaches: the axis-aligned bounds would overlap, but the true
+    // rotated shape does not. This is exactly the false positive the oriented
+    // test removes.
+    const Quat rotated = Quat::from_axis_angle(Vec3{0.0f, 0.0f, 1.0f}, 0.785398f); // 45 degrees
+    const physics3d::Obb3D a = oriented_box(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.5f, 0.5f, 0.5f}, rotated);
+    // The corner of the bounding box is at (0.707, 0.707); the true corner is at
+    // (0.707, 0). Place B near the bounding-box corner, outside the diamond.
+    const physics3d::Obb3D b = oriented_box(Vec3{0.65f, 0.65f, 0.0f}, Vec3{0.05f, 0.05f, 0.05f}, Quat::identity());
+
+    // The axis-aligned bounds do overlap (a false positive)...
+    CHECK(physics3d::bounds_overlap(physics3d::Aabb3D{Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.707f, 0.707f, 0.5f}},
+                                    physics3d::Aabb3D{Vec3{0.65f, 0.65f, 0.0f}, Vec3{0.05f, 0.05f, 0.05f}}));
+    // ...but the oriented test correctly reports no contact.
+    const physics3d::Contact3D contact = physics3d::intersect(a, b);
+    CHECK_FALSE(contact.overlapping);
+}
+
+TEST_CASE("a rotated box and a sphere use the true rotated surface") {
+    // A unit cube rotated 45 degrees about z is a diamond with half-diagonal
+    // sqrt(2)/2 ~ 0.707, so the point (0.5, 0.5) is inside its bounding box but
+    // outside the true shape (0.5 + 0.5 = 1.0 > 0.707).
+    const Quat rotated = Quat::from_axis_angle(Vec3{0.0f, 0.0f, 1.0f}, 0.785398f);
+    const physics3d::Obb3D diamond = oriented_box(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.5f, 0.5f, 0.5f}, rotated);
+
+    // A sphere just inside the diamond edge touches.
+    const physics3d::Sphere3D touching = sphere(0.4f, 0.4f, 0.0f, 0.1f);
+    CHECK(physics3d::intersect(touching, diamond).overlapping);
+
+    // A sphere at the bounding-box corner misses the true rotated shape.
+    const physics3d::Sphere3D missing = sphere(0.5f, 0.5f, 0.0f, 0.05f);
+    CHECK_FALSE(physics3d::intersect(missing, diamond).overlapping);
+}
+
+TEST_CASE("a rotated box resting on a floor does not sink through it") {
+    Scene scene;
+    add_floor(scene, 20.0f); // top face at y = 0
+    Node* crate = add_dynamic_box(scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+    // Rotate the crate 45 degrees about z, so it rests on an edge. Its lowest
+    // point is at centre.y - sqrt(2)/2, so a settled crate's centre sits at
+    // sqrt(2)/2 ~ 0.707 above the floor.
+    crate->transform().rotation = Vec3{0.0f, 0.0f, 0.785398f};
+
+    physics3d::Physics3DSystem physics;
+    for (int i = 0; i < 600; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+    }
+
+    // The crate rests above the floor, not through it: its centre is at least a
+    // half-diagonal up (0.707) and not implausibly high.
+    CHECK(crate->transform().position.y > 0.6f);
+    CHECK(crate->transform().position.y < 1.2f);
+}

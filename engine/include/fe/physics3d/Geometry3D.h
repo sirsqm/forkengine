@@ -43,6 +43,56 @@ struct Sphere3D {
     f32 radius = 0.0f;
 };
 
+// Rotates `v` by the unit quaternion `q`. Used to place an oriented box's local
+// axes in world space without materialising a matrix.
+[[nodiscard]] inline Vec3 rotate_by_quat(const Vec3& v, const Quat& q) noexcept {
+    const Quat p{v.x, v.y, v.z, 0.0f};
+    const Quat rotated = q * p * q.conjugate();
+    return Vec3{rotated.x, rotated.y, rotated.z};
+}
+
+// An oriented box: a centre, a half-extent, and an orientation.
+//
+// This is the general form of the box, the 3D counterpart of `Obb2D`. An
+// axis-aligned box is the special case of an identity orientation, so `Aabb3D`
+// is kept for the broad phase and the pure axis-aligned tests, and the oriented
+// tests take an `Obb3D`. A box collider is placed as an `Obb3D` (see
+// `Collider3D::oriented_box`), which is what lets a rotated node collide as its
+// true shape rather than its unrotated bounding box.
+struct Obb3D {
+    Vec3 center{};
+    Vec3 half_extent{0.5f, 0.5f, 0.5f};
+    Quat orientation{};
+
+    // The box's local axis `index` (0 = x, 1 = y, 2 = z) in world space, as a
+    // unit vector. `half_extent[index]` is measured along it.
+    [[nodiscard]] Vec3 axis(usize index) const noexcept {
+        const Quat q = orientation.normalized();
+        if (index == 0) {
+            return rotate_by_quat(Vec3{1.0f, 0.0f, 0.0f}, q);
+        }
+        if (index == 1) {
+            return rotate_by_quat(Vec3{0.0f, 1.0f, 0.0f}, q);
+        }
+        return rotate_by_quat(Vec3{0.0f, 0.0f, 1.0f}, q);
+    }
+
+    [[nodiscard]] f32 half(usize index) const noexcept {
+        return index == 0 ? half_extent.x : (index == 1 ? half_extent.y : half_extent.z);
+    }
+
+    // The eight corners in world space, indexed by the sign of each local axis.
+    [[nodiscard]] Vec3 corner(usize index) const noexcept {
+        const Vec3 ax = axis(0) * half_extent.x;
+        const Vec3 ay = axis(1) * half_extent.y;
+        const Vec3 az = axis(2) * half_extent.z;
+        const f32 sx = (index & 1u) != 0u ? 1.0f : -1.0f;
+        const f32 sy = (index & 2u) != 0u ? 1.0f : -1.0f;
+        const f32 sz = (index & 4u) != 0u ? 1.0f : -1.0f;
+        return center + ax * sx + ay * sy + az * sz;
+    }
+};
+
 // The result of a narrow-phase test between two shapes.
 //
 // `overlapping` is the primary answer; `normal` and `penetration` are only
@@ -68,6 +118,16 @@ struct Contact3D {
 // sphere towards the box, matching the convention above.
 [[nodiscard]] Contact3D intersect(const Sphere3D& a, const Aabb3D& b) noexcept;
 
+// Oriented variants. Same contract and the same normal convention ("from A
+// towards B"). An `Obb3D` with an identity orientation is exactly the matching
+// `Aabb3D` test, so these generalise rather than replace the axis-aligned ones.
+// This is the separating-axis test over the two boxes' fifteen candidate axes
+// (three each, plus nine cross products), the standard general box-box test.
+[[nodiscard]] Contact3D intersect(const Obb3D& a, const Obb3D& b) noexcept;
+// `a` is the sphere, `b` is the box.
+[[nodiscard]] Contact3D intersect(const Sphere3D& a, const Obb3D& b) noexcept;
+[[nodiscard]] Contact3D intersect(const Obb3D& a, const Sphere3D& b) noexcept;
+
 // The broad-phase prefilter: a cheap conservative overlap test used to skip the
 // narrow phase for pairs that cannot touch. A false result is exact; a true
 // result means "maybe".
@@ -82,6 +142,9 @@ struct Contact3D {
 // Dispatches to the right overload for a pair of shape types.
 [[nodiscard]] Contact3D intersect_shapes(ShapeType3D a_type, const Aabb3D& a_box, const Sphere3D& a_sphere,
                                          ShapeType3D b_type, const Aabb3D& b_box, const Sphere3D& b_sphere) noexcept;
+// The oriented dispatch: the `Obb3D` form tests a rotated box as its true shape.
+[[nodiscard]] Contact3D intersect_shapes(ShapeType3D a_type, const Obb3D& a_box, const Sphere3D& a_sphere,
+                                         ShapeType3D b_type, const Obb3D& b_box, const Sphere3D& b_sphere) noexcept;
 
 // --- Ray casts -------------------------------------------------------------
 //

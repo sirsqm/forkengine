@@ -116,11 +116,15 @@ changes.
 
 **Harder / accepted costs:**
 
-- **A collider is still axis-aligned.** Rotation is integrated into the node's
-  orientation and applied by the solver to contacts, but a box collider is not
-  re-oriented: a rotated box is drawn rotated and collided as its unrotated AABB.
-  This is the same honest limit 2D had before oriented boxes (ADR-0037), and
-  oriented 3D shapes are the natural next cut.
+- **A collider is still axis-aligned for the *broad* phase.** Rotation is
+  integrated into the node's orientation and applied by the solver to contacts,
+  and the narrow phase now tests a box as its true *oriented* shape (an `Obb3D`,
+  a separating-axis test over the fifteen candidate axes; see below). The
+  broad-phase grid still keys on the box's world-aligned bounds, which for a
+  rotated box is the box containing its true shape -- a conservative superset,
+  exactly the trade 2D makes (ADR-0037). A rotated box is no longer collided as
+  its unrotated AABB; it is collided as its oriented box, with the aligned bounds
+  used only to gather candidate pairs.
 - **Inertia is isotropic.** A single scalar moment cannot represent a
   non-uniform body's true tensor, so a long box spins the same about every axis.
   This is a deliberate first step; the scalar keeps the solver and the serialized
