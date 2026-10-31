@@ -81,6 +81,19 @@ public:
 
     [[nodiscard]] bool headless() const noexcept { return headless_; }
 
+    // --- Application lifecycle (mobile) ------------------------------------
+    // The OS suspends a backgrounded app and resumes it later. A host that gets
+    // those events forwards them here (a mobile backend will, once it feeds
+    // them; ADR-0041): while suspended, step_frame() still advances the clock
+    // and drains input but runs no system and draws nothing, so a paused app
+    // does not simulate against a stopped clock, and the resume rebaselines the
+    // engine clock so the first active frame steps by one frame rather than by
+    // the whole background gap. A desktop host never calls these and the loop is
+    // unchanged. See Engine::notify_suspend.
+    void notify_suspend() noexcept;
+    void notify_resume() noexcept;
+    [[nodiscard]] bool suspended() const noexcept { return engine_.is_suspended(); }
+
     // --- Profiling ---------------------------------------------------------
     // The application's profiler. The frame loop installs it as the thread's
     // current profiler for the duration of each frame and brackets the frame,

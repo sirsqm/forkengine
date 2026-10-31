@@ -535,3 +535,114 @@ TEST_CASE("a large time step after a visibility change advances the simulation b
 
     engine.shutdown();
 }
+
+// The mobile suspend/resume lifecycle (ADR-0041). A phone suspends a
+// backgrounded app and resumes it later; the wall clock runs the whole time
+// while no frames arrive. This is the mobile counterpart of the web
+// tab-visibility path above: a resume after a long gap must advance the
+// simulation by one frame, not by the whole gap.
+TEST_CASE("a resume after a long suspend advances the clock by a bounded amount") {
+    Engine::Config config = null_config();
+    Engine engine;
+
+    f64 now = 100.0;
+    engine.set_time_source([&now] { return now; });
+    REQUIRE(engine.initialize(config).ok());
+
+    // A normal frame measures the frame's own duration.
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+    CHECK_FALSE(engine.is_suspended());
+
+    // The app is suspended; no frames arrive while a long span passes.
+    engine.notify_suspend();
+    CHECK(engine.is_suspended());
+    now += 120.0;
+
+    // The resume must not charge the 120 suspended seconds to one frame: the
+    // step is bounded, and elapsed time does not jump by the suspended span.
+    const f64 elapsed_before = engine.elapsed_time();
+    engine.notify_resume();
+    CHECK_FALSE(engine.is_suspended());
+    engine.tick();
+    CHECK(engine.delta_time() <= 0.25f);
+    CHECK(engine.elapsed_time() - elapsed_before <= 0.25);
+
+    // The next frame measures normally again.
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    engine.shutdown();
+}
+
+TEST_CASE("a redundant suspend or resume does not move the rebaseline") {
+    Engine::Config config = null_config();
+    Engine engine;
+    f64 now = 100.0;
+    engine.set_time_source([&now] { return now; });
+    REQUIRE(engine.initialize(config).ok());
+
+    now += 1.0 / 60.0;
+    engine.tick();
+
+    // A resume without a matching suspend is a no-op: the clock is not
+    // rebaselined, so the next frame measures its own duration.
+    engine.notify_resume();
+    CHECK_FALSE(engine.is_suspended());
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    // A second suspend while already suspended does not arm a second rebaseline.
+    engine.notify_suspend();
+    engine.notify_suspend();
+    now += 5.0;
+    engine.notify_resume();
+    engine.tick();
+    // One bounded step, and the frame after it measures normally - proving the
+    // repeated suspend did not leave the rebaseline pending for two frames.
+    CHECK(engine.delta_time() <= 0.25f);
+    now += 1.0 / 60.0;
+    engine.tick();
+    CHECK(engine.delta_time() == doctest::Approx(1.0f / 60.0f));
+
+    engine.shutdown();
+}
+
+// The whole-frame half of the lifecycle: while suspended, step_frame() advances
+// the clock but runs no system and calls no hook, so gameplay state is frozen
+// rather than stepped against a stopped clock.
+TEST_CASE("a suspended application runs no system and no hook until it resumes") {
+    f64 now = 0.0;
+    SteppedApp app(null_config());
+    app.engine().set_time_source([&now] { return now; });
+    app.set_headless(0);
+    REQUIRE(app.initialize().ok());
+
+    now += 1.0 / 60.0;
+    REQUIRE(app.step_frame());
+    CHECK(app.updates == 1);
+
+    // Suspend. The frame still steps (the clock advances and input is drained),
+    // but no hook and no system runs, and nothing draws.
+    app.notify_suspend();
+    CHECK(app.suspended());
+    const u64 updates_at_suspend = app.updates;
+    const u64 render_calls_at_suspend = app.render_hook_calls;
+    now += 30.0;
+    REQUIRE(app.step_frame());
+    CHECK(app.updates == updates_at_suspend);
+    CHECK(app.render_hook_calls == render_calls_at_suspend);
+
+    // Resume. The next frame runs the hooks and systems again, and the clock is
+    // rebaselined so it steps by one frame rather than by the 30-second gap.
+    app.notify_resume();
+    CHECK_FALSE(app.suspended());
+    REQUIRE(app.step_frame());
+    CHECK(app.updates == updates_at_suspend + 1);
+    CHECK(app.engine().delta_time() <= 0.25f);
+
+    app.shutdown();
+}

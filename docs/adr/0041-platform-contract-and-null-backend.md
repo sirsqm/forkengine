@@ -53,7 +53,7 @@ whether it is implemented now.
 | Time | `runtime::Engine` (steady clock); `platform` is where a backend would inject it | Implemented, but in the runtime |
 | Dynamic libraries | `platform::DynamicLibrary` ([ADR-0061](0061-cpp-gameplay-modules-hot-reload.md)) | Implemented |
 | Lifecycle (init/shutdown) | `Window::create`/destructor; `Engine::initialize`/`shutdown` | Implemented |
-| Lifecycle (suspend/resume, orientation) | — | Deferred (mobile) |
+| Lifecycle (suspend/resume, orientation) | `runtime::Engine::notify_suspend`/`notify_resume` (clock rebaseline) + `Application` (schedule pause); orientation: — | Suspend/resume implemented (no backend feeds it yet); orientation deferred (mobile) |
 
 The contract is deliberately stated in terms of *what the engine depends on*, not
 *every OS facility*. A concern is in the contract only when engine code would
@@ -90,6 +90,16 @@ hardware id. `ActionMap` binds a pad button or one direction of a stick/trigger
 to an action, so a pad drives the same actions a key does. See
 [ADR-0120](0120-gamepad-input-seam.md) for the design. The null backend stays
 empty by construction: it feeds no pad, which is correct for a headless run.
+
+The suspend/resume half of the lifecycle row has landed as an engine seam with
+no backend behind it yet: `Engine::notify_suspend`/`notify_resume` mark the
+background span and rebaseline the clock on resume, so the first active frame
+steps by one frame rather than by the whole gap, and `Application` pauses the
+schedule while suspended so no system runs against a stopped clock. This is the
+mobile counterpart of the web tab-visibility path (ADR-0082); a mobile backend
+will feed the OS events once it exists, exactly as the GLFW backend will feed
+touch and gamepad. A desktop run never suspends and is byte-for-byte unchanged.
+Orientation remains deferred.
 
 ### The null backend
 

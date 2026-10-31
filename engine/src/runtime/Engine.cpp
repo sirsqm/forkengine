@@ -61,6 +61,31 @@ void Engine::notify_page_visibility(bool visible) noexcept {
     }
 }
 
+void Engine::notify_suspend() noexcept {
+    // Suspend is the mobile lifecycle's hidden span: the app is not running, so
+    // the wall clock keeps going while no frames arrive. Marking the span here
+    // and rebaselining on resume is what bounds the first active frame's step to
+    // one frame rather than the whole background gap (the same correction the
+    // web tab-visibility path makes). A redundant suspend (one already
+    // suspended) is a no-op, so a backend that repeats the event cannot move the
+    // rebaseline.
+    if (suspended_) {
+        return;
+    }
+    suspended_ = true;
+}
+
+void Engine::notify_resume() noexcept {
+    if (!suspended_) {
+        return;
+    }
+    suspended_ = false;
+    // The next tick must not charge the suspended span to one frame: rebaseline
+    // so it advances by the frame's own duration, exactly as the page-visible
+    // path does.
+    rebaseline_clock_ = true;
+}
+
 std::unique_ptr<audio::AudioSystem> Engine::take_audio_system() noexcept {
     return std::move(audio_system_);
 }

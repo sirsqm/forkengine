@@ -195,6 +195,20 @@ public:
     // A desktop run never calls this, so its clock is unchanged.
     void notify_page_visibility(bool visible) noexcept;
 
+    // --- Application lifecycle (mobile) ------------------------------------
+    // A phone suspends a backgrounded app and resumes it later; the wall clock
+    // runs the whole time while no frames arrive. This is the OS lifecycle the
+    // platform contract names (ADR-0041), and it is the mobile counterpart of
+    // the web tab-visibility path above: the host reports suspend and resume,
+    // the engine rebaselines on resume so the first active frame steps by one
+    // frame rather than by the whole gap, and `Application` pauses the schedule
+    // while suspended so no system runs against a paused clock.
+    //
+    // A desktop run never calls these, so its clock and schedule are unchanged.
+    void notify_suspend() noexcept;
+    void notify_resume() noexcept;
+    [[nodiscard]] bool is_suspended() const noexcept { return suspended_; }
+
     // The wall-clock source tick() measures the delta from, in seconds. Defaults
     // to a steady clock. A host that already knows the frame time -- a browser's
     // requestAnimationFrame timestamp, a replay, a test -- can supply it here so
@@ -224,6 +238,9 @@ private:
     // huge delta. A desktop run leaves both false and the clock is untouched.
     bool page_hidden_ = false;
     bool rebaseline_clock_ = false;
+    // True between a suspend and its matching resume. A desktop run leaves it
+    // false, so nothing about its clock or schedule changes.
+    bool suspended_ = false;
 };
 
 } // namespace fe

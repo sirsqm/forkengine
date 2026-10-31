@@ -134,55 +134,63 @@ bool Application::step_frame() {
         actions_.update(engine_.window().input(), viewport);
     }
 
-    {
-        const ProfileScope update_scope("frame/update");
-        on_update(engine_.delta_time());
+    // A suspended app does not simulate and does not draw: the clock advances
+    // and input is drained above, but no hook and no system runs, so gameplay
+    // state is frozen rather than stepped against a clock that is not moving.
+    // The resume rebaselines the engine clock, so the first active frame after
+    // it steps by one frame rather than by the whole background gap. A desktop
+    // run is never suspended and this branch is always taken.
+    if (!engine_.is_suspended()) {
+        {
+            const ProfileScope update_scope("frame/update");
+            on_update(engine_.delta_time());
 
-        // Run the user's systems for this frame. This is the whole execution
-        // model: after the per-frame hook, before rendering, in the order the
-        // systems were added. Each system is timed by the schedule.
-        //
-        // Reset the frame arena first: everything a system allocated from it
-        // last frame is dead by definition (nothing may outlive the frame), so
-        // the whole buffer is reclaimed in one pointer move before this frame's
-        // systems allocate. Resetting before the systems run, not after, means a
-        // system can allocate and the last system's data is still valid while it
-        // runs.
-        if (frame_arena_ != nullptr) {
-            frame_arena_->reset();
+            // Run the user's systems for this frame. This is the whole execution
+            // model: after the per-frame hook, before rendering, in the order the
+            // systems were added. Each system is timed by the schedule.
+            //
+            // Reset the frame arena first: everything a system allocated from it
+            // last frame is dead by definition (nothing may outlive the frame), so
+            // the whole buffer is reclaimed in one pointer move before this frame's
+            // systems allocate. Resetting before the systems run, not after, means a
+            // system can allocate and the last system's data is still valid while it
+            // runs.
+            if (frame_arena_ != nullptr) {
+                frame_arena_->reset();
+            }
+            FrameContext frame;
+            frame.delta_time = engine_.delta_time();
+            frame.elapsed_time = engine_.elapsed_time();
+            frame.resources = &engine_.resources();
+            frame.input = &engine_.input();
+            frame.actions = &actions_;
+            frame.arena = frame_arena_.get();
+            frame.jobs = jobs_.get();
+            // The store a game saves to, so a gameplay system saves through the same
+            // seam the engine owns rather than reaching for the engine (ADR-0096).
+            frame.user_data = &engine_.user_data();
+            // The render target's size, so a screen-space UI lays out against the same
+            // viewport the renderer draws with (ADR-0084). Zero when the window has no
+            // surface, which a UI system reads as "nothing to lay out".
+            frame.viewport = Vec2{static_cast<f32>(engine_.window().framebuffer_width()),
+                                  static_cast<f32>(engine_.window().framebuffer_height())};
+            schedule_.update(frame, scene_);
         }
-        FrameContext frame;
-        frame.delta_time = engine_.delta_time();
-        frame.elapsed_time = engine_.elapsed_time();
-        frame.resources = &engine_.resources();
-        frame.input = &engine_.input();
-        frame.actions = &actions_;
-        frame.arena = frame_arena_.get();
-        frame.jobs = jobs_.get();
-        // The store a game saves to, so a gameplay system saves through the same
-        // seam the engine owns rather than reaching for the engine (ADR-0096).
-        frame.user_data = &engine_.user_data();
-        // The render target's size, so a screen-space UI lays out against the same
-        // viewport the renderer draws with (ADR-0084). Zero when the window has no
-        // surface, which a UI system reads as "nothing to lay out".
-        frame.viewport = Vec2{static_cast<f32>(engine_.window().framebuffer_width()),
-                              static_cast<f32>(engine_.window().framebuffer_height())};
-        schedule_.update(frame, scene_);
-    }
 
-    {
-        const ProfileScope render_scope("frame/render");
-        // A plain headless engine has no device or renderer, so there is nothing
-        // to draw: the frame still advances the clock, the input edges and the
-        // systems. A headless engine that asked to render has a null RHI device,
-        // so the render path (extraction, batching, draw submission) runs and
-        // only rasterisation is absent. Both cases are explicit here rather than
-        // a no-op device pretending to render.
-        if (engine_.has_graphics() || engine_.headless_render()) {
-            render_frame();
-            // Presents the back buffer. With a real window this flips the
-            // surface; with the null backend it is a no-op.
-            engine_.device().end_frame();
+        {
+            const ProfileScope render_scope("frame/render");
+            // A plain headless engine has no device or renderer, so there is nothing
+            // to draw: the frame still advances the clock, the input edges and the
+            // systems. A headless engine that asked to render has a null RHI device,
+            // so the render path (extraction, batching, draw submission) runs and
+            // only rasterisation is absent. Both cases are explicit here rather than
+            // a no-op device pretending to render.
+            if (engine_.has_graphics() || engine_.headless_render()) {
+                render_frame();
+                // Presents the back buffer. With a real window this flips the
+                // surface; with the null backend it is a no-op.
+                engine_.device().end_frame();
+            }
         }
     }
 
@@ -194,6 +202,14 @@ bool Application::step_frame() {
 
     ++frames_stepped_;
     return true;
+}
+
+void Application::notify_suspend() noexcept {
+    engine_.notify_suspend();
+}
+
+void Application::notify_resume() noexcept {
+    engine_.notify_resume();
 }
 
 void Application::shutdown() {
