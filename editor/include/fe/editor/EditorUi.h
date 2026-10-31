@@ -15,6 +15,11 @@ namespace fe {
 
 class Window;
 
+namespace rhi {
+class Device;
+class Texture;
+} // namespace rhi
+
 namespace editor {
 
 class EditorContext;
@@ -47,7 +52,12 @@ public:
     // Creates the ImGui context and initialises the backends against `window`.
     // Requires `window` to have a current GL context. Returns an Error if the
     // context or a backend fails to initialise.
-    [[nodiscard]] Error initialize(Window& window);
+    //
+    // `device` is optional: when given, the engine's own mark is uploaded as a
+    // small texture for the menu bar to draw beside the name. A null device (a
+    // headless editor test) skips it, and the toolbar draws its name with no
+    // mark rather than failing.
+    [[nodiscard]] Error initialize(Window& window, rhi::Device* device = nullptr);
 
     void shutdown();
 
@@ -108,6 +118,9 @@ private:
     bool fonts_need_rebuild_ = false;
     // The fonts, resolved once at initialize() and pushed for the whole frame.
     EditorFonts fonts_;
+    // The engine mark drawn at the head of the menu bar. Null when no device was
+    // given, or when the upload failed; the toolbar then draws no mark.
+    std::shared_ptr<rhi::Texture> logo_texture_;
 };
 
 } // namespace editor

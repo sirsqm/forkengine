@@ -169,9 +169,9 @@ docs/             the architecture and plan documents, and the ADRs
 
 The logo and banner live in `branding/`. Each ships as a black and a white
 version with identical geometry, so it reads on a light or a dark background;
-the SVG is the source and the PNG is a render of it. The AppImage icon and the
-engine's window icon are generated from the same logo, so the mark is defined
-once.
+the SVG is the source and the PNG is a render of it. The AppImage icon, the
+engine's window icon, and the mark at the head of the editor's menu bar are
+generated from the same logo, so the mark is defined once.
 
 ## Download
 

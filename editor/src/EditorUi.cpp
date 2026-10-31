@@ -5,9 +5,12 @@
 #include "fe/core/Assert.h"
 #include "fe/core/Log.h"
 #include "fe/editor/EditorContext.h"
+#include "fe/editor/EditorLogo.h"
 #include "fe/editor/EditorStyle.h"
 #include "fe/editor/EditorWidgets.h"
 #include "fe/platform/Window.h"
+#include "fe/rhi/Resources.h"
+#include "fe/rhi/Types.h"
 
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -47,7 +50,7 @@ EditorUi::~EditorUi() {
     shutdown();
 }
 
-Error EditorUi::initialize(Window& window) {
+Error EditorUi::initialize(Window& window, rhi::Device* device) {
     if (initialized_) {
         return Error("EditorUi::initialize called twice");
     }
@@ -99,6 +102,14 @@ Error EditorUi::initialize(Window& window) {
         return Error("EditorUi: ImGui_ImplOpenGL3_Init failed");
     }
 
+    // The engine's own mark, drawn at the head of the menu bar. Uploaded once
+    // here, after the GL context is current, so it is ready for the first frame.
+    // A null device or a refused upload leaves the toolbar drawing no mark, which
+    // is the right behaviour for a headless run.
+    if (device != nullptr) {
+        logo_texture_ = create_logo_texture(*device);
+    }
+
     initialized_ = true;
     FE_LOG_INFO("editor: Dear ImGui %s initialised", IMGUI_VERSION);
     return Error::none();
@@ -108,6 +119,10 @@ void EditorUi::shutdown() {
     if (!initialized_) {
         return;
     }
+    // Release the logo while the device is still alive: the host shuts the UI
+    // down before the engine, but this member outlives shutdown() and its
+    // destructor would otherwise delete a GL texture through a dead context.
+    logo_texture_.reset();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -379,8 +394,25 @@ void EditorUi::draw_toolbar(EditorContext& context) {
         return;
     }
 
-    // The engine's name in the semibold face, as the menu bar's leading mark. It
-    // is not a menu; it is the app identity, the way a real editor labels itself.
+    // The engine's mark, then its name in the semibold face, as the menu bar's
+    // leading identity. The mark is the same geometry as the window icon and the
+    // AppImage icon, tinted with the scheme's text colour so it reads on both
+    // themes; a run with no logo texture (headless) draws the name alone.
+    if (logo_texture_ != nullptr) {
+        const ImVec4 ink = to_imvec4(applied_scheme_.palette.text);
+        // Sized from the font so the mark and the name share a baseline and the
+        // mark scales with the density setting.
+        const f32 mark = applied_scheme_.metrics.font_size * 1.25f;
+        // Centre the mark against the menu bar's text row: the bar's height
+        // follows the font, so the offset is a fraction of the leftover space.
+        const f32 y_offset = ImMax(0.0f, (ImGui::GetTextLineHeight() - mark) * 0.5f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + y_offset);
+        const auto texture_id = static_cast<ImTextureID>(logo_texture_->native_handle());
+        ImGui::ImageWithBg(ImTextureRef{texture_id}, ImVec2(mark, mark), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+                           ImVec4(0.0f, 0.0f, 0.0f, 0.0f), ink);
+        ImGui::SameLine();
+    }
+
     if (fonts_.semibold != nullptr) {
         ImGui::PushFont(fonts_.semibold, applied_scheme_.metrics.font_size);
     }

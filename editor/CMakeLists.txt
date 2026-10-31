@@ -33,6 +33,7 @@ add_library(fork_editor_core STATIC
     src/FileDialogViewModel.cpp
     src/Commands.cpp
     src/OperationCommand.cpp
+    src/EditorLogo.cpp
 )
 add_library(FE::editor_core ALIAS fork_editor_core)
 

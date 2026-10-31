@@ -95,7 +95,7 @@ Error EditorHost::initialize() {
         }
     }
 
-    if (Error error = ui_.initialize(engine_.window()); error) {
+    if (Error error = ui_.initialize(engine_.window(), &engine_.device()); error) {
         FE_LOG_CRITICAL("editor: failed to initialise the UI: %s", error.message().c_str());
         // The UI failed, but the engine is up. Let shutdown() unwind in order.
         initialized_ = true;
