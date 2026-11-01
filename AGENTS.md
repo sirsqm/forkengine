@@ -141,6 +141,11 @@ tests/web/run_web_game.sh       # exports the 2D demo and the playable 3D game, 
   loaded runner where the game has not painted by the time the page is read — and
   that is a flake, not a defect: confirm locally, then rerun the job
   (`gh run rerun <id> --failed`) rather than changing code to chase it.
+- The web build tree must be configured with `-DFE_BUILD_EXAMPLES=ON` for either
+  web script to run: `fork_player` — the runtime an exported web build actually
+  runs — is built behind that switch, so a tree configured with it off compiles
+  the engine and then fails the game script with "no web player at
+  build-web/bin/fork_player.js". The CI web job passes `ON` for this reason.
 - `clang-format` must never be allowed to see an `EM_ASM` body containing `===`:
   it parses the body as C++, rewrites `a === b` to `a == = b`, and the result is
   a JavaScript syntax error that breaks the module at run time with no build
@@ -219,6 +224,12 @@ defect, not noise.
 - `ctest` skips tests the build did not configure without failing, so a green
   `ctest` is only green for the tests that exist. Confirm the test count, not
   just the exit code.
+- The graphics tests need a display: with none, `GraphicsContext3D` fails to
+  create a context and every 3D test prints "skipping: no graphics context" and
+  passes, so a green run on a headless machine has asserted nothing about
+  rendering. Run them under `xvfb-run -a` (and install `xvfb`, `xauth`, and Mesa's
+  software GL, `libgl1-mesa-dri`) to exercise the real GL path, and read the
+  printed test count — 50 tests, not the handful of skips.
 - `-Wshadow` is on and warnings are errors, so a local declared in an outer
   scope is a build break when an inner block declares the same name. Renaming a
   variable with a blanket `sed` also rewrites identifiers that merely contain
