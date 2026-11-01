@@ -829,6 +829,111 @@ targets.
 description, and aliases two whose lifetimes do not overlap, with a test proving
 the alias and the non-overlap.
 
+### `renderer3d-graph-passes`
+
+The render-graph row's other open half (ADR-0100): `Renderer2D::render_frame`
+drives its world and UI passes through `render::RenderGraph`, but `Renderer3D`
+still runs its shadow, main, and post sequence by hand, so the 3D path cannot
+benefit from pass ordering or culling.
+
+**Done when** `Renderer3D`'s shadow, main, and post passes are declared on a
+`render::RenderGraph` (shadow feeding main, main feeding post) and run through
+`run()`, with a test proving the observed order is shadow, main, post and that
+the draw counts are unchanged from the hand-ordered path.
+
+### `render-graph-target-resize`
+
+The render-target ownership row (ADR-0100) leaves resizing open: an owned target
+is allocated once, so a window resize or an editor panel resize leaves a target
+sized for the old viewport and the image is stretched or clipped.
+
+**Done when** re-declaring a target with new dimensions and re-allocating the
+graph rebuilds it at the new size, with a test proving a target's `width()` and
+`height()` follow the new description and that a second `allocate()` at the same
+size reuses nothing stale.
+
+### `render-graph-barriers`
+
+The render-graph row (ADR-0100) reasons about read/write *names* but emits no
+barriers: two passes that write the same resource, or a write followed by a read
+of the same name, are ordered only if the caller declared a dependency by hand.
+
+**Done when** the graph derives an ordering edge from a write-then-read (or
+write-then-write) of the same resource and `order()` places the producer first
+without an explicit `add_dependency`, with a test proving the derived edge orders
+two passes and that an unrelated pair keeps its declared order.
+
+### `render-graph-timings`
+
+The render-graph row (ADR-0100) profiles each pass as `pass/<name>` but the graph
+exposes no way to read those timings back, so a caller cannot find which pass
+dominates a frame.
+
+**Done when** the graph exposes the last run's per-pass times, taken from the
+profiler frame report, keyed by pass name, with a test that runs a graph under a
+real profiler frame and reads a named pass's time back.
+
+### `physics3d-ccd`
+
+The 3D refinement row (ADR-0043) leaves continuous collision detection open, as
+2D once did, so a fast 3D body (a thrown object) tunnels through a thin wall
+between steps.
+
+**Done when** a test fires a small body at a thin static wall fast enough to pass
+through it in one step and proves it is stopped at the surface, while a slow body
+behaves exactly as before.
+
+### `physics2d-rotational-ccd`
+
+The 2D refinement row (ADR-0037) leaves sweeping a *rotating* body open: linear
+CCD is done, but a body spinning fast enough to sweep its corners through a wall
+between steps still passes through.
+
+**Done when** a test spins a long thin body fast enough that an end would cross a
+thin static wall in one step and proves the contact is found, while the same body
+without spin behaves as the linear sweep already does.
+
+### `physics-more-joints`
+
+The physics refinement rows (ADR-0037, ADR-0043) leave the joint set minimal
+(a distance/pin joint), so a ragdoll or a hinge cannot be built.
+
+**Done when** a hinge joint (two bodies sharing an anchor, with one rotation
+axis) is solved and a test proves a body hanging from a static anchor swings
+about the axis and comes to rest hanging below it, while the existing joint types
+are unchanged.
+
+### `audio-pack-streaming`
+
+The `fork_pack` polish row (ADR-0030) leaves streaming open: a large pack is
+fully read into memory at load, so a big audio asset set inflates the resident
+set even when most of it is never played.
+
+**Done when** a pack can be opened without reading every payload and a single
+entry read on demand, with a test proving an entry reads back byte-identical to
+the fully-loaded read and that opening a pack does not touch payload bytes.
+
+### `scene-prefab-instancing`
+
+The scene row leaves prefab instancing open: a repeated object (a bullet, a
+tile's decoration) is a full node subtree each time, so a scene with many copies
+costs memory and load time proportional to the count.
+
+**Done when** a prefab can be declared once and instantiated many times, with a
+test proving two instances share the prefab's definition but carry independent
+per-instance transforms, and that editing one instance leaves the other
+unchanged.
+
+### `ui-scroll-and-masks`
+
+The in-game UI row (ADR-0058) leaves scrolling and clipping open: a list longer
+than its panel has no scroll, and a child drawn past its parent's bounds is not
+clipped, so a menu overflows its frame.
+
+**Done when** a layout node can clip its children to its rect and offset them by
+a scroll value, with a test proving a child outside the rect is culled and one
+inside is offset by exactly the scroll amount.
+
 ---
 ## Backlog — not yet ordered
 
