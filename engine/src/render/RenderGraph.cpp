@@ -3,6 +3,7 @@
 #include "fe/render/RenderGraph.h"
 
 #include "fe/core/Profiler.h"
+#include "fe/rhi/Device.h"
 
 #include <algorithm>
 
@@ -16,6 +17,14 @@ struct Edge {
     u32 pass = 0;
     u32 after = 0;
 };
+
+// True when two target descriptions allocate the same physical shape, so one
+// allocation can back either. The name is deliberately excluded: it identifies
+// the target, not the storage.
+bool same_shape(const rhi::RenderTargetDesc& a, const rhi::RenderTargetDesc& b) noexcept {
+    return a.width == b.width && a.height == b.height && a.color == b.color && a.depth == b.depth &&
+           a.sample_depth == b.sample_depth;
+}
 
 } // namespace
 
@@ -176,6 +185,7 @@ Result<std::string_view> RenderGraph::pass_name(usize index) const {
 void RenderGraph::clear() noexcept {
     passes_.clear();
     outputs_.clear();
+    targets_.clear();
 }
 
 Result<std::vector<std::string>> RenderGraph::order() const {
@@ -255,6 +265,138 @@ Result<std::vector<std::string>> RenderGraph::order() const {
     }
 
     return result;
+}
+
+Result<void> RenderGraph::add_target(const rhi::RenderTargetDesc& desc) {
+    if (desc.name.empty()) {
+        return Error{"render graph: a target name must not be empty"};
+    }
+    if (desc.width == 0 || desc.height == 0) {
+        return Error{"render graph: target '" + desc.name + "' must have non-zero dimensions"};
+    }
+    if (!desc.color && !(desc.depth && desc.sample_depth)) {
+        return Error{"render graph: target '" + desc.name +
+                     "' has no attachment; set color, or depth with sample_depth"};
+    }
+    for (const Target& target : targets_) {
+        if (target.desc.name == desc.name) {
+            return Error{"render graph: duplicate target name '" + desc.name + "'"};
+        }
+    }
+    targets_.push_back(Target{desc, nullptr});
+    return {};
+}
+
+Result<RenderGraph::TargetPlan> RenderGraph::plan() const {
+    auto ordered = order();
+    if (!ordered) {
+        return ordered.error();
+    }
+    // The run order resolved to pass indices, so a target's first and last use
+    // are a min and a max over live passes rather than a second graph walk.
+    std::vector<u32> run;
+    run.reserve(ordered.value().size());
+    for (const std::string& name : ordered.value()) {
+        run.push_back(find(name));
+    }
+
+    const u32 never = TargetPlan::kNoSlot;
+    std::vector<u32> first_use(targets_.size(), never);
+    std::vector<u32> last_use(targets_.size(), never);
+    for (u32 i = 0; i < targets_.size(); ++i) {
+        const std::string& name = targets_[i].desc.name;
+        for (u32 p = 0; p < run.size(); ++p) {
+            const Pass& pass = passes_[run[p]];
+            const bool touches = std::find(pass.writes.begin(), pass.writes.end(), name) != pass.writes.end() ||
+                                 std::find(pass.reads.begin(), pass.reads.end(), name) != pass.reads.end();
+            if (touches) {
+                if (first_use[i] == never) {
+                    first_use[i] = p;
+                }
+                last_use[i] = p;
+            }
+        }
+    }
+
+    TargetPlan result;
+    result.slots.assign(targets_.size(), never);
+    // A target's slot is the first one that fits: no shape mismatch, and no
+    // already-assigned target whose lifetime overlaps this one's. Declaring the
+    // targets in the order they would be created keeps the assignment stable.
+    for (u32 i = 0; i < targets_.size(); ++i) {
+        if (first_use[i] == never) {
+            continue; // no live pass touches it; it gets no storage.
+        }
+        for (u32 slot = 0; slot < result.slot_count; ++slot) {
+            bool fits = true;
+            for (u32 j = 0; j < i; ++j) {
+                if (result.slots[j] != slot) {
+                    continue;
+                }
+                if (!same_shape(targets_[i].desc, targets_[j].desc)) {
+                    fits = false;
+                    break;
+                }
+                // Half-open intervals: one target's last use on the same pass as
+                // another's first use still overlaps, so they cannot share.
+                const bool disjoint = last_use[j] < first_use[i] || last_use[i] < first_use[j];
+                if (!disjoint) {
+                    fits = false;
+                    break;
+                }
+            }
+            if (fits) {
+                result.slots[i] = slot;
+                break;
+            }
+        }
+        if (result.slots[i] == never) {
+            result.slots[i] = result.slot_count++;
+        }
+    }
+    return result;
+}
+
+Error RenderGraph::allocate(rhi::Device& device) {
+    release();
+    auto planned = plan();
+    if (!planned) {
+        return planned.error();
+    }
+    std::vector<rhi::RenderTargetRef> slots(planned.value().slot_count);
+    for (u32 i = 0; i < targets_.size(); ++i) {
+        const u32 slot = planned.value().slots[i];
+        if (slot == TargetPlan::kNoSlot) {
+            continue;
+        }
+        if (slots[slot] == nullptr) {
+            Result<rhi::RenderTargetRef> created = device.create_render_target(targets_[i].desc);
+            if (!created) {
+                return created.error();
+            }
+            slots[slot] = created.value();
+        }
+        // Targets that alias a slot share the one allocation; a caller reading a
+        // target's name sees the first description declared for that slot, which
+        // is why aliasing requires identical shapes.
+        targets_[i].resource = slots[slot];
+    }
+    return Error::none();
+}
+
+rhi::RenderTarget* RenderGraph::target(std::string_view resource) const noexcept {
+    for (const Target& target : targets_) {
+        if (target.desc.name == resource) {
+            return target.resource.get();
+        }
+    }
+    return nullptr;
+}
+
+void RenderGraph::release() noexcept {
+    for (Target& target : targets_) {
+        target.resource.reset();
+    }
 }
 
 Error RenderGraph::run(const std::function<Error(std::string_view)>& run_pass) const {

@@ -4,11 +4,17 @@
 
 #include "fe/core/Error.h"
 #include "fe/core/Types.h"
+#include "fe/rhi/Resources.h"
+#include "fe/rhi/Types.h"
 
 #include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace fe::rhi {
+class Device;
+} // namespace rhi
 
 namespace fe::render {
 
@@ -110,6 +116,52 @@ public:
     // what was dropped without reading the run order.
     [[nodiscard]] std::vector<std::string> culled() const;
 
+    // --- Render-target ownership (ADR-0100) --------------------------------
+    //
+    // A graph may own the render targets its passes draw into, rather than
+    // receiving them from the caller. A target is declared by a `RenderTargetDesc`
+    // whose `name` is the resource name a pass writes to it, so a pass's writes
+    // and its target are the same name. Targets are allocated from their
+    // descriptions on `allocate()`, which needs a device (the null device works
+    // headlessly), and are owned by the graph until `release()`.
+    //
+    // Targets are aliased: two targets whose lifetimes do not overlap -- one's
+    // last use precedes the other's first -- may share one physical allocation,
+    // because nothing observes both at once. A target's lifetime is the span, in
+    // run order, from the first live pass that writes it to the last live pass
+    // that reads or writes it. Aliasing only ever combines targets whose
+    // descriptions are identical, since a slot is allocated once from one
+    // description. A target no live pass touches is dead and gets no slot.
+    [[nodiscard]] Result<void> add_target(const rhi::RenderTargetDesc& desc);
+
+    // The number of declared targets.
+    [[nodiscard]] usize target_count() const noexcept { return targets_.size(); }
+
+    // The physical slot each declared target is assigned, in declaration order,
+    // and the number of distinct slots. Two targets with the same slot alias one
+    // allocation; `kNoSlot` marks a target no live pass touches. Fails if the
+    // dependencies among live passes form a cycle, as `order()` does.
+    struct TargetPlan {
+        std::vector<u32> slots;
+        u32 slot_count = 0;
+        static constexpr u32 kNoSlot = 0xFFFFFFFFu;
+    };
+    [[nodiscard]] Result<TargetPlan> plan() const;
+
+    // Allocates one render target per slot in `plan()`, through `device`, and
+    // keeps them alive. Fails on a cycle or on a device refusal. Calling it again
+    // releases what was allocated first, so it is safe to re-run after the graph
+    // changes.
+    [[nodiscard]] Error allocate(rhi::Device& device);
+
+    // The target allocated for `resource`, or nullptr when none is (an unknown
+    // name, a dead target, or before `allocate()`).
+    [[nodiscard]] rhi::RenderTarget* target(std::string_view resource) const noexcept;
+
+    // Drops every allocated target. The declarations are kept, so a later
+    // `allocate()` rebuilds them.
+    void release() noexcept;
+
     // `order()`, then `run_pass` for each pass in turn. Stops at the first pass
     // that returns an Error and propagates it. Each pass runs inside a profiler
     // scope named `pass/<name>` (a no-op when no profiler frame is active), so
@@ -127,10 +179,19 @@ private:
     // The indices of the passes that survive culling, in declaration order.
     [[nodiscard]] std::vector<u32> live_pass_indices() const;
 
+    // A declared render target: its description, plus the allocation `allocate()`
+    // makes for its slot (null until then, and shared with the other targets that
+    // alias the same slot).
+    struct Target {
+        rhi::RenderTargetDesc desc;
+        rhi::RenderTargetRef resource;
+    };
+
     static constexpr u32 kInvalid = 0xFFFFFFFFu;
 
     std::vector<Pass> passes_;
     std::vector<std::string> outputs_;
+    std::vector<Target> targets_;
 };
 
 } // namespace fe::render

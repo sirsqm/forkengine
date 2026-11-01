@@ -9,7 +9,10 @@
 
 #include "fe/core/Profiler.h"
 #include "fe/render/RenderGraph.h"
+#include "fe/rhi/Device.h"
+#include "fe/rhi/Resources.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -298,4 +301,180 @@ TEST_CASE("clear drops resources and outputs as well as passes") {
     REQUIRE(graph.add_pass("post").ok());
     REQUIRE(graph.add_write("post", "swapchain").ok());
     CHECK(graph.culled() == std::vector<std::string>{"post"});
+}
+
+// ---------------------------------------------------------------------------
+// Render-target ownership and aliasing (ADR-0100)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+rhi::RenderTargetDesc color_target(std::string name, u32 width = 320, u32 height = 240) {
+    rhi::RenderTargetDesc desc;
+    desc.name = std::move(name);
+    desc.width = width;
+    desc.height = height;
+    desc.color = true;
+    return desc;
+}
+
+} // namespace
+
+TEST_CASE("a target description is validated when it is declared") {
+    RenderGraph graph;
+    CHECK_FALSE(graph.add_target(color_target("")).ok());             // empty name
+    CHECK_FALSE(graph.add_target(color_target("x", 0, 240)).ok());    // zero width
+    CHECK_FALSE(graph.add_target(color_target("x", 320, 0)).ok());    // zero height
+    rhi::RenderTargetDesc bare;
+    bare.name = "bare"; // no attachment at all
+    CHECK_FALSE(graph.add_target(bare).ok());
+    CHECK(graph.add_target(color_target("main")).ok());
+    // A duplicate name is ambiguous and refused.
+    CHECK_FALSE(graph.add_target(color_target("main")).ok());
+    CHECK(graph.target_count() == 1);
+}
+
+TEST_CASE("two targets whose lifetimes do not overlap are aliased") {
+    // `shadow` is written by `a` and read by `b`; `post` is written by `c` and
+    // read by `d`. a -> b -> c -> d, so shadow's last use (b) precedes post's
+    // first use (c) and the two share one slot. Both are the same shape, as
+    // aliasing requires.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_pass("d").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_dependency("d", "c").ok());
+    REQUIRE(graph.add_write("a", "shadow").ok());
+    REQUIRE(graph.add_read("b", "shadow").ok());
+    REQUIRE(graph.add_write("c", "post").ok());
+    REQUIRE(graph.add_read("d", "post").ok()); // keeps "post" live
+    REQUIRE(graph.add_target(color_target("shadow")).ok());
+    REQUIRE(graph.add_target(color_target("post")).ok());
+
+    const auto planned = graph.plan();
+    REQUIRE(planned.ok());
+    REQUIRE(planned.value().slots.size() == 2);
+    CHECK(planned.value().slots[0] == planned.value().slots[1]);
+    CHECK(planned.value().slot_count == 1);
+}
+
+TEST_CASE("two targets whose lifetimes overlap are not aliased") {
+    // Both are live on the same pass, so they cannot share an allocation.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_dependency("present", "main").ok());
+    REQUIRE(graph.add_write("main", "color").ok());
+    REQUIRE(graph.add_write("main", "depth").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+    REQUIRE(graph.add_read("present", "depth").ok());
+    REQUIRE(graph.add_target(color_target("color")).ok());
+    REQUIRE(graph.add_target(color_target("depth")).ok());
+
+    const auto planned = graph.plan();
+    REQUIRE(planned.ok());
+    REQUIRE(planned.value().slots.size() == 2);
+    CHECK(planned.value().slots[0] != planned.value().slots[1]);
+    CHECK(planned.value().slot_count == 2);
+}
+
+TEST_CASE("aliasing requires identical shapes") {
+    // Same disjoint lifetimes, different sizes: no aliasing.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_write("a", "small").ok());
+    REQUIRE(graph.add_read("b", "small").ok());
+    REQUIRE(graph.add_write("c", "large").ok());
+    REQUIRE(graph.add_read("b", "large").ok());
+    REQUIRE(graph.add_target(color_target("small", 320, 240)).ok());
+    REQUIRE(graph.add_target(color_target("large", 1920, 1080)).ok());
+
+    const auto planned = graph.plan();
+    REQUIRE(planned.ok());
+    CHECK(planned.value().slots[0] != planned.value().slots[1]);
+    CHECK(planned.value().slot_count == 2);
+}
+
+TEST_CASE("a target no live pass touches is dead and gets no slot") {
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("present").ok()); // writes nothing
+    REQUIRE(graph.add_target(color_target("unused")).ok());
+
+    const auto planned = graph.plan();
+    REQUIRE(planned.ok());
+    REQUIRE(planned.value().slots.size() == 1);
+    CHECK(planned.value().slots[0] == RenderGraph::TargetPlan::kNoSlot);
+    CHECK(planned.value().slot_count == 0);
+}
+
+TEST_CASE("allocate creates one target per slot and aliased targets share it") {
+    Result<std::unique_ptr<rhi::Device>> device = rhi::create_null_device();
+    REQUIRE(device.ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_pass("d").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_dependency("d", "c").ok());
+    REQUIRE(graph.add_write("a", "shadow").ok());
+    REQUIRE(graph.add_read("b", "shadow").ok());
+    REQUIRE(graph.add_write("c", "post").ok());
+    REQUIRE(graph.add_read("d", "post").ok());
+    REQUIRE(graph.add_target(color_target("shadow")).ok());
+    REQUIRE(graph.add_target(color_target("post")).ok());
+
+    CHECK(graph.allocate(*device.value()).ok());
+    // The alias is observable: both names resolve to the *same* allocation.
+    rhi::RenderTarget* shadow = graph.target("shadow");
+    rhi::RenderTarget* post = graph.target("post");
+    REQUIRE(shadow != nullptr);
+    REQUIRE(post != nullptr);
+    CHECK(shadow == post);
+    CHECK(shadow->width() == 320);
+    CHECK(shadow->height() == 240);
+    CHECK(graph.target("absent") == nullptr);
+
+    // Releasing drops the allocations but keeps the declarations.
+    graph.release();
+    CHECK(graph.target("shadow") == nullptr);
+    CHECK(graph.target_count() == 2);
+}
+
+TEST_CASE("allocate refuses a graph whose dependencies form a cycle") {
+    Result<std::unique_ptr<rhi::Device>> device = rhi::create_null_device();
+    REQUIRE(device.ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_write("a", "x").ok());
+    REQUIRE(graph.add_write("b", "y").ok());
+    REQUIRE(graph.add_read("a", "y").ok());
+    REQUIRE(graph.add_read("b", "x").ok());
+    REQUIRE(graph.add_dependency("a", "b").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_target(color_target("x")).ok());
+    REQUIRE(graph.add_target(color_target("y")).ok());
+
+    CHECK_FALSE(graph.plan().ok());
+    const Error error = graph.allocate(*device.value());
+    REQUIRE(error);
+    CHECK(error.message().find("cycle") != std::string::npos);
+}
+
+TEST_CASE("clear drops target declarations") {
+    RenderGraph graph;
+    REQUIRE(graph.add_target(color_target("main")).ok());
+    graph.clear();
+    CHECK(graph.target_count() == 0);
 }
