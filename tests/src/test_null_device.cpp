@@ -11,6 +11,7 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/core/Profiler.h"
 #include "fe/mesh/Mesh.h"
 #include "fe/renderer2d/Renderer2D.h"
 #include "fe/renderer3d/Renderer3D.h"
@@ -261,6 +262,70 @@ TEST_CASE("the 3D renderer runs its shadow pass against a null device") {
     // the frame began: the default target.
     CHECK(device.bound_render_target() == nullptr);
     device.end_frame();
+}
+
+// `render_frame` drives the 3D frame through a `render::RenderGraph` (ADR-0100,
+// docs/SHIPPING_QUEUE.md `renderer3d-graph-passes`). The graph runs each pass
+// inside a profiler scope named `pass/<name>`, so a profiler frame's samples
+// report the observed order directly -- the same trick the graph's own test
+// uses, here against a real renderer. This needs no GL context: the null device
+// accepts every bind and draw, so what is asserted is the order the passes ran
+// and the counts they produced, not pixels.
+TEST_CASE("the 3D renderer runs its passes through the graph in order") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE(renderer.initialize(device).ok() == true);
+
+    Scene scene;
+    Node* camera = scene.create_node("Camera");
+    camera->add_component<Camera3D>();
+
+    Node* light = scene.create_node("Sun");
+    light->add_component<DirectionalLight3D>();
+
+    Node* cube = scene.create_node("Cube");
+    auto* mesh_renderer = cube->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = Mesh::make_cube();
+
+    // A real profiler frame so the graph's per-pass scopes are recorded. The
+    // profiler is thread-local, so it is installed and removed around the frame.
+    Profiler profiler;
+    Profiler* previous = Profiler::current();
+    Profiler::set_current(&profiler);
+    REQUIRE(profiler.begin_frame().ok());
+
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto drawn = renderer.render_frame(device, scene, 320, 200);
+    REQUIRE(drawn.ok());
+    device.end_frame();
+
+    REQUIRE(profiler.end_frame().ok());
+    Profiler::set_current(previous);
+
+    // The observed order, read back from the recorded scopes: shadow, then main,
+    // then post. `frame_from_latest(0)` is the frame just ended.
+    const Profiler::FrameSample* frame = profiler.frame_from_latest(0);
+    REQUIRE(frame != nullptr);
+    std::vector<std::string_view> pass_order;
+    for (u32 i = 0; i < frame->scope_count; ++i) {
+        const std::string_view name = profiler.name_of(frame->scopes[i].name);
+        if (name.starts_with("pass/")) {
+            pass_order.push_back(name.substr(5));
+        }
+    }
+    REQUIRE(pass_order.size() == 3);
+    CHECK(pass_order[0] == "shadow");
+    CHECK(pass_order[1] == "main");
+    CHECK(pass_order[2] == "post");
+
+    // The draw counts are the hand-ordered path's: one visible cube is one main
+    // draw and one shadow caster, and the post pass did not draw geometry.
+    CHECK(drawn.value() == 1);
+    CHECK(renderer.last_draw_calls() == 1);
+    CHECK(renderer.last_shadow_casters() == 1);
 }
 
 // A material's texture is named by a reference string, not by a shared_ptr, and

@@ -876,6 +876,11 @@ bool Renderer3D::refresh_cull_bvh(const std::vector<render::MeshInstance>& insta
 
 Result<usize> Renderer3D::render(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
                                  const PostProcessSettings& settings, JobSystem* jobs) {
+    return render_frame(device, scene, viewport_width, viewport_height, settings, jobs);
+}
+
+Result<usize> Renderer3D::render_frame(rhi::Device& device, const Scene& scene, u32 viewport_width, u32 viewport_height,
+                                       const PostProcessSettings& settings, JobSystem* jobs) {
     FE_CHECK(shader_ != nullptr);
     FE_CHECK(viewport_width > 0 && viewport_height > 0);
 
@@ -1057,6 +1062,25 @@ void Renderer3D::set_lighting_uniforms(rhi::Shader& shader, const Vec3& camera_p
 Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                const std::vector<const Mesh*>& meshes_seen) {
+    FrameLighting lighting;
+    prepare_frame(device, scene, instances, lighting);
+    if (instances.empty() && frame_skinned_instances_.empty()) {
+        return usize{0};
+    }
+    // The shadow and main passes are this renderer's two steps, run in that
+    // order. `render_frame` declares them on a graph; this direct path keeps
+    // them as calls, so an existing caller's behaviour is unchanged.
+    draw_shadow_pass(device, instances, lighting);
+    Result<usize> main = draw_main_pass(device, view_projection, camera_position, nullptr, instances, lighting);
+    if (!main) {
+        return main.error();
+    }
+    sweep_dead_buffers(meshes_seen);
+    return main.value();
+}
+
+usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::vector<render::MeshInstance>& instances,
+                                FrameLighting& lighting) {
     FE_CHECK(shader_ != nullptr);
 
     last_draw_calls_ = 0;
@@ -1069,7 +1093,12 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     texture_cache_.clear();
 
     if (instances.empty() && frame_skinned_instances_.empty()) {
-        return usize{0};
+        // Nothing to draw this frame. The batched working set is cleared here
+        // rather than left as the previous frame left it, because the main pass
+        // reads `frame_batches_` and would otherwise redraw last frame's batches.
+        frame_instance_data_.clear();
+        frame_batches_.clear();
+        return 0;
     }
 
     // --- Frame constants ----------------------------------------------------
@@ -1167,15 +1196,33 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
                                                      frame_instance_data_.size() * sizeof(Instance)));
     }
 
-    // --- 3b. Shadow pass ----------------------------------------------------
+    lighting.direction = light_direction;
+    lighting.color = light_color;
+    lighting.intensity = light_intensity;
+    lighting.ambient = ambient;
+    lighting.light_view_projection = Mat4::identity();
+    // The shadow pass runs only when there is a directional light and something
+    // to cast from. `instancing_ready` and the skinned set are the frame's
+    // drawable geometry, so a lit but empty frame skips the map entirely.
+    lighting.shadows_enabled = light != nullptr && (instancing_ready || !frame_skinned_instances_.empty());
+    return static_cast<usize>(drawn);
+}
+
+void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshInstance>& instances,
+                                  FrameLighting& lighting) {
     // Render the visible geometry's depth from the light's point of view into
-    // the shadow map, then restore the main pass' target. The map's coverage is
-    // fitted to the world bounds of the instances that survived culling: those
-    // are the only casters whose shadows can land on something visible, and it
-    // keeps the map from being spread thin by distant geometry.
-    bool shadows_enabled = false;
+    // the shadow map, then restore the target the pass found bound. The map's
+    // coverage is fitted to the world bounds of the instances that survived
+    // culling: those are the only casters whose shadows can land on something
+    // visible, and it keeps the map from being spread thin by distant geometry.
+    //
+    // The light is resolved in `prepare_frame`; a scene with no directional light
+    // resolves `shadows_enabled` false and this pass is a no-op.
+    if (!lighting.shadows_enabled) {
+        return;
+    }
     Mat4 light_view_projection = Mat4::identity();
-    if (light != nullptr && (instancing_ready || !frame_skinned_instances_.empty())) {
+    {
         Vec3 scene_min{};
         Vec3 scene_max{};
         bool bounds_valid = false;
@@ -1219,8 +1266,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
         if (Error error = ensure_shadow_target(device); error) {
             FE_LOG_ERROR("renderer3d: shadow map unavailable: %s", error.message().c_str());
         } else {
-            light_view_projection = directional_light_view_projection(scene_min, scene_max, light_direction);
-
+            light_view_projection = directional_light_view_projection(scene_min, scene_max, lighting.direction);
             rhi::RenderTarget* previous_target = device.bound_render_target();
             device.bind_render_target(shadow_target_.get());
             shadow_target_->clear(rhi::ClearColor{1.0f, 1.0f, 1.0f, 1.0f}); // Far depth.
@@ -1287,7 +1333,25 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
             // Restore whatever the caller had bound (the window, or an editor
             // panel's target) so the main pass draws where it was meant to.
             device.bind_render_target(previous_target);
-            shadows_enabled = true;
+            lighting.shadows_enabled = true;
+            lighting.light_view_projection = light_view_projection;
+        }
+    }
+}
+
+Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_projection, const Vec3& camera_position,
+                                         const Camera3D* camera, std::vector<render::MeshInstance>& instances,
+                                         const FrameLighting& lighting) {
+    // The camera's background gradient is geometry-independent, so it draws even
+    // when the cull left nothing: an empty scene under a sky is a valid frame.
+    // It is drawn first, into whichever image the pass draws into, so it lands
+    // behind the geometry and is graded along with it. The direct `draw()` path
+    // has no camera and so draws no background.
+    if (camera != nullptr && camera->background_enabled) {
+        if (Error error = ensure_background(device); error) {
+            FE_LOG_ERROR("renderer3d: background unavailable: %s", error.message().c_str());
+        } else {
+            draw_background(device, *camera);
         }
     }
 
@@ -1297,15 +1361,9 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     device.set_blend_mode(rhi::BlendMode::None);
     device.set_depth_test(true);
 
-    // The frame's resolved lighting, shared by the static and skinned passes so a
-    // character is lit by exactly the same constants a prop is.
-    FrameLighting lighting;
-    lighting.direction = light_direction;
-    lighting.color = light_color;
-    lighting.intensity = light_intensity;
-    lighting.ambient = ambient;
-    lighting.light_view_projection = light_view_projection;
-    lighting.shadows_enabled = shadows_enabled;
+    const bool shadows_enabled = lighting.shadows_enabled;
+    const bool instancing_ready = !frame_batches_.empty() && instance_buffer_ != nullptr;
+    u32 drawn = static_cast<u32>(frame_instance_data_.size());
 
     if (!instances.empty()) {
         device.bind_shader(*shader_);
@@ -1365,7 +1423,10 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
         }
     }
 
-    // --- 6. Sweep dead mesh buffers ----------------------------------------
+    return static_cast<usize>(drawn);
+}
+
+void Renderer3D::sweep_dead_buffers(const std::vector<const Mesh*>& meshes_seen) {
     // A buffer is stale when its mesh is no longer referenced by any renderer in
     // the scene. Liveness is checked against every mesh seen this frame, culled
     // or not, so a mesh that is simply off screen keeps its buffers.
@@ -1385,8 +1446,6 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     live_skinned_meshes_.reserve(frame_skinned_meshes_seen_.size() * 2);
     live_skinned_meshes_.insert(frame_skinned_meshes_seen_.begin(), frame_skinned_meshes_seen_.end());
     std::erase_if(skinned_buffers_, [&](const auto& entry) { return !live_skinned_meshes_.contains(entry.first); });
-
-    return static_cast<usize>(drawn);
 }
 
 Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
@@ -1394,9 +1453,11 @@ Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, co
                                      std::vector<render::MeshInstance>& instances,
                                      const std::vector<const Mesh*>& meshes_seen, const PostProcessSettings& settings,
                                      u32 width, u32 height) {
-    // Resolve the target the 3D pass should draw into and bind it *before* the
+    // Resolve the target the main pass should draw into and bind it *before* the
     // background, so the gradient lands in the same image as the geometry: the
     // caller's target when the chain is off, the off-screen target when it is on.
+    // A failed setup leaves the caller's target bound, so the frame is ungraded
+    // rather than lost.
     rhi::RenderTarget* caller_target = device.bound_render_target();
     rhi::RenderTarget* pass_target = caller_target;
     bool chained = false;
@@ -1413,30 +1474,98 @@ Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, co
         }
     }
 
-    // The background gradient is geometry-independent, so it draws even when the
-    // cull left nothing: an empty scene under a sky is a valid frame.
-    if (camera.background_enabled) {
-        if (Error error = ensure_background(device); error) {
-            FE_LOG_ERROR("renderer3d: background unavailable: %s", error.message().c_str());
-        } else {
-            draw_background(device, camera);
-        }
+    // The frame's passes as a graph (ADR-0100): shadow, then main, then post.
+    // The ordering the class used to express by calling the passes in sequence is
+    // now data, so a caller can extend or reorder it and every pass is timed as
+    // `pass/<name>`. The graph is rebuilt per call because it is cheap (three
+    // names) and a long-lived one would have to be guarded against concurrent
+    // frames for no gain.
+    //
+    // The graph is always the same three passes regardless of whether the chain
+    // is on: `shadow` and `main` always run, and `post` runs when the off-screen
+    // target is in play. Declaring all three keeps the run order -- and so the
+    // profiler's pass breakdown -- identical frame to frame, rather than changing
+    // shape with a setting. A pass the graph culled would not run, so the
+    // resource declarations are what keep the passes live.
+    render::RenderGraph graph;
+    if (Result<void> added = graph.add_pass("shadow"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_pass("main"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_pass("post"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_dependency("main", "shadow"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_dependency("post", "main"); !added) {
+        return added.error();
+    }
+    // Declare the flow so the graph can reason about it (ADR-0110): the shadow
+    // pass writes the shadow map, which the main pass reads; the main pass writes
+    // the frame image the post pass grades into the caller's target. Every pass
+    // stays live -- the shadow map is read by the main pass, the frame image is
+    // read by the post pass, and the post pass writes the marked output -- which
+    // is exactly the order the dependencies already express. The declarations
+    // cost nothing at run time and make the seam able to cull a pass whose output
+    // nobody reads as the chain grows.
+    if (Result<void> added = graph.add_write("shadow", "shadow_map"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_read("main", "shadow_map"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_write("main", "backbuffer"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_read("post", "backbuffer"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.add_write("post", "swapchain"); !added) {
+        return added.error();
+    }
+    if (Result<void> added = graph.mark_output("swapchain"); !added) {
+        return added.error();
     }
 
-    const Result<usize> drawn = draw(device, scene, view_projection, camera_position, instances, meshes_seen);
-
-    if (chained) {
-        // Restore the caller's target and grade the scene image into it. The
-        // source texture belongs to the off-screen target, so it is distinct from
-        // the destination's attachment and safe to sample.
-        device.bind_render_target(caller_target);
-        if (Error error = post_process_.apply(device, *scene_target_->color_texture(), settings); error) {
-            FE_LOG_ERROR("renderer3d: post-process pass failed: %s", error.message().c_str());
-        } else {
-            ++post_process_frames_;
+    FrameLighting lighting;
+    prepare_frame(device, scene, instances, lighting);
+    Result<usize> drawn = usize{0};
+    const Error error = graph.run([&](std::string_view pass) -> Error {
+        if (pass == "shadow") {
+            draw_shadow_pass(device, instances, lighting);
+            return Error::none();
         }
+        if (pass == "main") {
+            Result<usize> main = draw_main_pass(device, view_projection, camera_position, &camera, instances, lighting);
+            if (!main) {
+                return main.error();
+            }
+            drawn = main.value();
+            return Error::none();
+        }
+        // "post": the graph guarantees this is the only other pass. Grade the
+        // off-screen scene image into the caller's target, restoring it first so
+        // the post quad draws where the frame began.
+        if (chained) {
+            device.bind_render_target(caller_target);
+            if (Error post_error = post_process_.apply(device, *scene_target_->color_texture(), settings); post_error) {
+                FE_LOG_ERROR("renderer3d: post-process pass failed: %s", post_error.message().c_str());
+            } else {
+                ++post_process_frames_;
+            }
+        }
+        return Error::none();
+    });
+    if (error) {
+        return error;
     }
 
+    // The mesh-buffer sweep is the frame's last step, after every pass that draws
+    // from the cache.
+    sweep_dead_buffers(meshes_seen);
     return drawn;
 }
 

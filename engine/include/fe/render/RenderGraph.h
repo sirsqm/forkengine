@@ -14,7 +14,7 @@
 
 namespace fe::rhi {
 class Device;
-} // namespace rhi
+} // namespace fe::rhi
 
 namespace fe::render {
 

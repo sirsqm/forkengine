@@ -8,6 +8,7 @@
 #include "fe/core/Types.h"
 #include "fe/mesh/Mesh.h"
 #include "fe/render/RenderExtract.h"
+#include "fe/render/RenderGraph.h"
 #include "fe/renderer3d/PostProcess.h"
 #include "fe/rhi/Device.h"
 
@@ -167,6 +168,26 @@ public:
     [[nodiscard]] Result<usize> draw(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                      const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                      const std::vector<const Mesh*>& meshes_seen);
+
+    // --- The frame as a graph (ADR-0100) -----------------------------------
+    // Runs the 3D frame's passes in a declared order rather than as a fixed
+    // sequence of calls: the shadow pass, the main pass over it, and the
+    // post-processing chain that grades the result. The three passes are declared
+    // as a `render::RenderGraph` (`main` after `shadow`, `post` after `main`) and
+    // run in the order the graph returns, so the frame's ordering is data a
+    // caller can extend or reorder instead of the order of statements in
+    // `draw_chain`.
+    //
+    // Output is identical to calling `render()`. The graph is rebuilt per call
+    // because it is cheap (three names) and a long-lived one would have to be
+    // guarded against concurrent frames for no gain, exactly as `Renderer2D`'s
+    // frame graph is.
+    //
+    // Returns the number of mesh instances drawn, or the first error a pass
+    // reports.
+    [[nodiscard]] Result<usize> render_frame(rhi::Device& device, const Scene& scene, u32 viewport_width,
+                                             u32 viewport_height, const PostProcessSettings& settings = {},
+                                             JobSystem* jobs = nullptr);
 
     // The post-processing chain this renderer drives. Exposed so a caller can
     // inspect `pass_count()` and so tests can assert the chain ran.
@@ -453,19 +474,48 @@ private:
     // cached ones. Returns true when a rebuild happened.
     bool refresh_cull_bvh(const std::vector<render::MeshInstance>& instances);
 
-    // Runs the 3D pass, optionally wrapping it in the post-processing chain. When
-    // `settings.enabled` is false this is `draw()`; when it is true the pass
-    // renders into an off-screen colour target and the chain grades that image
-    // into the caller's target. `width`/`height` are the viewport size.
-    //
-    // The camera's gradient background (when enabled) is drawn here, after the
-    // destination target is bound, so it lands in whichever image the pass draws
-    // into and is graded along with the geometry.
+    // Runs the 3D frame's shadow, main, and post passes as a `render::RenderGraph`
+    // (ADR-0100). This is what `render_frame` drives. The shadow and main passes
+    // are resolved here and handed to `draw_shadow_pass`/`draw_main_pass`; when
+    // the post chain is enabled the main pass draws into the off-screen target and
+    // the post pass grades it into the caller's target. `width`/`height` are the
+    // viewport size.
     [[nodiscard]] Result<usize> draw_chain(rhi::Device& device, const Scene& scene, const Mat4& view_projection,
                                            const Vec3& camera_position, const Camera3D& camera,
                                            std::vector<render::MeshInstance>& instances,
                                            const std::vector<const Mesh*>& meshes_seen,
                                            const PostProcessSettings& settings, u32 width, u32 height);
+
+    // Resolves the frame's shared state before any pass runs: the gathered lights
+    // and the packed light arrays, the frame's lighting constants, and the
+    // batched instance stream the shadow and main passes both draw. Reused across
+    // frames, so a steady-state frame does not allocate. Returns the number of
+    // instances that resolved to a drawable record, and fills `lighting` (with
+    // `shadows_enabled` false and an identity light matrix until the shadow pass
+    // runs).
+    usize prepare_frame(rhi::Device& device, const Scene& scene, std::vector<render::MeshInstance>& instances,
+                        FrameLighting& lighting);
+
+    // The `shadow` pass: fits the light frustum to the visible instances, renders
+    // their depth into the shadow map, and restores the target the pass found
+    // bound. A no-op when the scene has no directional light, in which case
+    // `lighting.shadows_enabled` stays false. Reports the light-space matrix the
+    // main pass samples through `lighting`.
+    void draw_shadow_pass(rhi::Device& device, std::vector<render::MeshInstance>& instances, FrameLighting& lighting);
+
+    // The `main` pass: the camera's gradient background (when `camera` is
+    // non-null and has one enabled), then the lit static and skinned geometry,
+    // into the currently bound target. Returns the number of mesh instances
+    // drawn. `camera` is null on the direct `draw()` path, which draws no
+    // background.
+    [[nodiscard]] Result<usize> draw_main_pass(rhi::Device& device, const Mat4& view_projection,
+                                               const Vec3& camera_position, const Camera3D* camera,
+                                               std::vector<render::MeshInstance>& instances,
+                                               const FrameLighting& lighting);
+
+    // Drops the cached GPU buffers of meshes the scene no longer references,
+    // against the meshes seen this frame (culled or not).
+    void sweep_dead_buffers(const std::vector<const Mesh*>& meshes_seen);
 
     // Ensures the off-screen colour target matches `width`x`height`, creating it
     // on first use and recreating it on a size change. Returns an Error if the

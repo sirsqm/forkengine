@@ -322,9 +322,9 @@ rhi::RenderTargetDesc color_target(std::string name, u32 width = 320, u32 height
 
 TEST_CASE("a target description is validated when it is declared") {
     RenderGraph graph;
-    CHECK_FALSE(graph.add_target(color_target("")).ok());             // empty name
-    CHECK_FALSE(graph.add_target(color_target("x", 0, 240)).ok());    // zero width
-    CHECK_FALSE(graph.add_target(color_target("x", 320, 0)).ok());    // zero height
+    CHECK_FALSE(graph.add_target(color_target("")).ok());          // empty name
+    CHECK_FALSE(graph.add_target(color_target("x", 0, 240)).ok()); // zero width
+    CHECK_FALSE(graph.add_target(color_target("x", 320, 0)).ok()); // zero height
     rhi::RenderTargetDesc bare;
     bare.name = "bare"; // no attachment at all
     CHECK_FALSE(graph.add_target(bare).ok());

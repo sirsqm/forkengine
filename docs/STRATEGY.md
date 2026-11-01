@@ -113,8 +113,10 @@ not a claim.
   ([ADR-0100](adr/0100-render-graph-seam.md)): pass order is data, and each pass
   is profiled as `pass/<name>`. Pass culling landed on top
   ([ADR-0110](adr/0110-render-graph-pass-culling.md)): a pass whose declared
-  writes nobody reads is dropped, iteratively. Render-target ownership remains
-  open, and is what turns the culling optimizer into a resource manager.
+  writes nobody reads is dropped, iteratively. Both renderers are now driven by
+  the graph -- the 2D world/UI pair and the 3D shadow/main/post sequence
+  ([ADR-0127](adr/0127-renderer3d-graph-passes.md)). Render-target ownership
+  remains open, and is what turns the culling optimizer into a resource manager.
 
 ### Verification
 
