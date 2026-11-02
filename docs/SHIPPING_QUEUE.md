@@ -863,6 +863,14 @@ write-then-write) of the same resource and `order()` places the producer first
 without an explicit `add_dependency`, with a test proving the derived edge orders
 two passes and that an unrelated pair keeps its declared order.
 
+Landed as a derivation inside `order()` ([ADR-0128](adr/0128-render-graph-derived-edges.md)).
+For each resource the first live pass that writes it is the producer and every
+other live pass that reads or writes the name runs after it, so write-then-read
+and write-then-write both order the producer first with no hand-declared edge. A
+read-modify-write pass produces no self-edge, and a derived edge between two
+passes the caller already ordered is dropped so a declared order still wins; a
+cycle made only of derived edges is reported.
+
 ### `render-graph-timings`
 
 The render-graph row (ADR-0100) profiles each pass as `pass/<name>` but the graph
@@ -872,6 +880,14 @@ dominates a frame.
 **Done when** the graph exposes the last run's per-pass times, taken from the
 profiler frame report, keyed by pass name, with a test that runs a graph under a
 real profiler frame and reads a named pass's time back.
+
+Landed as a readback on the graph ([ADR-0129](adr/0129-render-graph-pass-timings.md)).
+`run()` now records `last_pass_timings()` — one `PassTiming{name, duration_ms}`
+per pass, in run order — by reading each pass's `pass/<name>` scope out of the
+profiler frame in progress during the run. It is a query over the frame `run()`
+executes inside, not a second recording, so it never disagrees with a
+`FrameReport`; it is empty when the run is outside a profiler frame, and
+`clear()` drops it with the passes.
 
 ### `physics3d-ccd`
 

@@ -122,8 +122,11 @@ not a claim.
   manager. It also derives its ordering edges from resource access now
   ([ADR-0128](adr/0128-render-graph-derived-edges.md)): a pass that writes what
   another reads runs first without a hand-declared dependency, so the resource
-  declarations that drive culling also drive order. The last graph refinement --
-  reading per-pass timings back -- is the queue's next row.
+  declarations that drive culling also drive order. It reads its own timings back
+  too ([ADR-0129](adr/0129-render-graph-pass-timings.md)): the last run's
+  per-pass times are exposed keyed by pass name, so a caller can find which pass
+  dominates a frame without parsing a `FrameReport`. The render-graph row is
+  complete.
 
 ### Verification
 

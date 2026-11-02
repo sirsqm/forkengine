@@ -197,6 +197,7 @@ void RenderGraph::clear() noexcept {
     passes_.clear();
     outputs_.clear();
     targets_.clear();
+    last_timings_.clear();
 }
 
 void RenderGraph::collect_resource_edges(const std::vector<u32>& live, std::vector<Edge>& out) const {
@@ -514,7 +515,7 @@ void RenderGraph::release() noexcept {
     }
 }
 
-Error RenderGraph::run(const std::function<Error(std::string_view)>& run_pass) const {
+Error RenderGraph::run(const std::function<Error(std::string_view)>& run_pass) {
     auto ordered = order();
     if (!ordered) {
         return ordered.error();
@@ -528,10 +529,46 @@ Error RenderGraph::run(const std::function<Error(std::string_view)>& run_pass) c
         ProfileScope scope(scope_name);
 #endif
         if (Error error = run_pass(pass); error) {
+            // A pass that failed aborts the frame, so the timings of the passes
+            // that did run are the useful thing to leave behind; read them back
+            // before returning rather than discarding a partial frame.
+            collect_pass_timings(ordered.value());
             return error;
         }
     }
+    collect_pass_timings(ordered.value());
     return Error::none();
+}
+
+void RenderGraph::collect_pass_timings(const std::vector<std::string>& order) {
+    last_timings_.clear();
+#if FE_PROFILING
+    const Profiler* profiler = Profiler::current();
+    if (profiler == nullptr) {
+        return;
+    }
+    // Read the frame that is still being recorded: `run()` executes inside it and
+    // the frame is committed only after `run()` returns, so the most recent
+    // *completed* frame is the previous one.
+    const Profiler::FrameSample* frame = profiler->in_progress_frame();
+    if (frame == nullptr) {
+        return;
+    }
+    last_timings_.reserve(order.size());
+    for (const std::string& pass : order) {
+        const std::string scope_name = "pass/" + pass;
+        f64 duration = 0.0;
+        for (u32 i = 0; i < frame->scope_count; ++i) {
+            if (profiler->name_of(frame->scopes[i].name) == scope_name) {
+                duration = frame->scopes[i].duration_ms;
+                break;
+            }
+        }
+        last_timings_.push_back(PassTiming{pass, duration});
+    }
+#else
+    (void)order;
+#endif
 }
 
 } // namespace fe::render

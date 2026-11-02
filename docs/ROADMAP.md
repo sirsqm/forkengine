@@ -80,8 +80,10 @@ line; the milestones below hold the detail.
    (`render-graph-target-ownership`), including re-describing and re-allocating
    one at a new size (`render-graph-target-resize`), and it derives ordering
    edges from resource accesses rather than only hand-declared dependencies
-   (`render-graph-barriers`, [ADR-0128](adr/0128-render-graph-derived-edges.md)).
-   What remains is the last refinement: reading per-pass timings back.
+   (`render-graph-barriers`, [ADR-0128](adr/0128-render-graph-derived-edges.md)),
+   and it reads the last run's per-pass times back (`render-graph-timings`,
+   [ADR-0129](adr/0129-render-graph-pass-timings.md)). The render-graph row is
+   complete; the remaining refinements are in physics and content.
 6. **More platforms** — mobile (M8) and the remaining desktop polish (signing,
    installers), after the above.
 7. **A second vertical slice** — a finished 3D game (**M11**), assembled from the
@@ -93,13 +95,12 @@ The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
 
 **The queue is in its refinement tail.** Every Phase 1–4 item is done, and
-Phase 5 is down to seven open items: the last render-graph refinement
-(`render-graph-timings`), the physics refinements (`physics3d-ccd`,
+Phase 5 is down to six open items: the physics refinements (`physics3d-ccd`,
 `physics2d-rotational-ccd`, `physics-more-joints`), and the asset/content
 refinements (`audio-pack-streaming`, `scene-prefab-instancing`,
 `ui-scroll-and-masks`). Each closes a gap a first cut left open, each is small
-enough for one run, and each is ordered so the render graph's own rows land
-together before the physics rows. (`gamepad-input` landed
+enough for one run, and the render graph's own rows have landed, so the physics
+rows are next. (`gamepad-input` landed
 under a `platform:` subject, so the slug check does not see it — treat it as
 finished and start at the next item.)
 
@@ -239,13 +240,13 @@ and hot-reloaded without restarting the editor. *Met.*
 - [x] A spatial hierarchy (BVH) over static geometry — `SpatialBvh` in `core` builds a binned-SAH binary BVH over world-space AABBs and answers frustum and box queries, reusing `Frustum::intersects_aabb` as its leaf test, with the query checked against a brute-force reference ([ADR-0053](adr/0053-spatial-bvh.md)); `Renderer3D` now culls through a cached tree, rebuilt only when an instance's world bounds change, and the tree path is pinned to the flat reference `cull_flat` by a test that asserts an identical visible set and order ([ADR-0056](adr/0056-renderer3d-spatial-cull.md))
 - [x] Environment rendering and a post-processing chain — a camera-driven full-screen gradient background, and an opt-in exposure/tonemap/vignette chain over an off-screen colour target; see [ADR-0057](adr/0057-environment-and-post-processing.md)
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb` (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a mounted pack works unchanged; metallic-roughness materials resolve relative to the file; see [ADR-0040](adr/0040-gltf-importer.md)
-- [~] **A render-graph seam** for passes and post-processing — `render::RenderGraph` makes pass order data: passes are declared by name with their dependencies, `order()` returns a stable run order (declaration-order ties, cycles refused with the passes named), and `run()` invokes each pass in a profiler scope named `pass/<name>`. `Renderer2D::render_frame` drives the world and UI passes through it. **Pass culling landed**: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes are unread is dropped (a pass with no declared writes is never culled, so the presenting pass and every existing graph are unchanged) — see [ADR-0110](adr/0110-render-graph-pass-culling.md). **The 3D frame landed on the graph too**: `Renderer3D::render_frame` declares its shadow, main, and post passes (`main` after `shadow`, `post` after `main`, with the shadow map, backbuffer, and swapchain declared as flow), so the 3D path is ordered, culled, and profiled as `pass/<name>` like the 2D path — see [ADR-0127](adr/0127-renderer3d-graph-passes.md). **The graph now owns its targets**: a resource is declared with a `RenderTargetDesc`, `allocate(device)` creates the targets (the null device works), two targets whose lifetimes do not overlap share one slot (aliasing, keyed on identical descriptions), and `release()` drops them while keeping the declarations, so a re-allocate rebuilds them, with `set_target_desc` re-describing a target so a resize re-allocates it at the new size — see [ADR-0100](adr/0100-render-graph-seam.md). The graph also derives its ordering edges from resource access — a pass that writes what another reads runs first without a hand-declared dependency — see [ADR-0128](adr/0128-render-graph-derived-edges.md). Still open, as the queue's last row: reading per-pass timings back.
+- [~] **A render-graph seam** for passes and post-processing — `render::RenderGraph` makes pass order data: passes are declared by name with their dependencies, `order()` returns a stable run order (declaration-order ties, cycles refused with the passes named), and `run()` invokes each pass in a profiler scope named `pass/<name>`. `Renderer2D::render_frame` drives the world and UI passes through it. **Pass culling landed**: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes are unread is dropped (a pass with no declared writes is never culled, so the presenting pass and every existing graph are unchanged) — see [ADR-0110](adr/0110-render-graph-pass-culling.md). **The 3D frame landed on the graph too**: `Renderer3D::render_frame` declares its shadow, main, and post passes (`main` after `shadow`, `post` after `main`, with the shadow map, backbuffer, and swapchain declared as flow), so the 3D path is ordered, culled, and profiled as `pass/<name>` like the 2D path — see [ADR-0127](adr/0127-renderer3d-graph-passes.md). **The graph now owns its targets**: a resource is declared with a `RenderTargetDesc`, `allocate(device)` creates the targets (the null device works), two targets whose lifetimes do not overlap share one slot (aliasing, keyed on identical descriptions), and `release()` drops them while keeping the declarations, so a re-allocate rebuilds them, with `set_target_desc` re-describing a target so a resize re-allocates it at the new size — see [ADR-0100](adr/0100-render-graph-seam.md). The graph also derives its ordering edges from resource access — a pass that writes what another reads runs first without a hand-declared dependency — and reads the last run's per-pass times back from the profiler frame, keyed by pass name — see [ADR-0128](adr/0128-render-graph-derived-edges.md) and [ADR-0129](adr/0129-render-graph-pass-timings.md). The render-graph row is complete.
 - [x] **Instanced 3D draws** — `Renderer3D` batches instances that share a mesh, both material textures, and the per-batch shading state into one instanced draw, mirroring the 2D path. The model and normal matrices travel in a per-instance vertex stream, so the shadow pass and the main pass draw the same batches from one upload; see [ADR-0101](adr/0101-instanced-3d-draws.md).
 
 **Done when** a lit, shadowed 3D scene draws with culling, and the draw path is
-extractable and measurable. *Met: the 3D frame is on the graph, which owns and
-aliases its targets; the graph's last refinement row (timings) is
-tracked in the queue and does not gate the milestone.*
+extractable and measurable. *Met: the 3D frame is on the graph, which owns,
+aliases, and re-describes its targets and reads its per-pass times back; the
+render-graph row is complete.*
 
 ## M5 — Physics
 
@@ -350,9 +351,9 @@ it and protect it. Plan and trade-offs: the [strategy](STRATEGY.md) and
 
 **Where this stands:** measurement, extraction, the job system, parallel
 extraction/culling, the frame arena, 2D and 3D instancing, and the render-graph
-seam (scheduler, pass culling, render-target ownership, and the 3D frame on the
-graph) are all done and guarded by CI. The remaining work is the graph's last
-refinement row — per-pass timings — tracked in the queue.
+seam (scheduler, pass culling, render-target ownership, the 3D frame on the
+graph, derived ordering edges, and per-pass timings) are all done and guarded by
+CI. The render-graph row is complete.
 
 - [x] Profiler: `Profiler` + `ProfileScope` in `core` ([ADR-0022](adr/0022-profiler-and-frame-timing.md)), recording named scopes and counters into a fixed frame ring
 - [x] Profiler instrumentation and runtime integration ([ADR-0024](adr/0024-profiler-instrumentation.md)): `FE_PROFILE_SCOPE`/`FE_PROFILE_FUNCTION` macros with a free disabled build; `Application` brackets `frame`/`frame/update`/`frame/render` and `SceneSchedule` times each system as `system/<name>`; a by-value `FrameReport` (per-name totals, counters, summary/`to_string`) is the stats surface
@@ -364,13 +365,12 @@ refinement row — per-pass timings — tracked in the queue.
 - [x] Parallel physics broad phase: the uniform-grid insert is chunked across the job pool (count-then-write, so the entry buffer and the resulting pair set are byte-identical to the serial build), above a measured threshold ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
 - [x] GPU efficiency: instancing — `Renderer2D` uploads the unit-square corners once and a per-instance transform/UV/colour record per sprite, and issues one indexed instanced draw per texture batch, with the per-vertex UV convention preserved so the image is unchanged. Material batching is part of the batch key already.
 - [x] An in-editor profiler panel fed by the profiler data — `ProfilerPanel` + `ProfilerPanelViewModel` in `editor`; the editor owns an optional `core::Profiler`, brackets its own frame with it, and the panel draws the latest `FrameReport` ([ADR-0055](adr/0055-editor-profiler-panel.md))
-- [~] **A render-graph seam** for passes and post-processing — the scheduler landed with M4: `render::RenderGraph` orders passes by declared dependency and profiles each as `pass/<name>` ([ADR-0100](adr/0100-render-graph-seam.md)), pass culling followed: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes nobody reads is dropped, iteratively, with a pass that declares no writes never culled ([ADR-0110](adr/0110-render-graph-pass-culling.md)), the graph now owns, allocates, and aliases its render targets and can re-describe one so a resize re-allocates it ([ADR-0100](adr/0100-render-graph-seam.md)), the 3D frame is driven by the graph as well: `Renderer3D::render_frame` declares its shadow, main, and post passes and runs them through `run()` ([ADR-0127](adr/0127-renderer3d-graph-passes.md)), and the graph derives its ordering edges from resource access, so a pass that writes what another reads runs first without a hand-declared dependency ([ADR-0128](adr/0128-render-graph-derived-edges.md)). The queue's last graph row — timings — is the last refinement.
+- [~] **A render-graph seam** for passes and post-processing — the scheduler landed with M4: `render::RenderGraph` orders passes by declared dependency and profiles each as `pass/<name>` ([ADR-0100](adr/0100-render-graph-seam.md)), pass culling followed: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes nobody reads is dropped, iteratively, with a pass that declares no writes never culled ([ADR-0110](adr/0110-render-graph-pass-culling.md)), the graph now owns, allocates, and aliases its render targets and can re-describe one so a resize re-allocates it ([ADR-0100](adr/0100-render-graph-seam.md)), the 3D frame is driven by the graph as well: `Renderer3D::render_frame` declares its shadow, main, and post passes and runs them through `run()` ([ADR-0127](adr/0127-renderer3d-graph-passes.md)), and the graph derives its ordering edges from resource access, so a pass that writes what another reads runs first without a hand-declared dependency, and reads the last run's per-pass times back, keyed by pass name ([ADR-0128](adr/0128-render-graph-derived-edges.md), [ADR-0129](adr/0129-render-graph-pass-timings.md)). The render-graph row is complete.
 - [x] **3D instancing** — `Renderer3D` batches instances that share a mesh, both material textures, and the per-batch shading state into one instanced draw, mirroring the 2D path. The per-instance model and normal matrices travel in a per-instance vertex stream (`VertexLayout::mesh_instance()`), so the transform is no longer a uniform and one call covers every instance of a mesh; the shadow pass draws the same batches from the same upload ([ADR-0101](adr/0101-instanced-3d-draws.md)).
 
 **Done when** a real scene holds its frame budget, the benchmark guards it, and
 the sanitizers are green. *Met: the frame path is measured, instanced, and on the
-graph; the graph's last refinement row (timings) is tracked in
-the queue and does not gate the milestone.*
+graph, whose row is complete.*
 
 ## M11 — A second vertical slice: a 3D game, end to end
 

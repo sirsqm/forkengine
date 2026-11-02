@@ -22,7 +22,7 @@ using render::RenderGraph;
 namespace {
 
 // Runs a graph, recording the pass names in the order they were invoked.
-std::vector<std::string> run_order(const RenderGraph& graph) {
+std::vector<std::string> run_order(RenderGraph& graph) {
     std::vector<std::string> visited;
     const Error error = graph.run([&](std::string_view name) {
         visited.emplace_back(name);
@@ -171,6 +171,98 @@ TEST_CASE("each pass runs inside a profiler scope named pass/<name>") {
     }
     CHECK(saw_shadow);
     CHECK(saw_main);
+}
+
+// ---------------------------------------------------------------------------
+// Per-pass timings (ADR-0129)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("run reads each pass's time back from the profiler frame") {
+    // A real profiler frame: each pass does measurable work, and the graph reads
+    // the `pass/<name>` scope duration back, keyed by pass name.
+    Profiler profiler;
+    Profiler* previous = Profiler::current();
+    Profiler::set_current(&profiler);
+    REQUIRE(profiler.begin_frame().ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("shadow").ok());
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_dependency("main", "shadow").ok());
+
+    CHECK_FALSE(graph.run([](std::string_view pass) {
+        volatile double sink = 0.0;
+        for (int i = 0; i < 2000; ++i) {
+            sink += static_cast<double>(i) * (pass.empty() ? 1.0 : 0.5);
+        }
+        return Error::none();
+    }));
+
+    REQUIRE(profiler.end_frame().ok());
+    Profiler::set_current(previous);
+
+    const std::vector<RenderGraph::PassTiming>& timings = graph.last_pass_timings();
+    REQUIRE(timings.size() == 2);
+    CHECK(timings[0].name == "shadow");
+    CHECK(timings[1].name == "main");
+    // The work above takes a real (if tiny) amount of time, so both are recorded
+    // and neither is negative.
+    CHECK(timings[0].duration_ms >= 0.0);
+    CHECK(timings[1].duration_ms >= 0.0);
+    CHECK((timings[0].duration_ms > 0.0 || timings[1].duration_ms > 0.0));
+}
+
+TEST_CASE("timings follow the run order, not the declaration order") {
+    Profiler profiler;
+    Profiler* previous = Profiler::current();
+    Profiler::set_current(&profiler);
+    REQUIRE(profiler.begin_frame().ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_pass("render").ok());
+    REQUIRE(graph.add_write("render", "color").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+
+    CHECK_FALSE(graph.run([](std::string_view) { return Error::none(); }));
+
+    REQUIRE(profiler.end_frame().ok());
+    Profiler::set_current(previous);
+
+    const std::vector<RenderGraph::PassTiming>& timings = graph.last_pass_timings();
+    REQUIRE(timings.size() == 2);
+    CHECK(timings[0].name == "render");
+    CHECK(timings[1].name == "present");
+}
+
+TEST_CASE("timings are empty when the run is outside a profiler frame") {
+    Profiler* previous = Profiler::current();
+    Profiler::set_current(nullptr);
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("world").ok());
+    CHECK_FALSE(graph.run([](std::string_view) { return Error::none(); }));
+
+    Profiler::set_current(previous);
+    // Nothing was recorded, so there is nothing to read back.
+    CHECK(graph.last_pass_timings().empty());
+}
+
+TEST_CASE("clear drops the recorded timings too") {
+    Profiler profiler;
+    Profiler* previous = Profiler::current();
+    Profiler::set_current(&profiler);
+    REQUIRE(profiler.begin_frame().ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("world").ok());
+    CHECK_FALSE(graph.run([](std::string_view) { return Error::none(); }));
+    REQUIRE(profiler.end_frame().ok());
+    Profiler::set_current(previous);
+
+    REQUIRE_FALSE(graph.last_pass_timings().empty());
+    graph.clear();
+    CHECK(graph.last_pass_timings().empty());
 }
 
 // ---------------------------------------------------------------------------

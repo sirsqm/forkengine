@@ -185,12 +185,25 @@ public:
     // `allocate()` rebuilds them.
     void release() noexcept;
 
+    // One pass's time from the last `run()`, in milliseconds.
+    struct PassTiming {
+        std::string name;
+        f64 duration_ms = 0.0;
+    };
+
     // `order()`, then `run_pass` for each pass in turn. Stops at the first pass
     // that returns an Error and propagates it. Each pass runs inside a profiler
     // scope named `pass/<name>` (a no-op when no profiler frame is active), so
     // the frame report attributes time per pass without the caller instrumenting
-    // each one.
-    [[nodiscard]] Error run(const std::function<Error(std::string_view)>& run_pass) const;
+    // each one, and `last_pass_timings()` can read them back.
+    [[nodiscard]] Error run(const std::function<Error(std::string_view)>& run_pass);
+
+    // The per-pass times recorded by the most recent `run()`, in run order, keyed
+    // by pass name. Each pass's time is its `pass/<name>` scope, taken from the
+    // profiler frame that was in progress during the run -- the same samples a
+    // `FrameReport` is built from. Empty when no run has happened, or when the
+    // run was not inside a profiler frame (nothing was recorded to read back).
+    [[nodiscard]] const std::vector<PassTiming>& last_pass_timings() const noexcept { return last_timings_; }
 
 private:
     // A dependency edge, resolved to indices once so ordering does not compare
@@ -222,6 +235,12 @@ private:
     // order governs.
     [[nodiscard]] bool has_declared_path(u32 from, u32 to) const;
 
+    // Refreshes `last_timings_` from the profiler frame in progress: for each
+    // pass in `order`, the `pass/<name>` scope duration. Called at the end of a
+    // successful `run()`. Leaves the list empty when no profiler frame is active,
+    // because there is then nothing to read back.
+    void collect_pass_timings(const std::vector<std::string>& order);
+
     // A declared render target: its description, plus the allocation `allocate()`
     // makes for its slot (null until then, and shared with the other targets that
     // alias the same slot).
@@ -235,6 +254,7 @@ private:
     std::vector<Pass> passes_;
     std::vector<std::string> outputs_;
     std::vector<Target> targets_;
+    std::vector<PassTiming> last_timings_;
 };
 
 } // namespace fe::render
