@@ -384,3 +384,17 @@ puts `cmake`/`ctest` in `~/.local/bin`, which is not on `PATH` either; add it:
 `ctest` still runs and only the GL tests fail — `gles_dialect_compile` fails with
 `libEGL.so.1: cannot open shared object file`, which is the sandbox lacking the
 system GL library, not a code defect. A docs-only change cannot affect it.
+
+A fresh sandbox may also lack GLFW's build-time headers, and the failure reads
+as a source error rather than a missing package: `wayland-client-core.h: No such
+file or directory`, then `X11/Xcursor/Xcursor.h`, each in a file under
+`build/_deps/glfw-src/`. Install them rather than reading the error as a defect:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y libwayland-dev wayland-protocols libxkbcommon-dev \
+  libegl-dev libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev
+```
+
+Installing `libegl-dev` also supplies the `libEGL.so.1` the GL tests need, so
+`gles_dialect_compile` passes on the next run instead of failing.
