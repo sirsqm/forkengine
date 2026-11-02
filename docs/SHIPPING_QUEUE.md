@@ -946,7 +946,11 @@ inside is offset by exactly the scroll amount.
   a two-axis blend (a locomotion grid of idle/walk/run strafe), a blend of more
   than two clips, a tree feeding a tree, additive-on-additive, and a per-layer
   joint mask.
-- More example games beyond the breakout slice, once the first one ships.
+- More example games beyond the breakout slice, once the first one ships. The
+  next one is planned as a **finished 3D game** — the roadmap's
+  [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from
+  the 3D systems that have landed but never run together; it is chosen fresh
+  rather than queued, so its detail lives in the roadmap, not here.
 
 ## Ongoing
 

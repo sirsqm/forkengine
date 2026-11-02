@@ -1274,8 +1274,8 @@ Every milestone must build and pass its tests before the next one begins.
   language. These are the remaining M7 rows, and none of them changes the seam.
 - Multi-threading in the runtime (the frame loop is single-threaded; the RHI
   contract already states that a device is owned by one thread). The `jobs`
-  module is in place (section 5, [ADR-0068](adr/0068-job-system.md)); parallel
-  extraction is the next M9 row.
+  module is in place (section 5, [ADR-0068](adr/0068-job-system.md)) and parallel
+  extraction and culling are done ([ADR-0069](adr/0069-parallel-extraction-and-culling.md)).
 - The performance work itself: the extraction seam is in place (section 6,
   [ADR-0052](adr/0052-render-extraction-seam.md)); the profiler, the benchmark
   gate, and the frame arena are in place -- the `core` primitive
@@ -1284,8 +1284,10 @@ Every milestone must build and pass its tests before the next one begins.
   `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system is
   in place too (section 5, [ADR-0068](adr/0068-job-system.md)), so parallel
   culling, 2D and 3D instancing, and the arena-backed extraction seam are done;
-  pass culling and render-target ownership in the render graph are what remain in
-  M9.
+  the render graph's scheduler, pass culling, and render-target ownership are in
+  place ([ADR-0100](adr/0100-render-graph-seam.md),
+  [ADR-0110](adr/0110-render-graph-pass-culling.md)), so what remains in M9 is
+  the graph's refinement rows -- barriers and per-pass timings.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 11). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

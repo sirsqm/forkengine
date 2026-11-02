@@ -27,10 +27,11 @@ separately.
 ## The guiding rule
 
 **A few genuinely working systems beat a long list of half-finished features.**
-This is why M2.5 (a vertical slice) sits before the breadth milestones, and why
-the shipping queue is a single ordered line rather than a set of parallel tracks.
-A milestone that cannot be demonstrated end to end is not finished, no matter how
-many of its items are checked.
+This is why M2.5 (a vertical slice) sits before the breadth milestones and why
+**M11** (a second one, in 3D) sits after them, and why the shipping queue is a
+single ordered line rather than a set of parallel tracks. A milestone that cannot
+be demonstrated end to end is not finished, no matter how many of its items are
+checked.
 
 ## Milestone map
 
@@ -40,12 +41,13 @@ many of its items are checked.
 | M2 | Editor foundation | M1 | done (export moved to M8, where it landed) |
 | M2.5 | A vertical slice | M2 | done |
 | M3 | Reflection and a real asset pipeline | M2 | done |
-| M4 | 3D rendering | M1, M3 | mostly done (render-target ownership open) |
+| M4 | 3D rendering | M1, M3 | mostly done (render-graph refinements open) |
 | M5 | Physics | M1, M3 | mostly done (3D parity open) |
 | M6 | Animation and audio | M4 | done |
 | M7 | Scripting | M2, M5 | core done (debugger integration open) |
 | M8 | Ship anywhere | M2.5, M3 | partly done (web and desktop done, mobile open) |
-| M9 | Performance | M1 | mostly done (render-target ownership open) |
+| M9 | Performance | M1 | mostly done (render-graph refinements open) |
+| M11 | A second vertical slice (3D) | M2.5, M4, M6, M8 | not started |
 
 The dependencies are real: M4 needs the asset pipeline from M3 to load a mesh,
 and M7 needs a scene with gameplay systems (M5) before a script has anything to
@@ -73,25 +75,40 @@ line; the milestones below hold the detail.
    (M9) and sanitizer builds (ASan/UBSan, TSan), while the codebase is still
    small enough to keep them cheaply green.
 5. **Editor and rendering depth** — the render graph (M4, M9). Skeletal
-   animation and instancing have landed on the existing render path, so the graph
-   is no longer what blocks them; what remains is render-target ownership — the
-   graph owning, allocating, and aliasing the targets it names — which is the
-   queue's `render-graph-target-ownership` and the last `[~]` in M4 and M9.
+   animation, instancing, and the 3D frame on the graph have landed, and the
+   graph now owns, allocates, and aliases its render targets
+   (`render-graph-target-ownership`), including re-describing and re-allocating
+   one at a new size (`render-graph-target-resize`). What remains is the rest of
+   the graph's refinement set — deriving ordering edges from resource accesses
+   rather than hand-declared dependencies, and reading per-pass timings back —
+   which is the queue's next items.
 6. **More platforms** — mobile (M8) and the remaining desktop polish (signing,
    installers), after the above.
+7. **A second vertical slice** — a finished 3D game (**M11**), assembled from the
+   3D systems that have landed but never run together in one artifact. Chosen
+   fresh rather than queued, because it is a larger, less-coupled step than a
+   queue item; it is the milestone that turns the 3D rows into a shipped game.
 
 The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
 
-**The queue is nearly drained.** Every Phase 1–4 item is done, and Phase 5 is
-down to its last one: `render-graph-target-ownership`. (`gamepad-input` landed
+**The queue is in its refinement tail.** Every Phase 1–4 item is done, and
+Phase 5 is down to eight open items: the render-graph refinements
+(`render-graph-barriers`, `render-graph-timings`), the physics refinements
+(`physics3d-ccd`, `physics2d-rotational-ccd`, `physics-more-joints`), and the
+asset/content refinements (`audio-pack-streaming`, `scene-prefab-instancing`,
+`ui-scroll-and-masks`). Each closes a gap a first cut left open, each is small
+enough for one run, and each is ordered so the render graph's own rows land
+together before the physics rows. (`gamepad-input` landed
 under a `platform:` subject, so the slug check does not see it — treat it as
-finished and start at the next item.) Once that lands the ordered queue is empty
-and the remaining work is the *un-ordered* backlog (the bullet list at the end of
-the shipping queue) plus the `[~]` rows above — mobile native surfaces, the
-Windows installer and macOS notarization, more graphics backends, and a second
-example game. Those are chosen fresh rather than queued, because each is a larger,
-less-coupled step than a queue item.
+finished and start at the next item.)
+
+Once those land the ordered queue is empty and the remaining work is the
+*un-ordered* backlog (the bullet list at the end of the shipping queue) plus the
+`[~]` rows above and the **M11** second slice below — mobile native surfaces,
+the Windows installer and macOS notarization, more graphics backends, and a 3D
+game built on the systems M4, M6, and M8 landed. Those are chosen fresh rather
+than queued, because each is a larger, less-coupled step than a queue item.
 
 ---
 
@@ -193,6 +210,10 @@ contributors, because people contribute around something finished.
 *Why here:* before more engine breadth. One shipped game teaches more about what
 is missing than ten roadmap items, and it is the precondition for a community.
 
+*The 3D counterpart is [M11](#m11--a-second-vertical-slice-a-3d-game-end-to-end),
+taken once the Phase 5 refinements land: the same logic, applied to the systems
+that have landed since.*
+
 ## M3 — Reflection and a real asset pipeline
 
 A game is mostly content. Without an asset pipeline that survives a rename, a
@@ -217,12 +238,13 @@ and hot-reloaded without restarting the editor. *Met.*
 - [x] A spatial hierarchy (BVH) over static geometry — `SpatialBvh` in `core` builds a binned-SAH binary BVH over world-space AABBs and answers frustum and box queries, reusing `Frustum::intersects_aabb` as its leaf test, with the query checked against a brute-force reference ([ADR-0053](adr/0053-spatial-bvh.md)); `Renderer3D` now culls through a cached tree, rebuilt only when an instance's world bounds change, and the tree path is pinned to the flat reference `cull_flat` by a test that asserts an identical visible set and order ([ADR-0056](adr/0056-renderer3d-spatial-cull.md))
 - [x] Environment rendering and a post-processing chain — a camera-driven full-screen gradient background, and an opt-in exposure/tonemap/vignette chain over an off-screen colour target; see [ADR-0057](adr/0057-environment-and-post-processing.md)
 - [x] A glTF importer — `GltfLoader` decodes `.gltf` (JSON) and `.glb` (binary) into a `Mesh` per primitive, reading through `ResourceSource` so a mounted pack works unchanged; metallic-roughness materials resolve relative to the file; see [ADR-0040](adr/0040-gltf-importer.md)
-- [~] **A render-graph seam** for passes and post-processing — `render::RenderGraph` makes pass order data: passes are declared by name with their dependencies, `order()` returns a stable run order (declaration-order ties, cycles refused with the passes named), and `run()` invokes each pass in a profiler scope named `pass/<name>`. `Renderer2D::render_frame` drives the world and UI passes through it. **Pass culling landed**: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes are unread is dropped (a pass with no declared writes is never culled, so the presenting pass and every existing graph are unchanged) — see [ADR-0110](adr/0110-render-graph-pass-culling.md). **The 3D frame landed on the graph too**: `Renderer3D::render_frame` declares its shadow, main, and post passes (`main` after `shadow`, `post` after `main`, with the shadow map, backbuffer, and swapchain declared as flow), so the 3D path is ordered, culled, and profiled as `pass/<name>` like the 2D path — see [ADR-0127](adr/0127-renderer3d-graph-passes.md). See [ADR-0100](adr/0100-render-graph-seam.md) for the scheduler. Still open: the graph reasons about resource names but does not own, allocate, or alias render targets.
+- [~] **A render-graph seam** for passes and post-processing — `render::RenderGraph` makes pass order data: passes are declared by name with their dependencies, `order()` returns a stable run order (declaration-order ties, cycles refused with the passes named), and `run()` invokes each pass in a profiler scope named `pass/<name>`. `Renderer2D::render_frame` drives the world and UI passes through it. **Pass culling landed**: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes are unread is dropped (a pass with no declared writes is never culled, so the presenting pass and every existing graph are unchanged) — see [ADR-0110](adr/0110-render-graph-pass-culling.md). **The 3D frame landed on the graph too**: `Renderer3D::render_frame` declares its shadow, main, and post passes (`main` after `shadow`, `post` after `main`, with the shadow map, backbuffer, and swapchain declared as flow), so the 3D path is ordered, culled, and profiled as `pass/<name>` like the 2D path — see [ADR-0127](adr/0127-renderer3d-graph-passes.md). **The graph now owns its targets**: a resource is declared with a `RenderTargetDesc`, `allocate(device)` creates the targets (the null device works), two targets whose lifetimes do not overlap share one slot (aliasing, keyed on identical descriptions), and `release()` drops them while keeping the declarations, so a re-allocate rebuilds them, with `set_target_desc` re-describing a target so a resize re-allocates it at the new size — see [ADR-0100](adr/0100-render-graph-seam.md). Still open, as the queue's next rows: deriving ordering edges from resource accesses (barriers) and reading per-pass timings back.
 - [x] **Instanced 3D draws** — `Renderer3D` batches instances that share a mesh, both material textures, and the per-batch shading state into one instanced draw, mirroring the 2D path. The model and normal matrices travel in a per-instance vertex stream, so the shadow pass and the main pass draw the same batches from one upload; see [ADR-0101](adr/0101-instanced-3d-draws.md).
 
 **Done when** a lit, shadowed 3D scene draws with culling, and the draw path is
-extractable and measurable. *Met except render-target ownership / resource
-tracking in the render graph.*
+extractable and measurable. *Met: the 3D frame is on the graph, which owns and
+aliases its targets; the graph's refinement rows (barriers, timings) are
+tracked in the queue and do not gate the milestone.*
 
 ## M5 — Physics
 
@@ -327,8 +349,9 @@ it and protect it. Plan and trade-offs: the [strategy](STRATEGY.md) and
 
 **Where this stands:** measurement, extraction, the job system, parallel
 extraction/culling, the frame arena, 2D and 3D instancing, and the render-graph
-seam's scheduler are all done and guarded by CI. The remaining work is pass
-culling and resource tracking in the graph.
+seam (scheduler, pass culling, render-target ownership, and the 3D frame on the
+graph) are all done and guarded by CI. The remaining work is the graph's
+refinement rows — barriers and per-pass timings — tracked in the queue.
 
 - [x] Profiler: `Profiler` + `ProfileScope` in `core` ([ADR-0022](adr/0022-profiler-and-frame-timing.md)), recording named scopes and counters into a fixed frame ring
 - [x] Profiler instrumentation and runtime integration ([ADR-0024](adr/0024-profiler-instrumentation.md)): `FE_PROFILE_SCOPE`/`FE_PROFILE_FUNCTION` macros with a free disabled build; `Application` brackets `frame`/`frame/update`/`frame/render` and `SceneSchedule` times each system as `system/<name>`; a by-value `FrameReport` (per-name totals, counters, summary/`to_string`) is the stats surface
@@ -340,19 +363,83 @@ culling and resource tracking in the graph.
 - [x] Parallel physics broad phase: the uniform-grid insert is chunked across the job pool (count-then-write, so the entry buffer and the resulting pair set are byte-identical to the serial build), above a measured threshold ([ADR-0070](adr/0070-instancing-arena-seam-and-parallel-broadphase.md))
 - [x] GPU efficiency: instancing — `Renderer2D` uploads the unit-square corners once and a per-instance transform/UV/colour record per sprite, and issues one indexed instanced draw per texture batch, with the per-vertex UV convention preserved so the image is unchanged. Material batching is part of the batch key already.
 - [x] An in-editor profiler panel fed by the profiler data — `ProfilerPanel` + `ProfilerPanelViewModel` in `editor`; the editor owns an optional `core::Profiler`, brackets its own frame with it, and the panel draws the latest `FrameReport` ([ADR-0055](adr/0055-editor-profiler-panel.md))
-- [~] **A render-graph seam** for passes and post-processing — the scheduler landed with M4: `render::RenderGraph` orders passes by declared dependency and profiles each as `pass/<name>` ([ADR-0100](adr/0100-render-graph-seam.md)), and pass culling followed: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes nobody reads is dropped, iteratively, with a pass that declares no writes never culled ([ADR-0110](adr/0110-render-graph-pass-culling.md)). The 3D frame is now driven by the graph as well: `Renderer3D::render_frame` declares its shadow, main, and post passes and runs them through `run()` ([ADR-0127](adr/0127-renderer3d-graph-passes.md)). Render-target ownership remains; it needs the graph to own and alias targets, not just name them.
+- [~] **A render-graph seam** for passes and post-processing — the scheduler landed with M4: `render::RenderGraph` orders passes by declared dependency and profiles each as `pass/<name>` ([ADR-0100](adr/0100-render-graph-seam.md)), pass culling followed: a pass declares the resources it reads and writes, a resource can be marked an output, and a pass whose declared writes nobody reads is dropped, iteratively, with a pass that declares no writes never culled ([ADR-0110](adr/0110-render-graph-pass-culling.md)), the graph now owns, allocates, and aliases its render targets and can re-describe one so a resize re-allocates it ([ADR-0100](adr/0100-render-graph-seam.md)), and the 3D frame is driven by the graph as well: `Renderer3D::render_frame` declares its shadow, main, and post passes and runs them through `run()` ([ADR-0127](adr/0127-renderer3d-graph-passes.md)). The queue's remaining graph rows — barriers and timings — are the last refinements.
 - [x] **3D instancing** — `Renderer3D` batches instances that share a mesh, both material textures, and the per-batch shading state into one instanced draw, mirroring the 2D path. The per-instance model and normal matrices travel in a per-instance vertex stream (`VertexLayout::mesh_instance()`), so the transform is no longer a uniform and one call covers every instance of a mesh; the shadow pass draws the same batches from the same upload ([ADR-0101](adr/0101-instanced-3d-draws.md)).
 
 **Done when** a real scene holds its frame budget, the benchmark guards it, and
-the sanitizers are green. *Met for 2D; render-graph render-target ownership
-remains open.*
+the sanitizers are green. *Met: the frame path is measured, instanced, and on the
+graph; the graph's remaining refinement rows (barriers, timings) are tracked in
+the queue and do not gate the milestone.*
+
+## M11 — A second vertical slice: a 3D game, end to end
+
+*(M10 is retired: it was the collaborative-editing milestone, dropped as
+"Not planned" below. The gap is deliberate — the number is not reused, so the
+historical reference stays true.)*
+
+**Not started.** The first slice (M2.5) proved the 2D subsystems work together.
+The 3D systems have since landed one by one — skeletal animation and skinning
+(M6), animation state machines and blend trees (M6), 3D physics with angular
+dynamics and oriented colliders (M5), positional audio with attenuation, panning,
+directivity, Doppler, and the front/back head shadow (M6), instanced 3D draws
+(M9), and the 3D frame on the render graph (M4) — but they have never been
+assembled into *one finished game*.
+
+`examples/game3d_project` is the closest thing today, and it is deliberately a
+tech demo: a course to walk around, props to shove, and no goal, score, in-game
+UI, audio mix, or persistence. It exists to prove a player can drive the 3D
+renderer and the physics step in a browser, not to be a game.
+
+**Why this is the next milestone:** the same reason M2.5 came before breadth. A
+capability that has only ever passed its own unit tests has not been proven to
+work *with the others*, and the 3D systems are the ones a game-shaped artifact
+has never exercised together. A skinned character animated by a blend tree,
+heard positionally, colliding through the 3D solver, drawn instanced through the
+graph, with a goal and a HUD on top, is what turns a set of engine rows into a
+shippable game — and it is the artifact that attracts contributors, exactly as
+the breakout slice did.
+
+- [ ] Build one small, complete 3D game in `examples/` — a third-person
+      collect-and-reach-the-goal game, or a small arena — reusing the
+      `game3d_project` scene as its starting point rather than a new one
+- [ ] Give it a goal and a loop: a win/lose condition, a round that resets, and a
+      score, so it is a game rather than a sandbox
+- [ ] A HUD and a menu built from `UiCanvas`/`UiElement`/`TextLabel` (M2.5's UI
+      pieces), including a title, the score, and a pause/restart screen
+- [ ] An animated character: a skinned mesh driven by an `AnimationBlendTree` and
+      a `SkeletalStateMachine` (M6), so locomotion blends and a state machine
+      picks the clip, rather than a single looping clip
+- [ ] An audio mix that uses the 3D features: positional sources for the
+      character and the props, at least one source using directivity or Doppler,
+      and a bus layout for music against effects (M6)
+- [ ] Persistence and settings, reusing the slice's save path, so a best score
+      and the player's settings survive a restart
+- [ ] Make it the integration test: its rules and systems are compiled into
+      `fork_engine_tests` from the example's own sources, so the tests prove the
+      shipped game, not a copy — the M2.5 pattern
+- [ ] Export it to desktop and web and keep it green in the web acceptance
+      check (`tests/web/run_web_game.sh`), so "a 3D game ships" is demonstrated,
+      not asserted
+- [ ] A short "how this game was built" walkthrough, doubling as the 3D
+      tutorial and the contributor on-ramp
+
+**Done when** a 3D game with a goal, a score, a HUD, an animated character, and
+positional audio exports and runs on desktop and in a browser from one project,
+and its rules are compiled into the test suite. *Not started.*
+
+*Why here:* after the Phase 5 refinements, not before. The refinements are small
+and each closes a gap a first cut left open; a second slice is a larger,
+less-coupled step, so it is chosen fresh rather than queued, and it is the
+milestone that converts the 3D rows into a shipped game.
 
 ## Not planned
 
 **Networked collaborative editing.** Several people editing one project live over
 a shared server was once planned as M10. It is not planned any more: it needs a
 hosted authoritative service, and that running cost is not one the project will
-carry. The local steps that landed on the way — stable component identity
+carry. The number M10 is retired rather than reused, so this historical
+reference stays true; the next milestone is M11. The local steps that landed on
+the way — stable component identity
 ([ADR-0045](adr/0045-component-identity.md)), the serializable operation model
 ([ADR-0047](adr/0047-local-operation-model.md)), and the ordered log
 ([ADR-0048](adr/0048-replicated-operation-log.md)) — stay: they are shipped,

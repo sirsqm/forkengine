@@ -116,7 +116,12 @@ not a claim.
   writes nobody reads is dropped, iteratively. Both renderers are now driven by
   the graph -- the 2D world/UI pair and the 3D shadow/main/post sequence
   ([ADR-0127](adr/0127-renderer3d-graph-passes.md)). Render-target ownership
-  remains open, and is what turns the culling optimizer into a resource manager.
+  landed too ([ADR-0100](adr/0100-render-graph-seam.md)): the graph owns,
+  allocates, and aliases the targets it declares -- and re-describes one so a
+  resize re-allocates it -- which turns the culling optimizer into a resource
+  manager. The remaining graph work -- deriving ordering edges from resource
+  accesses (barriers) and reading per-pass timings back -- is the queue's next
+  rows.
 
 ### Verification
 
@@ -311,10 +316,13 @@ finished artifact, that the parts work together. The front line is now the queue
 Phase 5, closing the engine gaps each subsystem's first cut left open, before the
 next breadth step.
 
-The near-term order is therefore: keep scripting (M7) as the next breadth step,
-close the Phase 5 engine gaps, then resume the pillars. This is the project's own
+The near-term order is therefore: close the Phase 5 engine gaps, keep scripting
+(M7) as the next breadth step, then take a **second vertical slice** — a finished
+3D game assembled from the 3D systems that have landed but never run together
+(roadmap M11) — before resuming the pillars. This is the project's own
 guiding rule applied at the project level — **a few genuinely working systems beat
-a long list of half-finished features.**
+a long list of half-finished features.** The first slice proved the 2D subsystems
+work together; the second is what proves the 3D ones do.
 
 Nothing here is a promise of a date. It is the order in which the engine earns
 each capability, with every step independently testable.
