@@ -106,9 +106,10 @@ finished and start at the next item.)
 Once those land the ordered queue is empty and the remaining work is the
 *un-ordered* backlog (the bullet list at the end of the shipping queue) plus the
 `[~]` rows above and the **M11** second slice below — mobile native surfaces,
-the Windows installer and macOS notarization, more graphics backends, and a 3D
-game built on the systems M4, M6, and M8 landed. Those are chosen fresh rather
-than queued, because each is a larger, less-coupled step than a queue item.
+the Windows installer and macOS notarization, more graphics backends, and a
+finished 3D game built on the systems M4, M6, and M8 landed. Those are chosen
+fresh rather than queued, because each is a larger, less-coupled step than a
+queue item.
 
 ---
 
