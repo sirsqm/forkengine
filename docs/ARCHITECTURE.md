@@ -1284,10 +1284,12 @@ Every milestone must build and pass its tests before the next one begins.
   `FrameContext` ([ADR-0054](adr/0054-frame-loop-arena.md)); the job system is
   in place too (section 5, [ADR-0068](adr/0068-job-system.md)), so parallel
   culling, 2D and 3D instancing, and the arena-backed extraction seam are done;
-  the render graph's scheduler, pass culling, and render-target ownership are in
-  place ([ADR-0100](adr/0100-render-graph-seam.md),
-  [ADR-0110](adr/0110-render-graph-pass-culling.md)), so what remains in M9 is
-  the graph's refinement rows -- barriers and per-pass timings.
+  the render graph's scheduler, pass culling, render-target ownership, and
+  resource-derived ordering are in place
+  ([ADR-0100](adr/0100-render-graph-seam.md),
+  [ADR-0110](adr/0110-render-graph-pass-culling.md),
+  [ADR-0128](adr/0128-render-graph-derived-edges.md)), so what remains in M9 is
+  the graph's last refinement row -- per-pass timings.
 - Shipping to platforms beyond desktop: export templates, per-target runtimes,
   and the web/mobile backends are planned in M8 (section 11). The asset-pack
   format and the runtime mount are in place ([ADR-0030](adr/0030-asset-pack-format.md)).

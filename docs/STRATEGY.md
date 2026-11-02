@@ -119,9 +119,11 @@ not a claim.
   landed too ([ADR-0100](adr/0100-render-graph-seam.md)): the graph owns,
   allocates, and aliases the targets it declares -- and re-describes one so a
   resize re-allocates it -- which turns the culling optimizer into a resource
-  manager. The remaining graph work -- deriving ordering edges from resource
-  accesses (barriers) and reading per-pass timings back -- is the queue's next
-  rows.
+  manager. It also derives its ordering edges from resource access now
+  ([ADR-0128](adr/0128-render-graph-derived-edges.md)): a pass that writes what
+  another reads runs first without a hand-declared dependency, so the resource
+  declarations that drive culling also drive order. The last graph refinement --
+  reading per-pass timings back -- is the queue's next row.
 
 ### Verification
 

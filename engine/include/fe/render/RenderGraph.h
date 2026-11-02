@@ -31,6 +31,17 @@ namespace fe::render {
 // `run()` invokes each pass in that order, bracketing each in a profiler scope so
 // a pass shows up in a `FrameReport` as `pass/<name>`.
 //
+// Ordering edges are derived from resource access as well as declared by hand
+// (ADR-0128). When one live pass writes a resource another live pass reads, the
+// graph orders the writer first without an `add_dependency` -- the access is the
+// dependency. Two passes that write the same resource are ordered the same way:
+// the first declared writer is the producer and the rest run after it. This is
+// what makes the declarations the renderers already carry (`world` writes
+// `backbuffer`, `ui` reads it) sufficient to order the frame, so a caller cannot
+// forget an edge the data already implies. A pass that reads and writes the same
+// name is both the producer and its own consumer, so no edge is derived from it
+// and an existing hand-written edge is kept.
+//
 // Scope of this cut: it orders passes, culls passes whose output nobody reads,
 // and runs them. It does *not* own render targets or manage resource lifetimes
 // -- those need a real resource description, and are the follow-on that makes
@@ -101,13 +112,17 @@ public:
     // Drops every pass, dependency, resource declaration, and output mark.
     void clear() noexcept;
 
-    // The run order: every *live* pass follows the passes it declared. Ties are
-    // broken by declaration order, so the result is stable -- two graphs with the
-    // same passes and the same dependencies order them identically, and a pass
-    // with no constraints keeps the position it was added in. A dependency on a
-    // culled pass is dropped, not an error: the dependent was written against a
-    // pass that turned out to have no live output. Fails if the dependencies
-    // among the live passes form a cycle, naming the passes left unresolved.
+    // The run order: every *live* pass follows the passes it declared and the
+    // passes its resources require. Ties are broken by declaration order, so the
+    // result is stable -- two graphs with the same passes and the same
+    // dependencies order them identically, and a pass with no constraints keeps
+    // the position it was added in. An edge is derived from resource access
+    // (ADR-0128): a pass that writes a resource a later live pass reads is
+    // ordered before it, and of two passes that write the same resource the first
+    // declared runs first. A dependency on a culled pass is dropped, not an
+    // error: the dependent was written against a pass that turned out to have no
+    // live output. Fails if the dependencies among the live passes form a cycle,
+    // naming the passes left unresolved.
     [[nodiscard]] Result<std::vector<std::string>> order() const;
 
     // The names of the passes the culling rule drops, in declaration order. A
@@ -178,6 +193,13 @@ public:
     [[nodiscard]] Error run(const std::function<Error(std::string_view)>& run_pass) const;
 
 private:
+    // A dependency edge, resolved to indices once so ordering does not compare
+    // strings per pass. `pass` runs after `after`.
+    struct Edge {
+        u32 pass = 0;
+        u32 after = 0;
+    };
+
     // Finds a pass index by name, or kInvalid when absent.
     [[nodiscard]] u32 find(std::string_view name) const noexcept;
 
@@ -186,6 +208,19 @@ private:
 
     // The indices of the passes that survive culling, in declaration order.
     [[nodiscard]] std::vector<u32> live_pass_indices() const;
+
+    // Appends the edges implied by resource access among the live passes
+    // (ADR-0128): for each resource, the first declared live writer is ordered
+    // before every other live pass that reads or writes it. A self-edge is never
+    // produced, so a pass that reads and writes one name is not ordered against
+    // itself.
+    void collect_resource_edges(const std::vector<u32>& live, std::vector<Edge>& out) const;
+
+    // True when `from` and `to` are already ordered by declared dependencies, in
+    // either direction. A derived edge between such a pair is redundant -- the
+    // caller has already said how they run -- so it is dropped and the declared
+    // order governs.
+    [[nodiscard]] bool has_declared_path(u32 from, u32 to) const;
 
     // A declared render target: its description, plus the allocation `allocate()`
     // makes for its slot (null until then, and shared with the other targets that

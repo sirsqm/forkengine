@@ -11,13 +11,6 @@ namespace fe::render {
 
 namespace {
 
-// A dependency edge, resolved to indices once so ordering does not compare
-// strings per pass.
-struct Edge {
-    u32 pass = 0;
-    u32 after = 0;
-};
-
 // True when two target descriptions allocate the same physical shape, so one
 // allocation can back either. The name is deliberately excluded: it identifies
 // the target, not the storage.
@@ -206,6 +199,78 @@ void RenderGraph::clear() noexcept {
     targets_.clear();
 }
 
+void RenderGraph::collect_resource_edges(const std::vector<u32>& live, std::vector<Edge>& out) const {
+    // For each resource, the earliest-declared live pass that writes it is the
+    // producer; every other live pass that reads or writes the name runs after it.
+    // `live` is in declaration order, so "earliest" is a forward scan and the
+    // result does not depend on any hash iteration.
+    for (const u32 producer : live) {
+        for (const std::string& resource : passes_[producer].writes) {
+            bool earlier_writer = false;
+            for (const u32 other : live) {
+                if (other >= producer) {
+                    break;
+                }
+                const std::vector<std::string>& writes = passes_[other].writes;
+                if (std::find(writes.begin(), writes.end(), resource) != writes.end()) {
+                    earlier_writer = true;
+                    break;
+                }
+            }
+            // A resource this pass writes but an earlier live pass also writes is
+            // that pass's to produce, so it emits no edge here.
+            if (earlier_writer) {
+                continue;
+            }
+            for (const u32 consumer : live) {
+                if (consumer == producer) {
+                    continue; // a pass is never its own producer
+                }
+                const Pass& pass = passes_[consumer];
+                const bool touches = std::find(pass.reads.begin(), pass.reads.end(), resource) != pass.reads.end() ||
+                                     std::find(pass.writes.begin(), pass.writes.end(), resource) != pass.writes.end();
+                if (touches) {
+                    out.push_back(Edge{consumer, producer});
+                }
+            }
+        }
+    }
+}
+
+bool RenderGraph::has_declared_path(u32 from, u32 to) const {
+    std::vector<bool> seen(passes_.size(), false);
+    std::vector<u32> stack{from};
+    seen[from] = true;
+    while (!stack.empty()) {
+        const u32 at = stack.back();
+        stack.pop_back();
+        if (at == to) {
+            return true;
+        }
+        // `at` runs after each pass in `passes_[at].after`; walk to those and, to
+        // reach a downstream pass, through the passes that declared `at`.
+        for (const std::string& dependency : passes_[at].after) {
+            const u32 after = find(dependency);
+            if (after != kInvalid && !seen[after]) {
+                seen[after] = true;
+                stack.push_back(after);
+            }
+        }
+        for (const Pass& pass : passes_) {
+            for (const std::string& dependency : pass.after) {
+                if (dependency == passes_[at].name) {
+                    const u32 dependent = find(pass.name);
+                    if (dependent != kInvalid && !seen[dependent]) {
+                        seen[dependent] = true;
+                        stack.push_back(dependent);
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 Result<std::vector<std::string>> RenderGraph::order() const {
     // Only live passes are ordered and run. A pass the culling rule drops is
     // absent from the result entirely, and a dependency on it is dropped with
@@ -240,6 +305,27 @@ Result<std::vector<std::string>> RenderGraph::order() const {
             edges.push_back(Edge{static_cast<u32>(k), after_slot});
             ++remaining[k];
         }
+    }
+
+    // Edges the resource declarations imply (ADR-0128). A derived edge is a real
+    // data dependency and is added as one, so a genuine data cycle is reported by
+    // the check below rather than papered over. The one case where it is dropped
+    // is when the caller's *declared* order already contradicts it: an explicit
+    // dependency says the frame is meant to run in that order, and a declaration
+    // outranks an inference.
+    const usize declared_edge_count = edges.size();
+    collect_resource_edges(live, edges);
+    {
+        usize kept = declared_edge_count;
+        for (usize e = declared_edge_count; e < edges.size(); ++e) {
+            const Edge edge = edges[e];
+            if (has_declared_path(edge.pass, edge.after)) {
+                continue;
+            }
+            edges[kept++] = edge;
+            ++remaining[edge.pass];
+        }
+        edges.resize(kept);
     }
 
     std::vector<std::string> result;

@@ -304,6 +304,96 @@ TEST_CASE("clear drops resources and outputs as well as passes") {
 }
 
 // ---------------------------------------------------------------------------
+// Resource-derived ordering (ADR-0128)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a write-then-read orders the producer first without a declared dependency") {
+    // Declared consumer-first, and no `add_dependency`: the graph must derive the
+    // edge from the fact that `present` reads what `render` writes.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_pass("render").ok());
+    REQUIRE(graph.add_write("render", "color").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+
+    CHECK(graph.culled().empty());
+    CHECK(run_order(graph) == std::vector<std::string>{"render", "present"});
+}
+
+TEST_CASE("an unrelated pass keeps its declared order beside a derived pair") {
+    // `hud` shares no resource with the render pair, so it keeps its declared
+    // position -- first -- even though the pair is reordered after it.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("hud").ok());
+    REQUIRE(graph.add_pass("render").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_write("hud", "hud_out").ok());
+    REQUIRE(graph.mark_output("hud_out").ok());
+    REQUIRE(graph.add_write("render", "color").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+
+    CHECK(run_order(graph) == std::vector<std::string>{"hud", "render", "present"});
+}
+
+TEST_CASE("two writers of one resource are ordered by declaration") {
+    // `early` is declared after `late`, so `late` is the producer: the first
+    // declared writer wins, and the reader follows both.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("late").ok());
+    REQUIRE(graph.add_pass("early").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_write("late", "x").ok());
+    REQUIRE(graph.add_write("early", "x").ok());
+    REQUIRE(graph.add_read("present", "x").ok());
+
+    CHECK(run_order(graph) == std::vector<std::string>{"late", "early", "present"});
+}
+
+TEST_CASE("a derived edge never reverses a declared dependency") {
+    // `b` writes what `a` reads, so the access implies b first. The caller
+    // declared the opposite (`b` after `a`). The declared order wins rather than
+    // a cycle being reported: the caller's statement about the frame is kept.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_write("b", "x").ok());
+    REQUIRE(graph.add_read("a", "x").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+
+    CHECK(run_order(graph) == std::vector<std::string>{"a", "b"});
+}
+
+TEST_CASE("a pass that reads and writes one resource is not ordered against itself") {
+    // A read-modify-write pass is both the producer and its own consumer; no
+    // self-edge is derived, so the graph stays acyclic and the pass runs once.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("accumulate").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_read("accumulate", "buffer").ok());
+    REQUIRE(graph.add_write("accumulate", "buffer").ok());
+    REQUIRE(graph.add_read("present", "buffer").ok());
+
+    CHECK(graph.culled().empty());
+    CHECK(run_order(graph) == std::vector<std::string>{"accumulate", "present"});
+}
+
+TEST_CASE("a cycle made only of resource edges is reported, not resolved") {
+    // Each pass writes what the other reads: there is no order that runs both, so
+    // the graph reports the cycle rather than inventing one.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_write("a", "x").ok());
+    REQUIRE(graph.add_write("b", "y").ok());
+    REQUIRE(graph.add_read("a", "y").ok());
+    REQUIRE(graph.add_read("b", "x").ok());
+
+    const auto result = graph.order();
+    REQUIRE_FALSE(result.ok());
+    CHECK(result.error().message().find("cycle") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
 // Render-target ownership and aliasing (ADR-0100)
 // ---------------------------------------------------------------------------
 
