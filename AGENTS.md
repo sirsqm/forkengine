@@ -359,3 +359,28 @@ call in the root `CMakeLists.txt`. `cmake/FEVersion.cmake` generates
 `kEngineVersionString`, and the `FE_VERSION_*` macros. The scene file-format
 version is independent (`fe::serialization::scene::kFormatVersion`). Do not
 hardcode a version string anywhere else.
+
+## Pushing from an automation run
+
+The `origin` remote's embedded token can be stale, so a plain `git push` stops
+at a password prompt that no one answers and the run stalls until it is killed.
+Push with the refreshed `GITHUB_TOKEN` and prompts off:
+
+```sh
+GIT_TERMINAL_PROMPT=0 git -c credential.helper= \
+  push "https://${GITHUB_TOKEN}@github.com/sirsqm/forkengine.git" main:main
+```
+
+Fetch first, as always: another agent may have pushed while the run worked, and
+`main` may need a rebase before the push. A rebase can also invalidate what the
+run just wrote — a queue item it described as open may have landed upstream in
+the meantime — so re-read the affected docs after rebasing, not only the code.
+
+## Tooling in a fresh sandbox
+
+`cmake`, `ctest`, and `xvfb-run` are not always on `PATH`. `pip install cmake`
+puts `cmake`/`ctest` in `~/.local/bin`, which is not on `PATH` either; add it:
+`export PATH="$HOME/.local/bin:$PATH"`. `xvfb-run` may be absent, in which case
+`ctest` still runs and only the GL tests fail — `gles_dialect_compile` fails with
+`libEGL.so.1: cannot open shared object file`, which is the sandbox lacking the
+system GL library, not a code defect. A docs-only change cannot affect it.
