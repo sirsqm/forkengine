@@ -1238,17 +1238,18 @@ Every milestone must build and pass its tests before the next one begins.
   `Renderer3D`'s cull pass (ADR-0056). Skeletal animation's runtime is in place
   ([ADR-0104](adr/0104-skeletal-animation.md)); its glTF import and skinned draw
   call are the remaining half.
-- The parts of physics not in the first cuts: continuous collision detection, a
-  rotated broad-phase cell, oriented 3D colliders, and 3D islands / sleeping.
-  3D physics is in place and integrated with the editor, and collider debug
-  drawing exists for both 2D and 3D scenes (see
+- The parts of physics not in the first cuts: a rotated broad-phase cell,
+  oriented 3D colliders, and more joint types. Continuous collision detection is
+  in place for 2D and 3D. 3D physics is in place and integrated with the editor,
+  and collider debug drawing exists for both 2D and 3D scenes (see
   [ADR-0009](adr/0009-physics2d-system.md),
   [ADR-0013](adr/0013-physics2d-queries-events-angular.md),
   [ADR-0021](adr/0021-physics2d-joints.md),
   [ADR-0023](adr/0023-physics2d-broadphase.md),
   [ADR-0037](adr/0037-physics2d-oriented-boxes-offsets.md),
   [ADR-0031](adr/0031-physics3d-and-backend-seam.md),
-  [ADR-0043](adr/0043-physics3d-angular-dynamics.md), and
+  [ADR-0043](adr/0043-physics3d-angular-dynamics.md),
+  [ADR-0130](adr/0130-physics3d-continuous-collision.md), and
   [ADR-0059](adr/0058-editor-physics3d-and-debug-draw.md)).
 - The parts of audio not in the first cut: 3D positional attenuation, streaming
   and large-file playback, compressed codecs, and audio buses / mixing groups

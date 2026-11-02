@@ -160,3 +160,12 @@ changes.
 - **A revolute / point-to-point 3D joint now.** Deferred. The row type carries
   the angular terms so it is a small, additive step when a game needs a hinge,
   but shipping it here would be breadth without a consumer.
+- **Continuous collision detection in the same change.** Deferred at the time,
+  then landed separately as `Physics3DSystem::apply_continuous_collisions` and
+  `sweep_shape` (`Geometry3D.h`): it is an independent refinement with its own
+  tests and its own trade-offs, and this change should be reviewable on its own.
+  It sweeps a fast body's motion against static geometry and clamps it to the
+  first touch, so a thrown object cannot cross a thin wall in one step; a contact
+  that already exists at the start of the step is left to the discrete solver, so
+  a resting or sliding body is unaffected
+  ([ADR-0130](0130-physics3d-continuous-collision.md)).

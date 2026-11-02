@@ -185,4 +185,36 @@ struct Contact3D {
 [[nodiscard]] bool contains_shape(ShapeType3D type, const Aabb3D& box, const Sphere3D& sphere,
                                   const Vec3& point) noexcept;
 
+// --- Swept (continuous) tests ----------------------------------------------
+
+// The result of a swept test between a moving shape and a static one.
+//
+// `time` is the fraction of the displacement at which the two first touch, in
+// [0, 1]; 0 means the moving shape already overlaps the target at the start of
+// the sweep. `normal` points back towards the moving shape (the direction that
+// separates them), matching `Contact3D`'s convention so a caller can stop the
+// motion the same way a discrete contact would.
+struct Sweep3D {
+    bool hit = false;
+    f32 time = 0.0f;
+    Vec3 normal{};
+};
+
+// The first time a moving shape touches `target` along `displacement`.
+//
+// This is the continuous counterpart of `intersect`: the discrete narrow phase
+// asks "do these overlap now", which a fast body can pass through between two
+// steps (a bullet through a thin wall). The swept test asks "do these touch at
+// any point along the motion", which cannot be tunnelled through.
+//
+// The shapes are taken as their axis-aligned bounds, so the sweep is exact for
+// two axis-aligned boxes and conservative for a sphere or an oriented box (a box
+// bound around a sphere): it may report a contact a hair early near a corner, but
+// it never misses one, which is the property a continuous test must have. The
+// Minkowski slab test generalises to three axes: shrinking the moving shape to
+// its centre and growing the target by the moving half-extents turns the sweep
+// into a ray cast against an expanded box. `displacement` is the full motion for
+// the step, not a unit direction.
+[[nodiscard]] Sweep3D sweep_shape(const Aabb3D& moving_bounds, const Vec3& displacement, const Aabb3D& target) noexcept;
+
 } // namespace fe::physics3d

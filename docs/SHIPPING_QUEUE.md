@@ -899,6 +899,16 @@ between steps.
 through it in one step and proves it is stopped at the surface, while a slow body
 behaves exactly as before.
 
+Landed as a swept pass on the 3D solver
+([ADR-0130](adr/0130-physics3d-continuous-collision.md)).
+`physics3d::sweep_shape` is the 3D Minkowski slab test, and
+`Physics3DSystem::apply_continuous_collisions` runs after integration and before
+the discrete solver: it sweeps each awake dynamic body that moves more than its
+own size in one step against static geometry, clamps the motion to the first
+touch, and removes the velocity into the surface. A contact already present at
+the start of the sweep is left to the discrete solver, so a resting or sliding
+body is unaffected; `continuous_hit_count()` reports whether the pass fired.
+
 ### `physics2d-rotational-ccd`
 
 The 2D refinement row (ADR-0037) leaves sweeping a *rotating* body open: linear

@@ -151,6 +151,12 @@ public:
     // that cost nothing this step.
     [[nodiscard]] usize sleeping_body_count() const noexcept { return sleeping_bodies_; }
 
+    // Bodies the continuous pass clamped in the most recent update: a fast body
+    // whose sweep would have carried it through a static collider was stopped at
+    // the surface. Zero on an ordinary step. Exposed so a test can prove the
+    // continuous pass ran, not only that the body ended up in the right place.
+    [[nodiscard]] usize continuous_hit_count() const noexcept { return continuous_hits_; }
+
 private:
     // One simulated node, flattened out of the scene for the duration of the
     // update so the solver works on a contiguous array.
@@ -238,6 +244,13 @@ private:
     // themselves, and restarts each newly woken body's rest timer.
     void wake_island(usize index);
 
+    // The continuous pass: sweeps each awake dynamic body's motion for the step
+    // and clamps it to the first touch with a static collider, so a fast body
+    // cannot tunnel through a thin wall. Runs after integration and before the
+    // discrete solver; a body whose sweep hits has its position pulled back to
+    // the contact and its velocity component into the surface removed.
+    void apply_continuous_collisions();
+
     std::vector<Body> bodies_;
     usize contacts_ = 0;
 
@@ -266,6 +279,15 @@ private:
     std::vector<BodyPair> active_pairs_;
     std::vector<BodyPair> previous_pairs_;
     std::vector<ContactEvent> events_;
+
+    // The position each dynamic body had before this step's integration, indexed
+    // like `bodies_`. The continuous pass sweeps from here to the integrated
+    // position, so it sees the whole motion rather than only its end. Reused
+    // across frames like the other scratch.
+    std::vector<Vec3> previous_positions_;
+
+    // Bodies the continuous pass clamped in the most recent update.
+    usize continuous_hits_ = 0;
 
     // Sleeping. `islands_` groups the dynamic bodies by contact and joint. The
     // island graph has only dynamic bodies as vertices, so `island_vertex_body_`
