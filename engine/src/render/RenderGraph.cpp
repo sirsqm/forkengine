@@ -26,6 +26,24 @@ bool same_shape(const rhi::RenderTargetDesc& a, const rhi::RenderTargetDesc& b) 
            a.sample_depth == b.sample_depth;
 }
 
+// The validation `add_target` and `set_target_desc` share: a target needs a
+// name, non-zero dimensions, and at least one attachment, or it is incomplete.
+// `add_target` adds the duplicate-name check on top; `set_target_desc` replaces
+// an existing target so its own name is expected and allowed.
+Error validate_target_desc(const rhi::RenderTargetDesc& desc) {
+    if (desc.name.empty()) {
+        return Error{"render graph: a target name must not be empty"};
+    }
+    if (desc.width == 0 || desc.height == 0) {
+        return Error{"render graph: target '" + desc.name + "' must have non-zero dimensions"};
+    }
+    if (!desc.color && !(desc.depth && desc.sample_depth)) {
+        return Error{"render graph: target '" + desc.name +
+                     "' has no attachment; set color, or depth with sample_depth"};
+    }
+    return Error::none();
+}
+
 } // namespace
 
 u32 RenderGraph::find(std::string_view name) const noexcept {
@@ -268,15 +286,8 @@ Result<std::vector<std::string>> RenderGraph::order() const {
 }
 
 Result<void> RenderGraph::add_target(const rhi::RenderTargetDesc& desc) {
-    if (desc.name.empty()) {
-        return Error{"render graph: a target name must not be empty"};
-    }
-    if (desc.width == 0 || desc.height == 0) {
-        return Error{"render graph: target '" + desc.name + "' must have non-zero dimensions"};
-    }
-    if (!desc.color && !(desc.depth && desc.sample_depth)) {
-        return Error{"render graph: target '" + desc.name +
-                     "' has no attachment; set color, or depth with sample_depth"};
+    if (Error error = validate_target_desc(desc); error) {
+        return error;
     }
     for (const Target& target : targets_) {
         if (target.desc.name == desc.name) {
@@ -285,6 +296,24 @@ Result<void> RenderGraph::add_target(const rhi::RenderTargetDesc& desc) {
     }
     targets_.push_back(Target{desc, nullptr});
     return {};
+}
+
+Result<void> RenderGraph::set_target_desc(const rhi::RenderTargetDesc& desc) {
+    if (Error error = validate_target_desc(desc); error) {
+        return error;
+    }
+    for (Target& target : targets_) {
+        if (target.desc.name != desc.name) {
+            continue;
+        }
+        // Only the description changes. The existing allocation is left in place
+        // (and shared by every target that aliases the slot), so a caller reading
+        // a target's size before `allocate()` sees the size it was built at; the
+        // next `allocate()` releases it and rebuilds the plan from the new shape.
+        target.desc = desc;
+        return {};
+    }
+    return Error{"render graph: unknown target '" + desc.name + "'"};
 }
 
 Result<RenderGraph::TargetPlan> RenderGraph::plan() const {

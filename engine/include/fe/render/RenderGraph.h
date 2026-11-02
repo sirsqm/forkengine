@@ -134,6 +134,14 @@ public:
     // description. A target no live pass touches is dead and gets no slot.
     [[nodiscard]] Result<void> add_target(const rhi::RenderTargetDesc& desc);
 
+    // Re-describes an existing target, so a resize rebuilds its allocation at
+    // the new size. The description is validated exactly as `add_target`'s is,
+    // and the name must match a declared target (it identifies the target, so
+    // re-describing cannot rename it). Only the *declaration* changes: a target
+    // already allocated keeps its old size until `allocate()` runs again, which
+    // re-runs the whole plan so aliasing and slots follow the new shapes.
+    [[nodiscard]] Result<void> set_target_desc(const rhi::RenderTargetDesc& desc);
+
     // The number of declared targets.
     [[nodiscard]] usize target_count() const noexcept { return targets_.size(); }
 

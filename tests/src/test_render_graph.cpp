@@ -478,3 +478,111 @@ TEST_CASE("clear drops target declarations") {
     graph.clear();
     CHECK(graph.target_count() == 0);
 }
+
+// ---------------------------------------------------------------------------
+// Render-target resize (ADR-0100)
+// ---------------------------------------------------------------------------
+
+TEST_CASE("set_target_desc validates the new description and requires a known name") {
+    RenderGraph graph;
+    REQUIRE(graph.add_target(color_target("main")).ok());
+    // The name identifies the target, so it must match a declared one.
+    CHECK_FALSE(graph.set_target_desc(color_target("absent")).ok());
+    // The new description is validated exactly as `add_target`'s is.
+    CHECK_FALSE(graph.set_target_desc(color_target("main", 0, 240)).ok()); // zero width
+    CHECK_FALSE(graph.set_target_desc(color_target("main", 320, 0)).ok()); // zero height
+    rhi::RenderTargetDesc bare;
+    bare.name = "main"; // no attachment at all
+    CHECK_FALSE(graph.set_target_desc(bare).ok());
+    // A valid resize is accepted and leaves the count unchanged.
+    CHECK(graph.set_target_desc(color_target("main", 1280, 720)).ok());
+    CHECK(graph.target_count() == 1);
+}
+
+TEST_CASE("re-declaring a target and re-allocating rebuilds it at the new size") {
+    Result<std::unique_ptr<rhi::Device>> device = rhi::create_null_device();
+    REQUIRE(device.ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_dependency("present", "main").ok());
+    REQUIRE(graph.add_write("main", "color").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+    REQUIRE(graph.add_target(color_target("color", 320, 240)).ok());
+
+    REQUIRE(graph.allocate(*device.value()).ok());
+    REQUIRE(graph.target("color") != nullptr);
+    CHECK(graph.target("color")->width() == 320);
+    CHECK(graph.target("color")->height() == 240);
+
+    // A window or panel resize re-describes the target; the allocation is stale
+    // until the next `allocate()`, which rebuilds it at the new size.
+    REQUIRE(graph.set_target_desc(color_target("color", 1920, 1080)).ok());
+    REQUIRE(graph.allocate(*device.value()).ok());
+    REQUIRE(graph.target("color") != nullptr);
+    CHECK(graph.target("color")->width() == 1920);
+    CHECK(graph.target("color")->height() == 1080);
+}
+
+TEST_CASE("a second allocate at the same size reuses nothing stale") {
+    Result<std::unique_ptr<rhi::Device>> device = rhi::create_null_device();
+    REQUIRE(device.ok());
+
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_dependency("present", "main").ok());
+    REQUIRE(graph.add_write("main", "color").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+    REQUIRE(graph.add_target(color_target("color", 320, 240)).ok());
+    REQUIRE(graph.allocate(*device.value()).ok());
+
+    REQUIRE(graph.set_target_desc(color_target("color", 1920, 1080)).ok());
+    REQUIRE(graph.allocate(*device.value()).ok());
+    // A further allocate with no change must not fall back to the pre-resize
+    // allocation: `allocate()` releases first, so each run builds from the plan.
+    REQUIRE(graph.allocate(*device.value()).ok());
+    REQUIRE(graph.target("color") != nullptr);
+    CHECK(graph.target("color")->width() == 1920);
+    CHECK(graph.target("color")->height() == 1080);
+}
+
+TEST_CASE("a resize re-runs the alias plan against the new shapes") {
+    Result<std::unique_ptr<rhi::Device>> device = rhi::create_null_device();
+    REQUIRE(device.ok());
+
+    // Two disjoint targets of the same shape alias one slot; resizing one to a
+    // different shape must split them, because a slot is allocated once from one
+    // description. a -> b -> c -> d: `first` lives a..b, `second` lives c..d.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_pass("d").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_dependency("d", "c").ok());
+    REQUIRE(graph.add_write("a", "first").ok());
+    REQUIRE(graph.add_read("b", "first").ok());
+    REQUIRE(graph.add_write("c", "second").ok());
+    REQUIRE(graph.add_read("d", "second").ok());
+    REQUIRE(graph.add_target(color_target("first", 320, 240)).ok());
+    REQUIRE(graph.add_target(color_target("second", 320, 240)).ok());
+
+    const auto before = graph.plan();
+    REQUIRE(before.ok());
+    CHECK(before.value().slot_count == 1);
+
+    REQUIRE(graph.set_target_desc(color_target("second", 1920, 1080)).ok());
+    const auto after = graph.plan();
+    REQUIRE(after.ok());
+    CHECK(after.value().slot_count == 2);
+
+    REQUIRE(graph.allocate(*device.value()).ok());
+    REQUIRE(graph.target("first") != nullptr);
+    REQUIRE(graph.target("second") != nullptr);
+    CHECK(graph.target("first")->width() == 320);
+    CHECK(graph.target("second")->width() == 1920);
+    CHECK((graph.target("first") != graph.target("second")));
+}
