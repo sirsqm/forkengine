@@ -349,6 +349,12 @@ private:
     // across frames like the other scratch.
     std::vector<Vec2> previous_positions_;
 
+    // The rotation each dynamic body had before this step's integration, indexed
+    // like `bodies_`. The continuous pass also sweeps the arc a spinning body
+    // turns through, so a fast rotation cannot sweep a corner through a wall
+    // between steps. Reused across frames like the other scratch.
+    std::vector<f32> previous_rotations_;
+
     // Sleeping. `islands_` groups the dynamic bodies by contact and joint. The
     // island graph has only dynamic bodies as vertices, so `island_vertex_body_`
     // maps an island vertex back to its index in `bodies_`, and `body_vertex_`

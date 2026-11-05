@@ -1934,6 +1934,72 @@ TEST_CASE("a slow body against a wall is resolved by the discrete pass, not the 
     CHECK_FALSE(any_sweep);
 }
 
+TEST_CASE("a spinning body is stopped from sweeping a corner through a thin wall") {
+    Scene scene;
+    // A long thin bar lying along +x, and a thin ledge just inside the circle
+    // its tips trace (radius 2, at y = 1.99). Lying flat the bar is clear of the
+    // ledge, and a half-turn later it is clear again, so the discrete pass sees
+    // no overlap at either endpoint: the tips' arc is the only place the two
+    // meet, which the linear sweep (following the centre) cannot see either.
+    Node* bar_node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 2.0f, 1.0f);
+    auto* bar_collider = bar_node->get_component<physics2d::Collider2D>();
+    bar_collider->half_extent = Vec2{2.0f, 0.05f};
+    auto* bar = bar_node->get_component<physics2d::RigidBody2D>();
+    bar->affected_by_gravity = false;
+    // A full half-turn in one step: the tips sweep right over the ledge between
+    // the two endpoint orientations.
+    bar->angular_velocity = 60.0f * 3.14159265f;
+    bar->wake();
+
+    Node* ledge = scene.create_node("Ledge");
+    auto* ledge_collider = ledge->add_component<physics2d::Collider2D>();
+    ledge_collider->shape = physics2d::ShapeType::Box;
+    ledge_collider->half_extent = Vec2{0.5f, 0.005f};
+    ledge->transform().position = Vec3{0.0f, 1.99f, 0.0f};
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, 0.0f};
+
+    physics.update(step(1.0f / 60.0f), scene);
+
+    // The turn was caught partway round, so the bar never completed the
+    // half-turn past the ledge. Without the rotational sweep the bar would reach
+    // rotation pi (its flat endpoints miss the ledge, so the discrete pass would
+    // leave it there); the sweep clamps it near a quarter turn instead.
+    CHECK(physics.continuous_hit_count() > 0);
+    CHECK(bar_node->transform().rotation.z < 2.5f);
+}
+
+TEST_CASE("the same bar without spin is still stopped by the linear sweep") {
+    Scene scene;
+    // The long thin bar again, but with no spin: its own size along the motion
+    // is tiny, so it must still be caught by the linear sweep exactly as the
+    // ordinary bullet is.
+    add_thin_wall(scene, 8.0f, 0.05f, 5.0f);
+    Node* bar_node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 2.0f, 1.0f);
+    auto* bar_collider = bar_node->get_component<physics2d::Collider2D>();
+    bar_collider->half_extent = Vec2{2.0f, 0.05f};
+    auto* bar = bar_node->get_component<physics2d::RigidBody2D>();
+    bar->velocity = Vec2{600.0f, 0.0f};
+    bar->affected_by_gravity = false;
+    bar->wake();
+
+    physics2d::Physics2DSystem physics;
+    physics.gravity = Vec2{0.0f, 0.0f};
+
+    bool clamped = false;
+    for (int i = 0; i < 3; ++i) {
+        physics.update(step(1.0f / 60.0f), scene);
+        clamped = clamped || physics.continuous_hit_count() > 0;
+    }
+
+    // The linear sweep stopped the bar at the wall face (x = 7.95) less its own
+    // half-length, so its centre rests near x = 5.95.
+    CHECK(clamped);
+    CHECK(bar_node->transform().position.x < 8.0f);
+    CHECK(bar_node->transform().position.x > 5.5f);
+}
+
 // ---------------------------------------------------------------------------
 // Tilemap collision: a level's solid cells become static boxes the solver
 // collides against, placed exactly where the renderer draws the tile.
