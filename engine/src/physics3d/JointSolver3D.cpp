@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "fe/physics3d/JointSolver3D.h"
 
+#include "fe/physics3d/Geometry3D.h"
+
 namespace fe::physics3d {
 namespace {
 
@@ -89,6 +91,51 @@ void apply_row_position(const ConstraintRow3D& row, JointBody3D& a, JointBody3D&
     const f32 correction = row.position_factor * row.position_error * row.effective_mass;
     a.position -= row.jacobian_a * (correction * a.inv_mass);
     b.position -= row.jacobian_b * (correction * b.inv_mass);
+}
+
+Result<void> build_revolute_rows(const JointBody3D& a, const JointBody3D& b, const RevoluteJoint3DParams& params,
+                                 f32 delta_time, ConstraintRow3D out_rows[kRevoluteJoint3DRows]) {
+    if (delta_time <= 0.0f) {
+        return Error("revolute joint: non-positive delta time");
+    }
+
+    // The world offset of each body's local anchor. The lever arm from the
+    // centre to the anchor is what couples the anchor constraint to rotation,
+    // which is what makes a pendulum swing instead of sliding.
+    const Vec3 lever_a = rotate_by_quat(params.anchor_a, a.orientation);
+    const Vec3 lever_b = rotate_by_quat(params.anchor_b, b.orientation);
+
+    // Position error: how far apart the two anchors currently are. Each axis is
+    // a separate row, so a shared anchor removes all three translational degrees
+    // of freedom while leaving relative rotation free.
+    const Vec3 error = (a.position + lever_a) - (b.position + lever_b);
+    const Vec3 axes[kRevoluteJoint3DRows] = {Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
+                                             Vec3{0.0f, 0.0f, 1.0f}};
+    const f32 errors[kRevoluteJoint3DRows] = {error.x, error.y, error.z};
+
+    bool any_solvable = false;
+    for (usize i = 0; i < kRevoluteJoint3DRows; ++i) {
+        ConstraintRow3D& row = out_rows[i];
+        row.jacobian_a = axes[i];
+        row.jacobian_b = axes[i] * -1.0f;
+        // The angular Jacobian is the lever arm crossed with the linear one:
+        // moving A's centre along +axis rotates its anchor by cross(r, axis).
+        row.angular_a = lever_a.cross(row.jacobian_a);
+        row.angular_b = lever_b.cross(row.jacobian_b);
+        row.effective_mass = row_effective_mass(row, a, b);
+        row.position_error = errors[i];
+        row.position_factor = kJointPositionFactor;
+        any_solvable = any_solvable || row.effective_mass > 0.0f;
+    }
+
+    if (!any_solvable) {
+        return Error("revolute joint: neither body can move, so the constraint is unsolvable");
+    }
+    return Result<void>{};
+}
+
+Vec3 revolute_world_anchor(const JointBody3D& a, const RevoluteJoint3DParams& params) noexcept {
+    return a.position + rotate_by_quat(params.anchor_a, a.orientation);
 }
 
 } // namespace fe::physics3d

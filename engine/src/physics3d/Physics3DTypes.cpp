@@ -4,6 +4,7 @@
 
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/DistanceJoint3D.h"
+#include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/reflect/PropertyBuilders.h"
 #include "fe/reflect/Registry.h"
@@ -115,19 +116,20 @@ void register_rigid_body3d(Registry& registry) {
 // A body reference: a node id, stored as a Uuid. The default is a nil id, which
 // the solver treats as "unset" and skips, so a freshly created joint is inert
 // until it is pointed at two bodies.
-Property make_body_ref_property(std::string name, Uuid physics3d::DistanceJoint3D::* field) {
+template <typename Joint>
+Property make_body_ref_property(std::string name, Uuid Joint::* field) {
     Property property;
     property.name = std::move(name);
     property.value_kind = ValueKind::Uuid;
     property.getter = [field](const void* object) -> Value {
-        return static_cast<const physics3d::DistanceJoint3D*>(object)->*field;
+        return static_cast<const Joint*>(object)->*field;
     };
     property.setter = [field](void* object, const Value& value) -> bool {
         const auto* as_id = std::get_if<Uuid>(&value);
         if (as_id == nullptr) {
             return false;
         }
-        static_cast<physics3d::DistanceJoint3D*>(object)->*field = *as_id;
+        static_cast<Joint*>(object)->*field = *as_id;
         return true;
     };
     property.default_value = Uuid{};
@@ -153,6 +155,23 @@ void register_distance_joint3d(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+void register_revolute_joint3d(Registry& registry) {
+    physics3d::RevoluteJoint3D defaults;
+
+    TypeDesc desc;
+    desc.name = physics3d::RevoluteJoint3D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics3d::RevoluteJoint3D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics3d::RevoluteJoint3D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics3d::RevoluteJoint3D::body_b));
+    desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
+        "anchor_a", &physics3d::RevoluteJoint3D::anchor_a, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
+        "anchor_b", &physics3d::RevoluteJoint3D::anchor_b, "Vec3", {"x", "y", "z"}));
+
+    registry.register_type(std::move(desc));
+}
+
 } // namespace
 
 void register_physics3d_types() {
@@ -160,6 +179,7 @@ void register_physics3d_types() {
     register_collider3d(registry);
     register_rigid_body3d(registry);
     register_distance_joint3d(registry);
+    register_revolute_joint3d(registry);
 }
 
 } // namespace fe::reflect

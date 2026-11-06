@@ -82,8 +82,10 @@ struct ConstraintRow3D {
     return denom > 0.0f ? 1.0f / denom : 0.0f;
 }
 
-// How many rows a joint needs: one for a distance joint.
+// How many rows a joint needs: one for a distance joint, three for a revolute
+// joint (the x, y and z components of the shared anchor).
 inline constexpr usize kDistanceJoint3DRows = 1;
+inline constexpr usize kRevoluteJoint3DRows = 3;
 
 // The distance-joint parameters, decoupled from the component so the maths can be
 // exercised on its own. The constraint measures between the two body centres.
@@ -96,6 +98,14 @@ struct DistanceJoint3DParams {
     f32 damping = 0.0f;
 };
 
+// The revolute-joint parameters. `anchor_a` and `anchor_b` are the shared point
+// expressed in each body's local frame, so a pin offset from a body's centre
+// (the top of a pendulum bob) needs no separate world anchor to author.
+struct RevoluteJoint3DParams {
+    Vec3 anchor_a{};
+    Vec3 anchor_b{};
+};
+
 // Builds the single distance-constraint row for the current state of the two
 // bodies, for a step of `delta_time` seconds. Returns an Error when the bodies
 // are coincident (the constraint direction is undefined), when `delta_time` is
@@ -103,6 +113,19 @@ struct DistanceJoint3DParams {
 // unsolvable joint rather than emit NaNs.
 [[nodiscard]] Result<ConstraintRow3D> build_distance_row(const JointBody3D& a, const JointBody3D& b,
                                                          const DistanceJoint3DParams& params, f32 delta_time);
+
+// Builds the three revolute-constraint rows that pin the two bodies' local
+// anchors together. Row 0 constrains the x separation, row 1 the y, row 2 the z;
+// together they remove all three translational degrees of freedom while leaving
+// relative rotation free, so one body swings about the shared point. Errors for
+// the same reasons as the distance row.
+[[nodiscard]] Result<void> build_revolute_rows(const JointBody3D& a, const JointBody3D& b,
+                                               const RevoluteJoint3DParams& params, f32 delta_time,
+                                               ConstraintRow3D out_rows[kRevoluteJoint3DRows]);
+
+// The world-space point a revolute joint currently pins, from body A's side.
+// Useful for tests and for the editor's debug overlay.
+[[nodiscard]] Vec3 revolute_world_anchor(const JointBody3D& a, const RevoluteJoint3DParams& params) noexcept;
 
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
 // current relative velocity along the row (linear and angular) plus the row's

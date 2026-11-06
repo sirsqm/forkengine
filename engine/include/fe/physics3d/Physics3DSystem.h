@@ -25,6 +25,7 @@ namespace physics3d {
 class Collider3D;
 class RigidBody3D;
 class DistanceJoint3D;
+class RevoluteJoint3D;
 
 // Whether a contact event reports a contact that has just appeared or one that
 // has just disappeared.
@@ -215,6 +216,7 @@ private:
     // forward to a node that appears later.
     struct Joint {
         DistanceJoint3D* distance = nullptr;
+        RevoluteJoint3D* revolute = nullptr;
         Node* a = nullptr;
         Node* b = nullptr;
     };

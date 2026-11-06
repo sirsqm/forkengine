@@ -321,6 +321,45 @@ TEST_CASE("an angular impulse spins a joint end") {
 }
 
 // ---------------------------------------------------------------------------
+// The revolute (anchor) joint: three rows pin the two bodies' shared anchor,
+// leaving relative rotation free, so one body swings about the other.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a revolute joint pins the two anchors and leaves rotation free") {
+    physics3d::JointBody3D a;
+    a.position = Vec3{0.0f, 0.0f, 0.0f};
+    a.inv_mass = 0.0f; // a static pivot
+    a.inv_inertia = 0.0f;
+    physics3d::JointBody3D b;
+    b.position = Vec3{0.0f, -1.0f, 0.0f};
+    b.inv_mass = 1.0f;
+    b.inv_inertia = 1.0f;
+
+    physics3d::RevoluteJoint3DParams params; // both anchors at the body centre
+    physics3d::ConstraintRow3D rows[physics3d::kRevoluteJoint3DRows];
+    REQUIRE(physics3d::build_revolute_rows(a, b, params, 1.0f / 60.0f, rows));
+
+    // The anchor is the body centre here, so the y error is the separation
+    // (a.anchor - b.anchor) = (0,0,0) - (0,-1,0) = (0,1,0).
+    CHECK(rows[0].position_error == doctest::Approx(0.0f));
+    CHECK(rows[1].position_error == doctest::Approx(1.0f));
+    CHECK(rows[2].position_error == doctest::Approx(0.0f));
+    // A static end moves only the dynamic one, so the apparent mass is the
+    // dynamic body's inverse mass along that axis.
+    CHECK(rows[1].effective_mass == doctest::Approx(1.0f));
+    // Rotation is unconstrained at a centre anchor: the lever arm is zero, so
+    // the rows carry no angular Jacobian and a spin passes through untouched.
+    for (const physics3d::ConstraintRow3D& row : rows) {
+        CHECK(row.angular_a.length() == doctest::Approx(0.0f));
+        CHECK(row.angular_b.length() == doctest::Approx(0.0f));
+        physics3d::JointBody3D spin = b;
+        spin.angular_velocity = Vec3{0.0f, 5.0f, 0.0f};
+        physics3d::apply_row(row, a, spin);
+        CHECK(spin.angular_velocity.y == doctest::Approx(5.0f));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Serialization: the angular properties round-trip through reflection.
 // ---------------------------------------------------------------------------
 

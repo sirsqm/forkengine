@@ -5,6 +5,7 @@
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/DistanceJoint3D.h"
 #include "fe/physics3d/Geometry3D.h"
+#include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -107,7 +108,10 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         // reference are resolved in solve_joints, after the whole scene is
         // indexed, so a joint may point forward to a node that appears later.
         if (auto* distance = node.get_component<DistanceJoint3D>(); distance != nullptr) {
-            joints_.push_back(Joint{distance, nullptr, nullptr});
+            joints_.push_back(Joint{distance, nullptr, nullptr, nullptr});
+        }
+        if (auto* revolute = node.get_component<RevoluteJoint3D>(); revolute != nullptr) {
+            joints_.push_back(Joint{nullptr, revolute, nullptr, nullptr});
         }
 
         auto* collider = node.get_component<Collider3D>();
@@ -507,8 +511,8 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
         // Resolve the two ends. A nil, missing, or self-referential reference is
         // a broken joint: skip it rather than constraining nothing or a body
         // against itself.
-        const Uuid& id_a = joint.distance->body_a;
-        const Uuid& id_b = joint.distance->body_b;
+        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
+        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
         if (id_a.is_nil() || id_b.is_nil() || id_a == id_b) {
             continue;
         }
@@ -542,22 +546,37 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             continue;
         }
 
-        DistanceJoint3DParams params;
-        // A positive rest length pins that length. Zero or negative means "hold
-        // the separation the two bodies have right now", which is the usual intent
-        // when a joint is dropped onto an already-placed pair; it is recomputed
-        // each step, so it stays a constant-length rod.
-        params.rest_length = joint.distance->rest_length > 0.0f ? joint.distance->rest_length
-                                                                : (body_b.position - body_a.position).length();
-        params.stiffness = joint.distance->stiffness;
-        params.damping = std::clamp(joint.distance->damping, 0.0f, 1.0f);
+        if (joint.distance != nullptr) {
+            DistanceJoint3DParams params;
+            // A positive rest length pins that length. Zero or negative means
+            // "hold the separation the two bodies have right now", which is the
+            // usual intent when a joint is dropped onto an already-placed pair; it
+            // is recomputed each step, so it stays a constant-length rod.
+            params.rest_length = joint.distance->rest_length > 0.0f ? joint.distance->rest_length
+                                                                    : (body_b.position - body_a.position).length();
+            params.stiffness = joint.distance->stiffness;
+            params.damping = std::clamp(joint.distance->damping, 0.0f, 1.0f);
 
-        auto row = build_distance_row(body_a, body_b, params, delta_time);
-        if (!row) {
-            continue; // unsolvable this step (coincident, or both immovable)
+            auto row = build_distance_row(body_a, body_b, params, delta_time);
+            if (!row) {
+                continue; // unsolvable this step (coincident, or both immovable)
+            }
+            apply_row(row.value(), body_a, body_b);
+            apply_row_position(row.value(), body_a, body_b);
+        } else {
+            RevoluteJoint3DParams params;
+            params.anchor_a = joint.revolute->anchor_a;
+            params.anchor_b = joint.revolute->anchor_b;
+
+            ConstraintRow3D rows[kRevoluteJoint3DRows];
+            if (auto built = build_revolute_rows(body_a, body_b, params, delta_time, rows); !built) {
+                continue; // unsolvable this step (both immovable)
+            }
+            for (const ConstraintRow3D& row : rows) {
+                apply_row(row, body_a, body_b);
+                apply_row_position(row, body_a, body_b);
+            }
         }
-        apply_row(row.value(), body_a, body_b);
-        apply_row_position(row.value(), body_a, body_b);
 
         store_joint_body(*joint.a, body_a);
         store_joint_body(*joint.b, body_b);
@@ -616,11 +635,10 @@ void Physics3DSystem::build_islands() {
     // simulated body contributes no link, so a joint to an immovable pivot does
     // not join two islands.
     for (const Joint& joint : joints_) {
-        if (joint.distance == nullptr) {
-            continue;
-        }
-        const auto index_a = body_index_.find(joint.distance->body_a);
-        const auto index_b = body_index_.find(joint.distance->body_b);
+        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
+        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
+        const auto index_a = body_index_.find(id_a);
+        const auto index_b = body_index_.find(id_b);
         if (index_a == body_index_.end() || index_b == body_index_.end()) {
             continue;
         }
