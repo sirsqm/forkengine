@@ -103,13 +103,18 @@ struct ConstraintRow {
 
 // How many rows a joint needs: one for a distance joint, two for a revolute
 // joint (the x and y components of the shared anchor), three for a fixed joint
-// (two translation plus the relative angle), two for a prismatic joint (one
-// translation perpendicular to its axis, plus the relative angle, leaving
-// sliding along the axis as the one free degree of freedom).
+// (two translation plus the relative angle), four for a prismatic joint (one
+// translation perpendicular to its axis, the relative angle, and the two
+// translation-limit rows, which are zero when limits are off).
 inline constexpr usize kDistanceJointRows = 1;
 inline constexpr usize kRevoluteJointRows = 2;
 inline constexpr usize kFixedJointRows = 3;
-inline constexpr usize kPrismaticJointRows = 2;
+inline constexpr usize kPrismaticJointRows = 4;
+// The index of the prismatic joint's angle-lock row and the two limit rows, so
+// the system and the tests can name them rather than counting.
+inline constexpr usize kPrismaticAngleRow = 1;
+inline constexpr usize kPrismaticLowerLimitRow = 2;
+inline constexpr usize kPrismaticUpperLimitRow = 3;
 
 // The distance-joint parameters, decoupled from the component so the maths can
 // be exercised on its own. The constraint measures between the two body
@@ -191,6 +196,16 @@ struct PrismaticJointParams {
     Vec2 anchor_b{};
     Vec2 axis{1.0f, 0.0f};
     f32 reference_angle = 0.0f;
+
+    // Translation limits along the slide axis. When `enable_limits` is set the
+    // joint lets the pair slide freely between `lower_translation` and
+    // `upper_translation` (measured as B's anchor relative to A's along the axis,
+    // so a positive value means B is ahead of A) and stops it at either bound, the
+    // way a drawer's stops or a piston's end caps do. Off by default, so a joint
+    // with no limits slides freely along its whole axis.
+    bool enable_limits = false;
+    f32 lower_translation = 0.0f;
+    f32 upper_translation = 0.0f;
 };
 
 // Builds the single distance-constraint row for the current state of the two

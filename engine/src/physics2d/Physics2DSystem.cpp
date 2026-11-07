@@ -956,6 +956,9 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             params.anchor_b = joint.prismatic->anchor_b;
             params.axis = joint.prismatic->axis;
             params.reference_angle = joint.prismatic->reference_angle;
+            params.enable_limits = joint.prismatic->enable_limits;
+            params.lower_translation = joint.prismatic->lower_translation;
+            params.upper_translation = joint.prismatic->upper_translation;
 
             ConstraintRow rows[kPrismaticJointRows];
             if (auto built = build_prismatic_rows(body_a, body_b, params, delta_time, rows); !built) {
@@ -963,6 +966,19 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 continue;
             }
             apply_rows(rows, kPrismaticJointRows, body_a, body_b);
+
+            // The linear motor drives the slide the joint leaves free. A force is
+            // a per-step impulse bound: `force * delta_time`, which makes the
+            // authored value a force and not a step-dependent impulse.
+            JointMotor motor;
+            motor.target_speed = joint.prismatic->motor_speed;
+            motor.max_impulse = joint.prismatic->motor_max_force * delta_time;
+            if (motor.is_enabled()) {
+                if (auto row = build_prismatic_motor_row(body_a, body_b, params, motor); row) {
+                    ConstraintRow motor_row = row.value();
+                    apply_row(motor_row, body_a, body_b);
+                }
+            }
         }
 
         store_joint_body(*joint.a, body_a);

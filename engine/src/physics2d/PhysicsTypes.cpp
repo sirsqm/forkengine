@@ -223,6 +223,16 @@ void register_prismatic_joint2d(Registry& registry) {
         "axis", &physics2d::PrismaticJoint2D::axis, "Vec2", {"x", "y"}));
     desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
         "reference_angle", &physics2d::PrismaticJoint2D::reference_angle, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, bool>(
+        "enable_limits", &physics2d::PrismaticJoint2D::enable_limits, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "lower_translation", &physics2d::PrismaticJoint2D::lower_translation, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "upper_translation", &physics2d::PrismaticJoint2D::upper_translation, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "motor_speed", &physics2d::PrismaticJoint2D::motor_speed, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "motor_max_force", &physics2d::PrismaticJoint2D::motor_max_force, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }

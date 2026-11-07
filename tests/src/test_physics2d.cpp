@@ -2507,6 +2507,150 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     CHECK(slider->transform().position.y > 1.0f);
 }
 
+TEST_CASE("a prismatic joint's translation limits stop the slide at either bound") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec2{0.0f, 5.0f}; // drive hard into the upper stop
+
+    Node* host = scene.create_node("Slider");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->enable_limits = true;
+    joint->lower_translation = -1.0f;
+    joint->upper_translation = 2.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The upper stop held the slider at +2 rather than letting it fly off.
+    CHECK(slider->transform().position.y == doctest::Approx(2.0f).epsilon(0.05));
+    CHECK(slider->transform().position.y <= 2.1f);
+}
+
+TEST_CASE("a prismatic joint inside its limits slides freely") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec2{0.0f, 1.0f}; // a gentle slide, well inside the limits
+
+    Node* host = scene.create_node("Slider");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->enable_limits = true;
+    joint->lower_translation = -10.0f;
+    joint->upper_translation = 10.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    // A limit that the pair is not touching exerts nothing: the slide keeps its
+    // full speed instead of being slowed by a phantom constraint.
+    CHECK(slider->transform().position.y == doctest::Approx(1.0f).epsilon(0.05));
+    CHECK(body->velocity.y == doctest::Approx(1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a prismatic joint's linear motor drives the slide at its target speed") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+
+    Node* host = scene.create_node("Piston");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->motor_speed = 2.0f;
+    joint->motor_max_force = 1000.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    CHECK(body->velocity.y == doctest::Approx(2.0f).epsilon(0.05));
+    // The motor's motion is along the axis only; the perpendicular row held x.
+    CHECK(std::abs(slider->transform().position.x) < 0.01f);
+}
+
+TEST_CASE("a prismatic joint's motor gives way under a load it cannot hold") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    // A heavy counter-load: a constant downward pull the weak motor cannot beat.
+    body->mass = 100.0f;
+
+    Node* host = scene.create_node("Piston");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->motor_speed = 10.0f;    // wants to climb fast
+    joint->motor_max_force = 5.0f; // but can only push 5 N against 100 kg
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    // The motor could not reach its 10 unit/s target in one second: the clamp
+    // means it slips, so the body is well short of where a free motor would be.
+    CHECK(body->velocity.y < 10.0f);
+}
+
+TEST_CASE("a prismatic joint's limits and motor round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Piston");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->enable_limits = true;
+    joint->lower_translation = -0.5f;
+    joint->upper_translation = 1.5f;
+    joint->motor_speed = 3.0f;
+    joint->motor_max_force = 7.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Piston");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::PrismaticJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->enable_limits);
+    CHECK(loaded_joint->lower_translation == doctest::Approx(-0.5f));
+    CHECK(loaded_joint->upper_translation == doctest::Approx(1.5f));
+    CHECK(loaded_joint->motor_speed == doctest::Approx(3.0f));
+    CHECK(loaded_joint->motor_max_force == doctest::Approx(7.0f));
+}
+
 TEST_CASE("a fixed joint round-trips through the serializer") {
     reflect::register_builtin_types();
     reflect::register_physics_types();

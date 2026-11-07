@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace fe::physics2d {
 namespace {
@@ -234,9 +235,58 @@ Result<void> build_prismatic_rows(const JointBody& a, const JointBody& b, const 
     translation.position_error = anchor_error.dot(perpendicular);
     translation.position_factor = kJointPositionFactor;
 
-    build_angle_lock_row(a, b, params.reference_angle, out_rows[1]);
+    build_angle_lock_row(a, b, params.reference_angle, out_rows[kPrismaticAngleRow]);
 
-    if (translation.effective_mass <= 0.0f && out_rows[1].effective_mass <= 0.0f) {
+    // The two translation-limit rows act along the slide axis. They are zero rows
+    // when limits are off, which `apply_row`/`apply_row_position` treat as no-ops,
+    // so the free-sliding case is unchanged. When limits are on, the row for each
+    // bound is built only when the joint is at or past it, and its impulse is
+    // clamped to one sign: a limit pushes the pair back inside and never pulls it
+    // out, so a body that has come to rest against a stop can leave it again.
+    const Vec2 direction = axis.normalized();
+    out_rows[kPrismaticLowerLimitRow] = ConstraintRow{};
+    out_rows[kPrismaticUpperLimitRow] = ConstraintRow{};
+
+    if (params.enable_limits) {
+        // The signed position along the axis, B's anchor relative to A's. The
+        // perpendicular row already removes the across-axis part of the anchor
+        // error, so this is the single free coordinate. Both limit rows share the
+        // same Jacobian (-direction on A, +direction on B), so a positive row
+        // velocity means the coordinate is growing and a positive impulse grows
+        // it further -- which is what fixes each bound's clamp to one sign.
+        const f32 along = anchor_error.dot(direction) * -1.0f;
+        const f32 lower = std::min(params.lower_translation, params.upper_translation);
+        const f32 upper = std::max(params.lower_translation, params.upper_translation);
+
+        const auto build_limit_row = [&](ConstraintRow& row, f32 bound, f32 clamp_lower, f32 clamp_upper) {
+            row.jacobian_a = direction * -1.0f;
+            row.jacobian_b = direction;
+            row.angular_a = cross(lever_a, row.jacobian_a);
+            row.angular_b = cross(lever_b, row.jacobian_b);
+            row.effective_mass = row_effective_mass(row, a, b);
+            row.position_error = along - bound;
+            row.position_factor = kJointPositionFactor;
+            row.clamp_impulse = true;
+            row.lower_impulse = clamp_lower;
+            row.upper_impulse = clamp_upper;
+        };
+
+        // Past the upper bound the coordinate must not grow, so only a negative
+        // impulse (which shrinks it) is allowed. Past the lower bound the opposite.
+        if (along >= upper) {
+            build_limit_row(out_rows[kPrismaticUpperLimitRow], upper, -std::numeric_limits<f32>::max(), 0.0f);
+        }
+        if (along <= lower) {
+            build_limit_row(out_rows[kPrismaticLowerLimitRow], lower, 0.0f, std::numeric_limits<f32>::max());
+        }
+    }
+
+    bool any_solvable = translation.effective_mass > 0.0f || out_rows[kPrismaticAngleRow].effective_mass > 0.0f;
+    if (params.enable_limits) {
+        any_solvable = any_solvable || out_rows[kPrismaticLowerLimitRow].effective_mass > 0.0f ||
+                       out_rows[kPrismaticUpperLimitRow].effective_mass > 0.0f;
+    }
+    if (!any_solvable) {
         return Error("prismatic joint: neither body can move, so the constraint is unsolvable");
     }
     return Result<void>{};
