@@ -1024,13 +1024,23 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             JointMotor motor;
             motor.target_speed = joint.revolute->motor_speed;
             motor.max_impulse = joint.revolute->motor_max_torque * delta_time;
+            motor.use_target = joint.revolute->motor_use_target;
+            motor.target_position = joint.revolute->motor_target_angle;
+            motor.stiffness = joint.revolute->motor_stiffness;
+            motor.damping = joint.revolute->motor_damping;
             ConstraintRow motor_row{};
             if (motor.is_enabled()) {
-                if (auto row = build_revolute_motor_row(body_a, body_b, motor); row) {
-                    motor_row = row.value();
+                // A position target makes the motor a servo: it drives the
+                // relative angle to `motor_target_angle` instead of a speed.
+                const auto built =
+                    motor.use_target
+                        ? build_revolute_position_motor_row(body_a, body_b, motor, body_b.rotation - body_a.rotation)
+                        : build_revolute_motor_row(body_a, body_b, motor);
+                if (built) {
+                    motor_row = built.value();
                     apply_row(motor_row, body_a, body_b);
                 } else {
-                    note_joint_skipped(type, id_a, id_b, row.error());
+                    note_joint_skipped(type, id_a, id_b, built.error());
                 }
             }
             row_reactions(rows, kRevoluteJointRows + kRevoluteJointLimitRows, inv_dt, reaction_force, reaction_torque,
@@ -1078,10 +1088,21 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             JointMotor motor;
             motor.target_speed = joint.prismatic->motor_speed;
             motor.max_impulse = joint.prismatic->motor_max_force * delta_time;
+            motor.use_target = joint.prismatic->motor_use_target;
+            motor.target_position = joint.prismatic->motor_target_translation;
+            motor.stiffness = joint.prismatic->motor_stiffness;
+            motor.damping = joint.prismatic->motor_damping;
             ConstraintRow motor_row{};
             if (motor.is_enabled()) {
-                if (auto row = build_prismatic_motor_row(body_a, body_b, params, motor); row) {
-                    motor_row = row.value();
+                // A position target makes the motor a servo: it drives the slide
+                // to `motor_target_translation` instead of a speed.
+                const auto built =
+                    motor.use_target
+                        ? build_prismatic_position_motor_row(body_a, body_b, params, motor,
+                                                             prismatic_slide_coordinate(body_a, body_b, params))
+                        : build_prismatic_motor_row(body_a, body_b, params, motor);
+                if (built) {
+                    motor_row = built.value();
                     apply_row(motor_row, body_a, body_b);
                 }
             }

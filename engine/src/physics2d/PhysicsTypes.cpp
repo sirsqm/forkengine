@@ -193,6 +193,15 @@ void register_revolute_joint2d(Registry& registry) {
         "motor_max_torque", &physics2d::RevoluteJoint2D::motor_max_torque, ValueKind::Float, &defaults));
 
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, bool>(
+        "motor_use_target", &physics2d::RevoluteJoint2D::motor_use_target, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "motor_target_angle", &physics2d::RevoluteJoint2D::motor_target_angle, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "motor_stiffness", &physics2d::RevoluteJoint2D::motor_stiffness, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "motor_damping", &physics2d::RevoluteJoint2D::motor_damping, ValueKind::Float, &defaults));
+
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, bool>(
         "enable_limits", &physics2d::RevoluteJoint2D::enable_limits, ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
         "lower_angle", &physics2d::RevoluteJoint2D::lower_angle, ValueKind::Float, &defaults));
@@ -260,6 +269,16 @@ void register_prismatic_joint2d(Registry& registry) {
         "motor_speed", &physics2d::PrismaticJoint2D::motor_speed, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
         "motor_max_force", &physics2d::PrismaticJoint2D::motor_max_force, ValueKind::Float, &defaults));
+
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, bool>(
+        "motor_use_target", &physics2d::PrismaticJoint2D::motor_use_target, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "motor_target_translation", &physics2d::PrismaticJoint2D::motor_target_translation, ValueKind::Float,
+        &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "motor_stiffness", &physics2d::PrismaticJoint2D::motor_stiffness, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "motor_damping", &physics2d::PrismaticJoint2D::motor_damping, ValueKind::Float, &defaults));
 
     desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
         "break_force", &physics2d::PrismaticJoint2D::break_force, ValueKind::Float, &defaults));

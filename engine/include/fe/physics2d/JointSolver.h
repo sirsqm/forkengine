@@ -302,6 +302,21 @@ struct JointMotor {
     f32 target_speed = 0.0f;
     f32 max_impulse = 0.0f;
 
+    // A position target turns the motor into a servo: instead of driving a
+    // *speed*, it drives the joint's free coordinate (the relative angle, in
+    // radians, for a revolute joint) towards `target_position` with a
+    // proportional gain `stiffness` and a derivative gain `damping`, still
+    // clamped to `max_impulse`. A stiff, well-damped target holds a pose against
+    // a load; a soft one is a spring that settles at the target. The gains have
+    // the same meaning as the distance joint's spring: `stiffness` is a
+    // restoring velocity per unit of error and `damping` is the fraction of the
+    // relative velocity the row opposes. Off by default, so a motor with no
+    // target is the speed motor it was.
+    bool use_target = false;
+    f32 target_position = 0.0f;
+    f32 stiffness = 0.0f;
+    f32 damping = 0.0f;
+
     [[nodiscard]] bool is_enabled() const noexcept { return max_impulse > 0.0f; }
 };
 
@@ -314,6 +329,17 @@ struct JointMotor {
 [[nodiscard]] Result<ConstraintRow> build_revolute_motor_row(const JointBody& a, const JointBody& b,
                                                              const JointMotor& motor) noexcept;
 
+// Builds the position-target (servo) row for a revolute joint: with
+// `motor.use_target` set it drives the relative angle `b - a` towards
+// `motor.target_position` with `stiffness`/`damping` gains, clamped to
+// `max_impulse`. `current_angle` is the joint's present relative angle (the
+// system passes `b.rotation - a.rotation`); the error is the shortest signed
+// difference to the target, so a target across the ±pi seam is approached the
+// short way. Errors when the target is off or neither body can rotate.
+[[nodiscard]] Result<ConstraintRow> build_revolute_position_motor_row(const JointBody& a, const JointBody& b,
+                                                                      const JointMotor& motor,
+                                                                      f32 current_angle) noexcept;
+
 // Builds the motor row for a prismatic joint: it drives the relative speed along
 // the slide axis towards `motor.target_speed`, clamped to `max_impulse`. The row
 // acts along the joint axis (taken from body A's local frame), so it is a linear
@@ -322,6 +348,23 @@ struct JointMotor {
 [[nodiscard]] Result<ConstraintRow> build_prismatic_motor_row(const JointBody& a, const JointBody& b,
                                                               const PrismaticJointParams& params,
                                                               const JointMotor& motor) noexcept;
+
+// Builds the position-target (servo) row for a prismatic joint: with
+// `motor.use_target` set it drives the slide along the joint axis towards
+// `motor.target_position` (the same signed translation the limits measure: B's
+// anchor relative to A's along the axis) with `stiffness`/`damping` gains,
+// clamped to `max_impulse`. Errors when the target is off, the axis is
+// degenerate, or neither body can move.
+[[nodiscard]] Result<ConstraintRow> build_prismatic_position_motor_row(const JointBody& a, const JointBody& b,
+                                                                       const PrismaticJointParams& params,
+                                                                       const JointMotor& motor,
+                                                                       f32 current_translation) noexcept;
+
+// The signed position of a prismatic joint's slide: B's anchor relative to A's,
+// measured along the joint axis. This is the single free coordinate the joint
+// leaves, the same quantity the translation limits and a position motor use.
+[[nodiscard]] f32 prismatic_slide_coordinate(const JointBody& a, const JointBody& b,
+                                             const PrismaticJointParams& params) noexcept;
 
 // The shortest signed difference between two angles, in (-pi, pi].
 [[nodiscard]] inline f32 angle_difference(f32 from, f32 to) noexcept {

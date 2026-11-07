@@ -71,6 +71,21 @@ public:
     f32 motor_speed = 0.0f;
     f32 motor_max_force = 0.0f;
 
+    // A position target turns the linear motor into a servo: when
+    // `motor_use_target` is set the joint drives its slide towards
+    // `motor_target_translation` (the same signed coordinate the limits use:
+    // B's anchor relative to A's along the axis) instead of a speed, with a
+    // proportional `motor_stiffness` and derivative `motor_damping` gain, still
+    // bounded by `motor_max_force`. A stiff, damped target holds a position
+    // against a load -- a lift that holds a floor, a powered drawer that stays
+    // shut -- where the speed motor only drives a rate. Off by default, so a
+    // motor with no target is the speed motor it was. Ignored while
+    // `motor_max_force` is zero, which disables the motor.
+    bool motor_use_target = false;
+    f32 motor_target_translation = 0.0f;
+    f32 motor_stiffness = 0.0f;
+    f32 motor_damping = 0.0f;
+
     // Break thresholds. When `break_force` is positive the joint snaps (stops
     // being enforced) once the force it must carry exceeds it; likewise
     // `break_torque` for the torque. Zero (the default) means the joint never
