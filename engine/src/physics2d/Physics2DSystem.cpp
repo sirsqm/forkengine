@@ -4,7 +4,9 @@
 
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/DistanceJoint2D.h"
+#include "fe/physics2d/FixedJoint2D.h"
 #include "fe/physics2d/Geometry.h"
+#include "fe/physics2d/PrismaticJoint2D.h"
 #include "fe/physics2d/RevoluteJoint2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/scene/Node.h"
@@ -98,7 +100,58 @@ void store_joint_body(Node& node, const JointBody& joint) noexcept {
     }
 }
 
+// Applies `count` rows to the two bodies: the velocity impulse and the positional
+// correction for each. In 2D a row carries at most one scalar angular term and
+// `apply_row_position` corrects translation and rotation together, so every
+// joint kind -- distance, revolute, fixed or prismatic -- solves its rows the
+// same way.
+void apply_rows(const ConstraintRow rows[], usize count, JointBody& a, JointBody& b) noexcept {
+    for (usize i = 0; i < count; ++i) {
+        apply_row(rows[i], a, b);
+        apply_row_position(rows[i], a, b);
+    }
+}
+
 } // namespace
+
+const Uuid& Physics2DSystem::Joint::body_a() const noexcept {
+    if (distance != nullptr) {
+        return distance->body_a;
+    }
+    if (revolute != nullptr) {
+        return revolute->body_a;
+    }
+    if (fixed != nullptr) {
+        return fixed->body_a;
+    }
+    return prismatic->body_a;
+}
+
+const Uuid& Physics2DSystem::Joint::body_b() const noexcept {
+    if (distance != nullptr) {
+        return distance->body_b;
+    }
+    if (revolute != nullptr) {
+        return revolute->body_b;
+    }
+    if (fixed != nullptr) {
+        return fixed->body_b;
+    }
+    return prismatic->body_b;
+}
+
+std::string_view Physics2DSystem::Joint::type_name() const noexcept {
+    if (distance != nullptr) {
+        return DistanceJoint2D::kTypeName;
+    }
+    if (revolute != nullptr) {
+        return RevoluteJoint2D::kTypeName;
+    }
+    if (fixed != nullptr) {
+        return FixedJoint2D::kTypeName;
+    }
+    return PrismaticJoint2D::kTypeName;
+}
 
 void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     contacts_ = 0;
@@ -126,10 +179,16 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         // reference are resolved in solve_joints, after the whole scene is
         // indexed, so a joint may point forward to a node that appears later.
         if (auto* distance = node.get_component<DistanceJoint2D>(); distance != nullptr) {
-            joints_.push_back(Joint{distance, nullptr, nullptr, nullptr});
+            joints_.push_back(Joint{distance, nullptr, nullptr, nullptr, nullptr, nullptr});
         }
         if (auto* revolute = node.get_component<RevoluteJoint2D>(); revolute != nullptr) {
-            joints_.push_back(Joint{nullptr, revolute, nullptr, nullptr});
+            joints_.push_back(Joint{nullptr, revolute, nullptr, nullptr, nullptr, nullptr});
+        }
+        if (auto* fixed = node.get_component<FixedJoint2D>(); fixed != nullptr) {
+            joints_.push_back(Joint{nullptr, nullptr, fixed, nullptr, nullptr, nullptr});
+        }
+        if (auto* prismatic = node.get_component<PrismaticJoint2D>(); prismatic != nullptr) {
+            joints_.push_back(Joint{nullptr, nullptr, nullptr, prismatic, nullptr, nullptr});
         }
 
         auto* collider = node.get_component<Collider2D>();
@@ -778,10 +837,9 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
         // Resolve the two ends. A nil, missing, or self-referential reference is
         // a broken joint: record why and skip it rather than constraining
         // nothing or a body against itself.
-        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
-        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
-        const std::string_view type =
-            joint.distance != nullptr ? DistanceJoint2D::kTypeName : RevoluteJoint2D::kTypeName;
+        const Uuid& id_a = joint.body_a();
+        const Uuid& id_b = joint.body_b();
+        const std::string_view type = joint.type_name();
 
         if (id_a.is_nil() || id_b.is_nil()) {
             note_joint_skipped(type, id_a, id_b, Error("joint body reference is nil"));
@@ -849,7 +907,7 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             }
             apply_row(row.value(), body_a, body_b);
             apply_row_position(row.value(), body_a, body_b);
-        } else {
+        } else if (joint.revolute != nullptr) {
             RevoluteJointParams params;
             params.anchor_a = joint.revolute->anchor_a;
             params.anchor_b = joint.revolute->anchor_b;
@@ -859,10 +917,32 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 note_joint_skipped(type, id_a, id_b, built.error());
                 continue;
             }
-            for (const ConstraintRow& row : rows) {
-                apply_row(row, body_a, body_b);
-                apply_row_position(row, body_a, body_b);
+            apply_rows(rows, kRevoluteJointRows, body_a, body_b);
+        } else if (joint.fixed != nullptr) {
+            FixedJointParams params;
+            params.anchor_a = joint.fixed->anchor_a;
+            params.anchor_b = joint.fixed->anchor_b;
+            params.reference_angle = joint.fixed->reference_angle;
+
+            ConstraintRow rows[kFixedJointRows];
+            if (auto built = build_fixed_rows(body_a, body_b, params, delta_time, rows); !built) {
+                note_joint_skipped(type, id_a, id_b, built.error());
+                continue;
             }
+            apply_rows(rows, kFixedJointRows, body_a, body_b);
+        } else {
+            PrismaticJointParams params;
+            params.anchor_a = joint.prismatic->anchor_a;
+            params.anchor_b = joint.prismatic->anchor_b;
+            params.axis = joint.prismatic->axis;
+            params.reference_angle = joint.prismatic->reference_angle;
+
+            ConstraintRow rows[kPrismaticJointRows];
+            if (auto built = build_prismatic_rows(body_a, body_b, params, delta_time, rows); !built) {
+                note_joint_skipped(type, id_a, id_b, built.error());
+                continue;
+            }
+            apply_rows(rows, kPrismaticJointRows, body_a, body_b);
         }
 
         store_joint_body(*joint.a, body_a);
@@ -945,11 +1025,8 @@ void Physics2DSystem::build_islands() {
     // end that is nil, missing, or not a simulated dynamic body contributes no
     // link (a joint to an immovable pivot does not join two islands).
     for (const Joint& joint : joints_) {
-        if (joint.distance == nullptr && joint.revolute == nullptr) {
-            continue;
-        }
-        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
-        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
+        const Uuid& id_a = joint.body_a();
+        const Uuid& id_b = joint.body_b();
         const auto index_a = body_index_.find(id_a);
         const auto index_b = body_index_.find(id_b);
         if (index_a == body_index_.end() || index_b == body_index_.end()) {

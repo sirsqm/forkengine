@@ -4,6 +4,8 @@
 
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/DistanceJoint2D.h"
+#include "fe/physics2d/FixedJoint2D.h"
+#include "fe/physics2d/PrismaticJoint2D.h"
 #include "fe/physics2d/RevoluteJoint2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/reflect/PropertyBuilders.h"
@@ -123,38 +125,18 @@ void register_rigid_body2d(Registry& registry) {
 // A body reference: a node id, stored as a Uuid. The default is a nil id, which
 // the solver treats as "unset" and skips, so a freshly created joint is inert
 // until it is pointed at two bodies.
-Property make_body_ref_property(std::string name, Uuid physics2d::DistanceJoint2D::* field) {
+template <typename Joint>
+Property make_body_ref_property(std::string name, Uuid Joint::* field) {
     Property property;
     property.name = std::move(name);
     property.value_kind = ValueKind::Uuid;
-    property.getter = [field](const void* object) -> Value {
-        return static_cast<const physics2d::DistanceJoint2D*>(object)->*field;
-    };
+    property.getter = [field](const void* object) -> Value { return static_cast<const Joint*>(object)->*field; };
     property.setter = [field](void* object, const Value& value) -> bool {
         const auto* as_id = std::get_if<Uuid>(&value);
         if (as_id == nullptr) {
             return false;
         }
-        static_cast<physics2d::DistanceJoint2D*>(object)->*field = *as_id;
-        return true;
-    };
-    property.default_value = Uuid{};
-    return property;
-}
-
-Property make_body_ref_property(std::string name, Uuid physics2d::RevoluteJoint2D::* field) {
-    Property property;
-    property.name = std::move(name);
-    property.value_kind = ValueKind::Uuid;
-    property.getter = [field](const void* object) -> Value {
-        return static_cast<const physics2d::RevoluteJoint2D*>(object)->*field;
-    };
-    property.setter = [field](void* object, const Value& value) -> bool {
-        const auto* as_id = std::get_if<Uuid>(&value);
-        if (as_id == nullptr) {
-            return false;
-        }
-        static_cast<physics2d::RevoluteJoint2D*>(object)->*field = *as_id;
+        static_cast<Joint*>(object)->*field = *as_id;
         return true;
     };
     property.default_value = Uuid{};
@@ -197,6 +179,46 @@ void register_revolute_joint2d(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+void register_fixed_joint2d(Registry& registry) {
+    physics2d::FixedJoint2D defaults;
+
+    TypeDesc desc;
+    desc.name = physics2d::FixedJoint2D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::FixedJoint2D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics2d::FixedJoint2D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics2d::FixedJoint2D::body_b));
+    desc.properties.push_back(make_vector_group<physics2d::FixedJoint2D, Vec2>(
+        "anchor_a", &physics2d::FixedJoint2D::anchor_a, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::FixedJoint2D, Vec2>(
+        "anchor_b", &physics2d::FixedJoint2D::anchor_b, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_scalar<physics2d::FixedJoint2D, f32>(
+        "reference_angle", &physics2d::FixedJoint2D::reference_angle, ValueKind::Float, &defaults));
+
+    registry.register_type(std::move(desc));
+}
+
+void register_prismatic_joint2d(Registry& registry) {
+    physics2d::PrismaticJoint2D defaults;
+
+    TypeDesc desc;
+    desc.name = physics2d::PrismaticJoint2D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics2d::PrismaticJoint2D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics2d::PrismaticJoint2D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics2d::PrismaticJoint2D::body_b));
+    desc.properties.push_back(make_vector_group<physics2d::PrismaticJoint2D, Vec2>(
+        "anchor_a", &physics2d::PrismaticJoint2D::anchor_a, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::PrismaticJoint2D, Vec2>(
+        "anchor_b", &physics2d::PrismaticJoint2D::anchor_b, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_vector_group<physics2d::PrismaticJoint2D, Vec2>(
+        "axis", &physics2d::PrismaticJoint2D::axis, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "reference_angle", &physics2d::PrismaticJoint2D::reference_angle, ValueKind::Float, &defaults));
+
+    registry.register_type(std::move(desc));
+}
+
 } // namespace
 
 void register_physics_types() {
@@ -205,6 +227,8 @@ void register_physics_types() {
     register_rigid_body2d(registry);
     register_distance_joint2d(registry);
     register_revolute_joint2d(registry);
+    register_fixed_joint2d(registry);
+    register_prismatic_joint2d(registry);
 }
 
 } // namespace fe::reflect

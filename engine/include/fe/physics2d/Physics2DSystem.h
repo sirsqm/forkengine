@@ -30,6 +30,8 @@ namespace physics2d {
 class Collider2D;
 class DistanceJoint2D;
 class RevoluteJoint2D;
+class FixedJoint2D;
+class PrismaticJoint2D;
 class RigidBody2D;
 
 // Whether a contact event reports a contact that has just appeared or one that
@@ -260,11 +262,20 @@ private:
     // One joint flattened out of the scene for the duration of the update. Both
     // ends are resolved to nodes up front; a nil, missing, or self-referential
     // reference leaves one null and the joint is skipped with a diagnostic.
+    // Exactly one of the typed pointers is non-null, naming the joint's kind.
     struct Joint {
         DistanceJoint2D* distance = nullptr;
         RevoluteJoint2D* revolute = nullptr;
+        FixedJoint2D* fixed = nullptr;
+        PrismaticJoint2D* prismatic = nullptr;
         Node* a = nullptr;
         Node* b = nullptr;
+
+        // The two body references, whichever kind this joint is, so the solve and
+        // island passes read the ids without re-branching on the kind.
+        [[nodiscard]] const Uuid& body_a() const noexcept;
+        [[nodiscard]] const Uuid& body_b() const noexcept;
+        [[nodiscard]] std::string_view type_name() const noexcept;
     };
 
     // Solves every joint in the scene once. Runs after the contact pass has

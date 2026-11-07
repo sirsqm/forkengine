@@ -91,9 +91,14 @@ struct ConstraintRow {
 }
 
 // How many rows a joint needs: one for a distance joint, two for a revolute
-// joint (the x and y components of the shared anchor).
+// joint (the x and y components of the shared anchor), three for a fixed joint
+// (two translation plus the relative angle), two for a prismatic joint (one
+// translation perpendicular to its axis, plus the relative angle, leaving
+// sliding along the axis as the one free degree of freedom).
 inline constexpr usize kDistanceJointRows = 1;
 inline constexpr usize kRevoluteJointRows = 2;
+inline constexpr usize kFixedJointRows = 3;
+inline constexpr usize kPrismaticJointRows = 2;
 
 // The distance-joint parameters, decoupled from the component so the maths can
 // be exercised on its own. The constraint measures between the two body
@@ -112,6 +117,36 @@ struct DistanceJointParams {
 struct RevoluteJointParams {
     Vec2 anchor_a{};
     Vec2 anchor_b{};
+};
+
+// The fixed (weld) joint parameters. A fixed joint removes every degree of
+// freedom between its two bodies: they keep the relative position *and* the
+// relative angle they had when the joint was authored. The anchors name the
+// shared point in each body's local frame, as the revolute joint's do;
+// `reference_angle` is the relative angle to preserve (the difference of the two
+// bodies' rotations at build time), so the pair is welded in the pose it was
+// built in rather than forced to a common world angle.
+struct FixedJointParams {
+    Vec2 anchor_a{};
+    Vec2 anchor_b{};
+    f32 reference_angle = 0.0f;
+};
+
+// The relative angle to preserve for a fixed joint built from two bodies in
+// their current rotations.
+[[nodiscard]] inline f32 fixed_reference_angle(const JointBody& a, const JointBody& b) noexcept {
+    return b.rotation - a.rotation;
+}
+
+// The prismatic (slider) joint parameters. A prismatic joint allows exactly one
+// translational degree of freedom: the two bodies may slide along a shared axis
+// but not perpendicular to it, and they may not rotate relative to one another.
+// The axis is authored in body A's local frame.
+struct PrismaticJointParams {
+    Vec2 anchor_a{};
+    Vec2 anchor_b{};
+    Vec2 axis{1.0f, 0.0f};
+    f32 reference_angle = 0.0f;
 };
 
 // Builds the single distance-constraint row for the current state of the two
@@ -144,5 +179,34 @@ void apply_row_position(const ConstraintRow& row, JointBody& a, JointBody& b) no
 // The world-space point a revolute joint currently pins, from body A's side.
 // Useful for tests and for the editor's debug overlay.
 [[nodiscard]] Vec2 revolute_world_anchor(const JointBody& a, const RevoluteJointParams& params) noexcept;
+
+// Builds the three fixed-joint rows: two pin the two anchors together (as the
+// revolute rows do) and one removes the relative angle, holding it at
+// `reference_angle`. Rows 0-1 are translation, row 2 rotation.
+[[nodiscard]] Result<void> build_fixed_rows(const JointBody& a, const JointBody& b, const FixedJointParams& params,
+                                            f32 delta_time, ConstraintRow out_rows[kFixedJointRows]);
+
+// Builds the two prismatic-joint rows: they remove the translation perpendicular
+// to the joint axis (rows 0-1), leaving sliding along the axis free. The axis is
+// taken from body A's local frame, rotated into world space.
+[[nodiscard]] Result<void> build_prismatic_rows(const JointBody& a, const JointBody& b,
+                                                const PrismaticJointParams& params, f32 delta_time,
+                                                ConstraintRow out_rows[kPrismaticJointRows]);
+
+// The world-space axis a prismatic joint currently slides along, from body A's
+// side. Useful for tests and for the editor's debug overlay.
+[[nodiscard]] Vec2 prismatic_world_axis(const JointBody& a, const PrismaticJointParams& params) noexcept;
+
+// The shortest signed difference between two angles, in (-pi, pi].
+[[nodiscard]] inline f32 angle_difference(f32 from, f32 to) noexcept {
+    f32 difference = to - from;
+    while (difference > 3.14159265358979323846f) {
+        difference -= 6.28318530717958647692f;
+    }
+    while (difference <= -3.14159265358979323846f) {
+        difference += 6.28318530717958647692f;
+    }
+    return difference;
+}
 
 } // namespace fe::physics2d

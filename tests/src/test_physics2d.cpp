@@ -4,11 +4,13 @@
 
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/DistanceJoint2D.h"
+#include "fe/physics2d/FixedJoint2D.h"
 #include "fe/physics2d/Geometry.h"
 #include "fe/physics2d/JointSolver.h"
 #include "fe/physics2d/Physics2DQueries.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics2d/PhysicsTypes.h"
+#include "fe/physics2d/PrismaticJoint2D.h"
 #include "fe/physics2d/RevoluteJoint2D.h"
 #include "fe/physics2d/RigidBody2D.h"
 #include "fe/reflect/ComponentTypes.h"
@@ -2245,4 +2247,226 @@ TEST_CASE("a rotated tilemap's cells collide as rotated boxes") {
     // The cell is a 2x2 square, so its half-extent is unchanged by the rotation.
     CHECK(colliders[0].box.half_extent.x == doctest::Approx(1.0f));
     CHECK(colliders[0].box.half_extent.y == doctest::Approx(1.0f));
+}
+
+// ---------------------------------------------------------------------------
+// Fixed (weld) and prismatic (slider) joints: the pure rows, then the system
+// wiring, then a serializer round-trip for each (ADR-0134).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a fixed joint's angle row holds the relative angle at the reference") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    b.rotation = 0.5f;
+
+    physics2d::FixedJointParams params;
+    params.reference_angle = 0.0f; // want a common world angle
+
+    physics2d::ConstraintRow rows[physics2d::kFixedJointRows];
+    REQUIRE(physics2d::build_fixed_rows(a, b, params, 1.0f / 60.0f, rows));
+
+    // Rows 0-1 pin the anchors (both at the centres here, already coincident),
+    // row 2 removes the 0.5 rad of relative rotation.
+    CHECK(rows[0].position_error == doctest::Approx(0.0f));
+    CHECK(rows[1].position_error == doctest::Approx(0.0f));
+    CHECK(rows[2].angular_a == doctest::Approx(1.0f));
+    CHECK(rows[2].angular_b == doctest::Approx(-1.0f));
+    CHECK(rows[2].position_error == doctest::Approx(-0.5f));
+}
+
+TEST_CASE("the fixed reference angle helper captures the pose two bodies are in") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.rotation = 0.3f;
+    b.rotation = 0.9f;
+
+    CHECK(physics2d::fixed_reference_angle(a, b) == doctest::Approx(0.6f));
+
+    // With that reference the angle row reports no error: the pose is preserved.
+    physics2d::FixedJointParams params;
+    params.reference_angle = physics2d::fixed_reference_angle(a, b);
+    physics2d::ConstraintRow rows[physics2d::kFixedJointRows];
+    REQUIRE(physics2d::build_fixed_rows(a, b, params, 1.0f / 60.0f, rows));
+    CHECK(rows[2].position_error == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a prismatic joint's row removes separation across its axis") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    // Off the +x slide axis by 2 in y.
+    b.position = Vec2{3.0f, 2.0f};
+
+    physics2d::PrismaticJointParams params;
+    params.axis = Vec2{1.0f, 0.0f};
+
+    physics2d::ConstraintRow rows[physics2d::kPrismaticJointRows];
+    REQUIRE(physics2d::build_prismatic_rows(a, b, params, 1.0f / 60.0f, rows));
+
+    // Row 0 constrains the y separation: the anchor error is A - B = -2 in y and
+    // the perpendicular is +y, so the reported error is -2.
+    CHECK(rows[0].position_error == doctest::Approx(-2.0f));
+    // The along-axis (x) separation is not constrained: the Jacobian has no x
+    // component, so a 3 unit slide along the axis produces no error.
+    CHECK(rows[0].jacobian_a.x == doctest::Approx(0.0f));
+    // Row 1 locks the relative angle.
+    CHECK(rows[1].angular_a == doctest::Approx(1.0f));
+}
+
+TEST_CASE("a prismatic world axis follows the body's rotation") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    a.rotation = 1.5707963f; // a quarter turn
+    physics2d::PrismaticJointParams params;
+    params.axis = Vec2{1.0f, 0.0f};
+    const Vec2 axis = physics2d::prismatic_world_axis(a, params);
+    CHECK(axis.x == doctest::Approx(0.0f).epsilon(1e-3));
+    CHECK(axis.y == doctest::Approx(1.0f).epsilon(1e-3));
+}
+
+TEST_CASE("a fixed joint welds a dynamic body to a static pivot") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = mass->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Weld");
+    auto* joint = host->add_component<physics2d::FixedJoint2D>();
+    joint->body_a = pivot->id();
+    joint->body_b = mass->id();
+    // Pin the mass's left end (1 unit from its centre) to the pivot, so the weld
+    // holds the mass out at x = 1 rather than pulling its centre to the pivot.
+    joint->anchor_b = Vec2{-1.0f, 0.0f};
+    joint->reference_angle = 0.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The weld held the mass at its authored offset: gravity could not pull it
+    // down, because the anchor is pinned to the static pivot.
+    CHECK(mass->transform().position.x == doctest::Approx(1.0f).epsilon(0.1));
+    CHECK(std::abs(mass->transform().position.y) < 0.1f);
+}
+
+TEST_CASE("a fixed joint turns a body that starts rotated against the reference") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = mass->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->inertia = 1.0f; // a bare point mass has no collider to derive one from
+    // Starts twisted 0.5 rad; the joint's reference is 0, so it must turn the body
+    // back to a common angle.
+    mass->transform().rotation.z = 0.5f;
+
+    Node* host = scene.create_node("Weld");
+    auto* joint = host->add_component<physics2d::FixedJoint2D>();
+    joint->body_a = pivot->id();
+    joint->body_b = mass->id();
+    joint->anchor_b = Vec2{-1.0f, 0.0f};
+    joint->reference_angle = 0.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    // The relative rotation collapsed to (nearly) the reference.
+    CHECK(std::abs(mass->transform().rotation.z) < 0.05f);
+}
+
+TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec2{2.0f, 2.0f}; // half across the axis (+x), half along it (+y)
+
+    Node* host = scene.create_node("Slider");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f}; // the slide axis is +y; x is the locked axis
+    joint->reference_angle = 0.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The across-axis (x) motion was removed; the along-axis (y) motion was not.
+    CHECK(std::abs(slider->transform().position.x) < 0.1f);
+    CHECK(slider->transform().position.y > 1.0f);
+}
+
+TEST_CASE("a fixed joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Weld");
+    auto* joint = joint_node->add_component<physics2d::FixedJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->anchor_a = Vec2{0.1f, 0.2f};
+    joint->anchor_b = Vec2{-0.4f, 0.5f};
+    joint->reference_angle = 0.6f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Weld");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics2d::FixedJoint2D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->body_a == a->id());
+    CHECK(loaded_component->body_b == b->id());
+    CHECK(loaded_component->anchor_a.y == doctest::Approx(0.2f));
+    CHECK(loaded_component->reference_angle == doctest::Approx(0.6f));
+}
+
+TEST_CASE("a prismatic joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Slider");
+    auto* joint = joint_node->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->reference_angle = 0.25f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Slider");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics2d::PrismaticJoint2D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->body_a == a->id());
+    CHECK(loaded_component->body_b == b->id());
+    CHECK(loaded_component->axis.y == doctest::Approx(1.0f));
+    CHECK(loaded_component->reference_angle == doctest::Approx(0.25f));
+}
+
+TEST_CASE("the fixed and prismatic 2D joints are registered with reflection") {
+    reflect::register_physics_types();
+    CHECK(reflect::Registry::instance().contains("FixedJoint2D"));
+    CHECK(reflect::Registry::instance().contains("PrismaticJoint2D"));
 }

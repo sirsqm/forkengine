@@ -146,4 +146,81 @@ Vec2 revolute_world_anchor(const JointBody& a, const RevoluteJointParams& params
     return a.position + rotate(params.anchor_a, a.rotation);
 }
 
+namespace {
+
+// Fills one row that locks the relative angle at `reference_angle`. Shared by
+// the fixed joint (row 2) and the prismatic joint (row 1): both hold the two
+// bodies at a fixed relative angle, so the maths is one function. The row
+// constrains the relative angle `b - a`, matching the revolute rows' `a - b`
+// sign so `apply_row_position` splits the correction the same way.
+void build_angle_lock_row(const JointBody& a, const JointBody& b, f32 reference_angle, ConstraintRow& row) {
+    // Error is the angle the pair is over or under the target by: the excess of
+    // `b - a` over `reference_angle`.
+    row.angular_a = 1.0f;
+    row.angular_b = -1.0f;
+    row.effective_mass = row_effective_mass(row, a, b);
+    row.position_error = reference_angle - (b.rotation - a.rotation);
+    row.position_factor = kJointPositionFactor;
+}
+
+} // namespace
+
+Result<void> build_fixed_rows(const JointBody& a, const JointBody& b, const FixedJointParams& params, f32 delta_time,
+                              ConstraintRow out_rows[kFixedJointRows]) {
+    if (delta_time <= 0.0f) {
+        return Error("fixed joint: non-positive delta time");
+    }
+
+    // Rows 0-1 pin the two anchors together, exactly as the revolute joint does;
+    // row 2 removes the relative angle. A fixed joint is a revolute joint plus
+    // an angle lock.
+    RevoluteJointParams pin;
+    pin.anchor_a = params.anchor_a;
+    pin.anchor_b = params.anchor_b;
+    if (auto pinned = build_revolute_rows(a, b, pin, delta_time, out_rows); !pinned) {
+        return pinned;
+    }
+    build_angle_lock_row(a, b, params.reference_angle, out_rows[kRevoluteJointRows]);
+    return Result<void>{};
+}
+
+Result<void> build_prismatic_rows(const JointBody& a, const JointBody& b, const PrismaticJointParams& params,
+                                  f32 delta_time, ConstraintRow out_rows[kPrismaticJointRows]) {
+    if (delta_time <= 0.0f) {
+        return Error("prismatic joint: non-positive delta time");
+    }
+
+    const Vec2 axis = rotate(params.axis, a.rotation);
+    if (axis.length_squared() <= kMinSeparation) {
+        return Error("prismatic joint: the slide axis is degenerate");
+    }
+    // The one direction the bodies may not separate in: perpendicular to the
+    // slide axis.
+    const Vec2 perpendicular{-axis.normalized().y, axis.normalized().x};
+
+    const Vec2 lever_a = rotate(params.anchor_a, a.rotation);
+    const Vec2 lever_b = rotate(params.anchor_b, b.rotation);
+    const Vec2 anchor_error = (a.position + lever_a) - (b.position + lever_b);
+
+    ConstraintRow& translation = out_rows[0];
+    translation.jacobian_a = perpendicular;
+    translation.jacobian_b = perpendicular * -1.0f;
+    translation.angular_a = cross(lever_a, translation.jacobian_a);
+    translation.angular_b = cross(lever_b, translation.jacobian_b);
+    translation.effective_mass = row_effective_mass(translation, a, b);
+    translation.position_error = anchor_error.dot(perpendicular);
+    translation.position_factor = kJointPositionFactor;
+
+    build_angle_lock_row(a, b, params.reference_angle, out_rows[1]);
+
+    if (translation.effective_mass <= 0.0f && out_rows[1].effective_mass <= 0.0f) {
+        return Error("prismatic joint: neither body can move, so the constraint is unsolvable");
+    }
+    return Result<void>{};
+}
+
+Vec2 prismatic_world_axis(const JointBody& a, const PrismaticJointParams& params) noexcept {
+    return rotate(params.axis, a.rotation).normalized();
+}
+
 } // namespace fe::physics2d
