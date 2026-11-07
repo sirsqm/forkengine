@@ -195,6 +195,7 @@ set(FE_ENGINE_SOURCES
     src/serialization/Json.cpp
     src/serialization/PropertyJson.cpp
     src/serialization/SceneSerializer.cpp
+    src/serialization/Prefab.cpp
     src/serialization/SceneReferences.cpp
     src/serialization/Operation.cpp
     src/session/Session.cpp
