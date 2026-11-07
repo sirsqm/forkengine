@@ -349,7 +349,7 @@ TEST_CASE("a revolute joint pins the two anchors and leaves rotation free") {
     CHECK(rows[1].effective_mass == doctest::Approx(1.0f));
     // Rotation is unconstrained at a centre anchor: the lever arm is zero, so
     // the rows carry no angular Jacobian and a spin passes through untouched.
-    for (const physics3d::ConstraintRow3D& row : rows) {
+    for (physics3d::ConstraintRow3D& row : rows) {
         CHECK(row.angular_a.length() == doctest::Approx(0.0f));
         CHECK(row.angular_b.length() == doctest::Approx(0.0f));
         physics3d::JointBody3D spin = b;

@@ -669,8 +669,9 @@ TEST_CASE("applying a distance row pulls a stretched joint back together") {
 
     auto row = physics3d::build_distance_row(a, b, params, 1.0f / 60.0f);
     REQUIRE(row);
-    physics3d::apply_row(row.value(), a, b);
-    physics3d::apply_row_position(row.value(), a, b);
+    physics3d::ConstraintRow3D distance_row = row.value();
+    physics3d::apply_row(distance_row, a, b);
+    physics3d::apply_row_position(distance_row, a, b);
 
     // Stretched to 3 with a rest length of 1: the rod pulls them together, so A
     // moves towards +x and B towards -x.

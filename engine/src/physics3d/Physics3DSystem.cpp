@@ -38,7 +38,7 @@ constexpr f32 kPenetrationSlop = 0.005f;
 // prismatic joints, whose first rows all remove translational error the same
 // way. A rotation-locked joint then solves its remaining rows with
 // `apply_row_orientation` instead.
-void apply_translation_rows(const ConstraintRow3D rows[], usize count, JointBody3D& a, JointBody3D& b) noexcept {
+void apply_translation_rows(ConstraintRow3D rows[], usize count, JointBody3D& a, JointBody3D& b) noexcept {
     for (usize i = 0; i < count; ++i) {
         apply_row(rows[i], a, b);
         apply_row_position(rows[i], a, b);
@@ -609,8 +609,9 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             if (!row) {
                 continue; // unsolvable this step (coincident, or both immovable)
             }
-            apply_row(row.value(), body_a, body_b);
-            apply_row_position(row.value(), body_a, body_b);
+            ConstraintRow3D distance_row = row.value();
+            apply_row(distance_row, body_a, body_b);
+            apply_row_position(distance_row, body_a, body_b);
         } else if (joint.revolute != nullptr) {
             RevoluteJoint3DParams params;
             params.anchor_a = joint.revolute->anchor_a;
@@ -621,6 +622,21 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 continue; // unsolvable this step (both immovable)
             }
             apply_translation_rows(rows, kRevoluteJoint3DRows, body_a, body_b);
+
+            // The motor drives the one spin the ball-socket pin leaves free about
+            // its authored axis. A torque is a per-step impulse bound:
+            // `torque * delta_time`, which makes the authored value a torque and
+            // not a step-dependent impulse.
+            JointMotor3D motor;
+            motor.axis = rotate_by_quat(joint.revolute->motor_axis, body_a.orientation);
+            motor.target_speed = joint.revolute->motor_speed;
+            motor.max_impulse = joint.revolute->motor_max_torque * delta_time;
+            if (motor.is_enabled()) {
+                if (auto row = build_revolute_motor_row(body_a, body_b, motor); row) {
+                    ConstraintRow3D motor_row = row.value();
+                    apply_row(motor_row, body_a, body_b);
+                }
+            }
         } else if (joint.fixed != nullptr) {
             FixedJoint3DParams params;
             params.anchor_a = joint.fixed->anchor_a;

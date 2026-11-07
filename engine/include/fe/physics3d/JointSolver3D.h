@@ -72,6 +72,17 @@ struct ConstraintRow3D {
     f32 bias = 0.0f;
     f32 position_error = 0.0f;
     f32 position_factor = 0.0f;
+
+    // Clamped-impulse support, for a motor row. When `clamp_impulse` is true the
+    // row accumulates the velocity impulse it applies in `accumulated_impulse`
+    // and holds it inside [lower_impulse, upper_impulse], so the joint drives its
+    // relative velocity towards the bias up to a maximum force and then gives way
+    // rather than spinning the bodies forever. A row that does not clamp leaves
+    // these fields alone, so a pin or a rod is unchanged. Mirrors the 2D row.
+    bool clamp_impulse = false;
+    f32 accumulated_impulse = 0.0f;
+    f32 lower_impulse = 0.0f;
+    f32 upper_impulse = 0.0f;
 };
 
 // The apparent mass of a row: 1 / (J M^-1 J^T), summing the linear and angular
@@ -263,11 +274,52 @@ struct PrismaticJoint3DParams {
 // side. Useful for tests and for the editor's debug overlay.
 [[nodiscard]] Vec3 prismatic_world_axis(const JointBody3D& a, const PrismaticJoint3DParams& params) noexcept;
 
+// A motor drives a joint's free degree of freedom towards a target speed.
+// `target_speed` is in radians per second (an angular motor) or world units per
+// second (a linear motor); `max_impulse` is the largest impulse the motor may
+// apply in one step, which is what turns it into a *maximum force* rather than an
+// infinite one -- a motor too weak to hold a load slips instead of winning. A
+// zero `max_impulse` disables the motor, so a joint with no motor authored
+// behaves exactly as before. Mirrors the 2D `JointMotor`, with an axis because a
+// 3D revolute joint leaves rotation about any axis free and the motor must name
+// which one it drives.
+struct JointMotor3D {
+    // The spin axis for an angular (revolute) motor, in world space. Ignored by
+    // the prismatic linear motor, which acts along its own slide axis.
+    Vec3 axis{0.0f, 0.0f, 1.0f};
+    f32 target_speed = 0.0f;
+    f32 max_impulse = 0.0f;
+
+    [[nodiscard]] bool is_enabled() const noexcept { return max_impulse > 0.0f; }
+};
+
+// Builds the motor row for a revolute (ball-socket) joint: it drives the relative
+// angular velocity (B minus A) about `motor.axis` towards `motor.target_speed`,
+// clamped to `max_impulse`. A 3D revolute joint leaves rotation about every axis
+// free, so the motor names the one it turns. Errors when the axis is degenerate
+// or neither body can rotate.
+[[nodiscard]] Result<ConstraintRow3D> build_revolute_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                               const JointMotor3D& motor) noexcept;
+
+// Builds the motor row for a prismatic joint: it drives the relative speed along
+// the slide axis towards `motor.target_speed`, clamped to `max_impulse`. The row
+// acts along the joint axis (body A's local frame, rotated to world), so it is a
+// linear motor -- a piston that extends at a set rate, an elevator that climbs at
+// a set speed. Errors when the axis is degenerate or neither body can move.
+[[nodiscard]] Result<ConstraintRow3D> build_prismatic_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                                const PrismaticJoint3DParams& params,
+                                                                const JointMotor3D& motor) noexcept;
+
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
 // current relative velocity along the row (linear and angular) plus the row's
 // bias, scaled by the row's effective mass. This is the one place the sign
 // convention lives, so the solver and any test agree by construction.
-void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
+//
+// A clamping row (a motor) accumulates its impulse in the row it is given and
+// holds it inside its bounds, so it drives the relative velocity only as hard as
+// the bounds allow. The row is taken by non-const reference for that accumulator;
+// a row that does not clamp is not modified.
+void apply_row(ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 
 // Applies a solved row's positional correction: `position_factor` of the row's
 // position error is removed along the row, split by inverse mass and inertia. A

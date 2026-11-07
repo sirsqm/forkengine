@@ -73,7 +73,7 @@ Result<ConstraintRow3D> build_distance_row(const JointBody3D& a, const JointBody
     return row;
 }
 
-void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept {
+void apply_row(ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept {
     if (row.effective_mass <= 0.0f) {
         return; // unsolvable row: both bodies are immovable along it
     }
@@ -83,7 +83,17 @@ void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexc
     // builder.
     const f32 row_velocity = row.jacobian_a.dot(a.velocity) + row.angular_a.dot(a.angular_velocity) +
                              row.jacobian_b.dot(b.velocity) + row.angular_b.dot(b.angular_velocity);
-    const f32 impulse = -row.effective_mass * (row_velocity + row.bias);
+    f32 impulse = -row.effective_mass * (row_velocity + row.bias);
+
+    if (row.clamp_impulse) {
+        // A motor: accumulate the impulse and hold the total inside its bounds,
+        // then apply only the part that is new. A maximum-force motor is exactly
+        // this clamp -- once the accumulated impulse reaches the bound the row
+        // stops adding, so the joint gives way under a load it cannot hold.
+        const f32 previous = row.accumulated_impulse;
+        row.accumulated_impulse = std::clamp(previous + impulse, row.lower_impulse, row.upper_impulse);
+        impulse = row.accumulated_impulse - previous;
+    }
 
     a.velocity += row.jacobian_a * (impulse * a.inv_mass);
     b.velocity += row.jacobian_b * (impulse * b.inv_mass);
@@ -277,6 +287,71 @@ void apply_row_orientation(const ConstraintRow3D& row, JointBody3D& a, JointBody
     const Vec3 delta_b = row.angular_b * (correction * b.inv_inertia);
     a.orientation = apply_rotation_delta(a.orientation, delta_a * -1.0f);
     b.orientation = apply_rotation_delta(b.orientation, delta_b * -1.0f);
+}
+
+Result<ConstraintRow3D> build_revolute_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                 const JointMotor3D& motor) noexcept {
+    if (!motor.is_enabled()) {
+        return Error("revolute motor: the maximum impulse is zero, so the motor is disabled");
+    }
+
+    const f32 axis_length = motor.axis.length();
+    if (axis_length <= 1e-6f) {
+        return Error("revolute motor: the spin axis is degenerate");
+    }
+    const Vec3 axis = motor.axis / axis_length;
+
+    // The row measures the relative angular velocity b - a projected onto the
+    // spin axis (angular_a = -axis, angular_b = +axis), so a positive impulse
+    // spins B forward relative to A about that axis. The bias drives the
+    // projected relative speed to the target: with the impulse
+    // `-eff * (row_velocity + bias)`, `bias` must be the negative of the target.
+    ConstraintRow3D row;
+    row.angular_a = axis * -1.0f;
+    row.angular_b = axis;
+    row.effective_mass = row_effective_mass(row, a, b);
+    row.bias = -motor.target_speed;
+
+    if (row.effective_mass <= 0.0f) {
+        return Error("revolute motor: neither body can rotate about the axis, so the motor has nothing to turn");
+    }
+
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
+}
+
+Result<ConstraintRow3D> build_prismatic_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                  const PrismaticJoint3DParams& params,
+                                                  const JointMotor3D& motor) noexcept {
+    if (!motor.is_enabled()) {
+        return Error("prismatic motor: the maximum impulse is zero, so the motor is disabled");
+    }
+
+    const Vec3 axis = rotate_by_quat(params.axis_a, a.orientation);
+    if (axis.length_squared() <= 1e-12f) {
+        return Error("prismatic motor: the slide axis is degenerate");
+    }
+    // The motor acts along the slide axis at the two centres, the same direction
+    // the joint leaves free. The prismatic's rotation lock keeps the two frames
+    // aligned, so a centre-based row drives the one free degree of freedom
+    // exactly; the sign matches the distance row (positive separates B from A).
+    const Vec3 direction = axis.normalized();
+    ConstraintRow3D row;
+    row.jacobian_a = direction * -1.0f;
+    row.jacobian_b = direction;
+    row.effective_mass = row_effective_mass(row, a, b);
+    row.bias = -motor.target_speed;
+
+    if (row.effective_mass <= 0.0f) {
+        return Error("prismatic motor: neither body can move along the axis, so the motor has nothing to drive");
+    }
+
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
 }
 
 } // namespace fe::physics3d

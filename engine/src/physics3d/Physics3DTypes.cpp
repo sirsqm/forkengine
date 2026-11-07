@@ -172,6 +172,12 @@ void register_revolute_joint3d(Registry& registry) {
         "anchor_a", &physics3d::RevoluteJoint3D::anchor_a, "Vec3", {"x", "y", "z"}));
     desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
         "anchor_b", &physics3d::RevoluteJoint3D::anchor_b, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
+        "motor_axis", &physics3d::RevoluteJoint3D::motor_axis, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "motor_speed", &physics3d::RevoluteJoint3D::motor_speed, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "motor_max_torque", &physics3d::RevoluteJoint3D::motor_max_torque, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }

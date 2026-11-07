@@ -11,6 +11,7 @@
 #include "fe/physics3d/Physics3DSystem.h"
 #include "fe/physics3d/Physics3DTypes.h"
 #include "fe/physics3d/PrismaticJoint3D.h"
+#include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Registry.h"
@@ -376,6 +377,120 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     // left free to carry the body down the axis.
     CHECK(std::abs(slider_node->transform().position.x) < 0.1f);
     CHECK(slider_node->transform().position.z > 1.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Joint motors (ADR-0134): a joint drives its free degree of freedom towards a
+// target speed, up to a maximum force.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D revolute motor row drives the relative spin about its axis") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 1.0f, 0.0f};
+    motor.target_speed = 2.0f;
+    motor.max_impulse = 100.0f;
+
+    auto built = physics3d::build_revolute_motor_row(a, b, motor);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    // The spin is about the motor axis; the other two components stay zero.
+    CHECK(b.angular_velocity.y - a.angular_velocity.y == doctest::Approx(2.0f).epsilon(1e-3));
+    CHECK(b.angular_velocity.x - a.angular_velocity.x == doctest::Approx(0.0f));
+    CHECK(b.angular_velocity.z - a.angular_velocity.z == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 3D revolute motor's maximum torque caps the impulse it applies") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 1.0f, 0.0f};
+    motor.target_speed = 2.0f;
+    motor.max_impulse = 0.25f;
+
+    auto built = physics3d::build_revolute_motor_row(a, b, motor);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    CHECK(b.angular_velocity.y - a.angular_velocity.y == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a 3D revolute motor with a degenerate axis is unsolvable") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 0.0f, 0.0f};
+    motor.max_impulse = 10.0f;
+    CHECK_FALSE(physics3d::build_revolute_motor_row(a, b, motor));
+}
+
+TEST_CASE("a motor on a 3D revolute joint spins a body about its pivot") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot"); // a bare, immovable anchor
+    Node* arm = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = arm->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+
+    Node* host = scene.create_node("Axle");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = arm->id();
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f};  // the pivot end of the arm
+    joint->motor_axis = Vec3{0.0f, 0.0f, 1.0f}; // spin about +z
+    joint->motor_speed = 3.0f;
+    joint->motor_max_torque = 100.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+
+    CHECK(system.joint_count() == 1);
+    CHECK(body->angular_velocity.z == doctest::Approx(3.0f).epsilon(0.1));
+    // The pin still holds the axle: the arm's centre stays one unit from the
+    // pivot, wherever the spin has carried it around the circle.
+    CHECK(arm->transform().position.length() == doctest::Approx(1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a 3D revolute joint motor round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Motor");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_axis = Vec3{1.0f, 0.0f, 0.0f};
+    joint->motor_speed = 4.5f;
+    joint->motor_max_torque = 12.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Motor");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics3d::RevoluteJoint3D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_axis.x == doctest::Approx(1.0f));
+    CHECK(loaded_joint->motor_speed == doctest::Approx(4.5f));
+    CHECK(loaded_joint->motor_max_torque == doctest::Approx(12.0f));
 }
 
 TEST_CASE("a fixed joint round-trips through the serializer") {

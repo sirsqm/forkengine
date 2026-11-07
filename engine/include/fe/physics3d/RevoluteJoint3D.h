@@ -45,6 +45,18 @@ public:
     Vec3 anchor_a{};
     Vec3 anchor_b{};
 
+    // A motor that spins the joint about an axis. A 3D revolute joint leaves
+    // rotation about every axis free, so the motor names the one it drives with
+    // `motor_axis` (in body A's local frame; a world direction when A does not
+    // turn). `motor_speed` is the relative angular velocity it drives B towards,
+    // in radians per second, about that axis. `motor_max_torque` is the largest
+    // torque, in newton-metres, the motor may apply; a torque too small to
+    // overcome the load slips rather than winning. The default zero disables the
+    // motor, so a joint with no motor behaves exactly as a plain pin.
+    Vec3 motor_axis{0.0f, 0.0f, 1.0f};
+    f32 motor_speed = 0.0f;
+    f32 motor_max_torque = 0.0f;
+
     [[nodiscard]] bool is_valid() const noexcept { return !body_a.is_nil() && !body_b.is_nil() && body_a != body_b; }
 };
 
