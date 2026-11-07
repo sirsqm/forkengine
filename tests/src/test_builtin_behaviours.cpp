@@ -491,6 +491,84 @@ TEST_CASE("a jump lifts a grounded character but is ignored in mid-air") {
     CHECK(character.transform().position.y < airborne_height + 0.5f);
 }
 
+TEST_CASE("a jump within the coyote window works after leaving the ground") {
+    // Walking off a ledge and pressing jump a moment too late should still jump:
+    // the coyote window is what makes a platformer feel fair rather than precise.
+    Scene scene;
+    Node& floor = add_floor(scene);
+    Node& character = *scene.create_node("Player");
+    character.transform().position = Vec3{0.0f, 0.5f, 0.0f};
+    add_body(character);
+
+    ScriptHost host;
+    auto* controller = attach_behaviour<player::CharacterController3D>(host, character);
+    physics3d::Physics3DSystem physics;
+    Fixture fixture;
+
+    for (int i = 0; i < 30; ++i) {
+        CHECK(controller->update(fixture.context).ok());
+        physics.update(fixture.context, scene);
+        fixture.tick();
+    }
+    REQUIRE(controller->grounded());
+
+    // Leave the ground by moving the floor away, so the probe finds nothing. One
+    // frame has passed, which is inside the default window.
+    floor.transform().position = Vec3{0.0f, -100.0f, 0.0f};
+    CHECK(controller->update(fixture.context).ok());
+    physics.update(fixture.context, scene);
+    fixture.tick();
+    REQUIRE_FALSE(controller->grounded());
+
+    // A jump pressed now still fires: the character leaves the ground upward
+    // rather than only continuing to fall.
+    fixture.press(Key::Space);
+    CHECK(controller->update(fixture.context).ok());
+    physics.update(fixture.context, scene);
+    fixture.tick();
+    auto* body = character.get_component<physics3d::RigidBody3D>();
+    REQUIRE(body != nullptr);
+    CHECK(body->velocity.y > 0.0f);
+}
+
+TEST_CASE("a jump after the coyote window has lapsed is ignored") {
+    // The window is a window: once it closes, a jump needs the ground underfoot
+    // again. This is the same setup as the previous test with the window set to
+    // zero, so the one frame since leaving the ground is already too late.
+    Scene scene;
+    Node& floor = add_floor(scene);
+    Node& character = *scene.create_node("Player");
+    character.transform().position = Vec3{0.0f, 0.5f, 0.0f};
+    add_body(character);
+
+    ScriptHost host;
+    auto* controller = attach_behaviour<player::CharacterController3D>(host, character);
+    controller->coyote_time = 0.0f;
+    physics3d::Physics3DSystem physics;
+    Fixture fixture;
+
+    for (int i = 0; i < 30; ++i) {
+        CHECK(controller->update(fixture.context).ok());
+        physics.update(fixture.context, scene);
+        fixture.tick();
+    }
+    REQUIRE(controller->grounded());
+
+    floor.transform().position = Vec3{0.0f, -100.0f, 0.0f};
+    CHECK(controller->update(fixture.context).ok());
+    physics.update(fixture.context, scene);
+    fixture.tick();
+    REQUIRE_FALSE(controller->grounded());
+
+    fixture.press(Key::Space);
+    CHECK(controller->update(fixture.context).ok());
+    physics.update(fixture.context, scene);
+    fixture.tick();
+    auto* body = character.get_component<physics3d::RigidBody3D>();
+    REQUIRE(body != nullptr);
+    CHECK(body->velocity.y < 0.0f);
+}
+
 TEST_CASE("a jump is a press, not a held key") {
     // The edge semantics that make a jump a jump: holding Space must not be a
     // continuous thrust. Space is pressed once and held down for a whole arc, and

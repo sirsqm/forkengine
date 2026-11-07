@@ -258,6 +258,13 @@ public:
     // what keeps a character from sticking to a wall it walks into at an angle.
     bool slide_along_walls = true;
 
+    // Grace window, in seconds, after the character leaves the ground during
+    // which a jump still works. Walking off a ledge and pressing jump a moment
+    // too late should still jump, which is what makes a platformer feel fair
+    // rather than precise. Zero disables it, so a jump needs the ground underfoot
+    // that frame. The value is read on every jump, so it can be changed live.
+    f32 coyote_time = 0.1f;
+
     // Whether the character was on the ground at the end of the last update. Read
     // by a test and by a follow camera that wants to know when to steady itself.
     [[nodiscard]] bool grounded() const noexcept { return grounded_; }
@@ -269,6 +276,9 @@ public:
 private:
     bool grounded_ = false;
     f32 yaw_ = 0.0f;
+    // Seconds since the character was last on the ground, or a large value while
+    // it is airborne, so `coyote_time` can be compared against it.
+    f32 air_time_ = 0.0f;
     // The fall speed the script owns, kept between frames so a jump arcs rather
     // than teleporting. It is separate from the body's velocity, which the solver
     // also writes; the script's value is authoritative for Y.

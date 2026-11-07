@@ -251,6 +251,8 @@ void register_builtin_behaviours(ScriptRegistry& registry) {
             "ground_probe", &CharacterController3D::ground_probe, reflect::ValueKind::Float, &defaults));
         desc.properties.push_back(reflect::make_scalar<CharacterController3D, bool>(
             "slide_along_walls", &CharacterController3D::slide_along_walls, reflect::ValueKind::Bool, &defaults));
+        desc.properties.push_back(reflect::make_scalar<CharacterController3D, f32>(
+            "coyote_time", &CharacterController3D::coyote_time, reflect::ValueKind::Float, &defaults));
         registry.register_desc(std::move(desc));
     }
     {
@@ -442,6 +444,8 @@ Error CharacterController3D::attach(Node& node) {
     yaw_ = node.transform().rotation.y;
     vertical_velocity_ = 0.0f;
     grounded_ = false;
+    // Start out of the coyote window; the first grounded update arms it.
+    air_time_ = coyote_time + 1.0f;
 
     // The controller owns the vertical axis. A body left under the solver's
     // gravity would fight this script for Y, so it is turned off here rather than
@@ -533,12 +537,24 @@ Error CharacterController3D::update(const FrameContext& context) {
     // Vertical motion. The script owns Y: a jump sets an upward velocity, gravity
     // pulls it down, and a grounded character is held at zero so it does not
     // accumulate a fall speed while standing still.
+    if (grounded_) {
+        air_time_ = 0.0f;
+    } else {
+        air_time_ += delta;
+    }
     if (grounded_ && vertical_velocity_ <= 0.0f) {
         vertical_velocity_ = 0.0f;
     }
-    if (grounded_ && context.actions != nullptr && context.actions->was_pressed(ids.jump)) {
+    // A jump is allowed on the ground or within the coyote window after leaving
+    // it, so a jump pressed a moment too late still fires. The body must not be
+    // rising already, or a held jump would re-fire every frame.
+    const bool can_jump = grounded_ || air_time_ <= coyote_time;
+    if (can_jump && vertical_velocity_ <= 0.0f && context.actions != nullptr &&
+        context.actions->was_pressed(ids.jump)) {
         vertical_velocity_ = jump_speed;
         grounded_ = false;
+        // Consume the window so a second press in the air is ignored.
+        air_time_ = coyote_time + 1.0f;
     }
     vertical_velocity_ -= gravity * delta;
 
