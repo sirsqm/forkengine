@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/anim/AnimationClip.h"
 #include "fe/anim/Animator.h"
 #include "fe/systems/System.h"
 
@@ -60,6 +61,22 @@ public:
     // producing a garbage pose.
     [[nodiscard]] usize last_skipped_count() const noexcept { return skipped_; }
 
+    // The clip timeline markers playback crossed during the most recent update,
+    // in the order they were passed. Empty when no clip carried events or none
+    // were crossed this frame.
+    //
+    // This is how an animation reaches gameplay: a footstep sound, a live hitbox
+    // window, a particle burst. The system reports *what* was crossed, not what it
+    // means; a game system runs after this one and reacts to the names it knows,
+    // exactly as it reads an action rather than a key. Only the primary clip of
+    // each animator contributes -- an outgoing cross-fade clip's markers would
+    // otherwise fire twice for one step.
+    //
+    // The buffer is reused across frames, so a caller that keeps the events past
+    // the frame copies them. Exposed as a span-like const reference; it is
+    // rebuilt at the top of every update.
+    [[nodiscard]] const std::vector<AnimationEvent>& events() const noexcept { return events_; }
+
 private:
     // Reused across frames so a steady-state scene does not allocate. Only the
     // outgoing pose of a cross-fade is a scratch: the primary pose and the
@@ -67,6 +84,7 @@ private:
     // with no fade allocates nothing at all and a fade reuses one pose buffer.
     std::vector<Animator*> animators_;
     SkeletonPose scratch_blend_pose_;
+    std::vector<AnimationEvent> events_;
 
     usize advanced_ = 0;
     usize skipped_ = 0;

@@ -144,6 +144,24 @@ struct JointTrack {
     [[nodiscard]] bool empty() const noexcept { return !translation && !rotation && !scale; }
 };
 
+// A named point in a clip's timeline, reported when playback crosses it.
+//
+// A walk cycle needs a footstep sound at the moment the foot lands; an attack
+// needs a window where the hitbox is live and another where it is not. Neither is
+// expressible as a pose -- they are *events* on the timeline, and the frame the
+// clock passes one is the frame gameplay reacts to. An event is a name and a time;
+// the name is the game's, because what a marker means is gameplay's business, not
+// the animation's.
+//
+// The time is in the clip's own seconds, the same axis the keys use, so an author
+// places a footstep on the frame the foot lands.
+struct AnimationEvent {
+    std::string name;
+    f32 time = 0.0f;
+
+    [[nodiscard]] constexpr bool operator==(const AnimationEvent&) const noexcept = default;
+};
+
 // A named animation: a set of joint tracks over a time range.
 //
 // A resource, because a clip is loaded, cached, shared by every instance of a
@@ -176,6 +194,22 @@ public:
     // them; a caller that needs a longer hold adds a key.
     [[nodiscard]] f32 duration() const noexcept { return duration_; }
 
+    // The timeline markers, kept sorted by time. Empty by default; a clip with no
+    // events is a clip that reports nothing, so a scene that authors none is
+    // unchanged. A format that carries events (a future clip document) fills
+    // these; a game may also set them on a loaded clip at startup.
+    [[nodiscard]] const std::vector<AnimationEvent>& events() const noexcept { return events_; }
+
+    // Replaces the event list, sorting it by time. Sorting here (rather than
+    // trusting the caller) is what lets `collect_clip_events` report a crossing
+    // in timeline order without re-sorting every frame.
+    void set_events(std::vector<AnimationEvent> events);
+
+    // Appends one event, keeping the list sorted. Returns its index in the sorted
+    // list. A duplicate name and time is allowed: a looping clip may legitimately
+    // carry the same marker twice at different times.
+    usize add_event(std::string_view name, f32 time);
+
     // Resolves every track's `joint_name` against `skeleton`, returning how many
     // tracks found a joint. A track that does not resolve keeps -1 and is skipped
     // by `sample`, so a clip authored for a slightly different rig plays the
@@ -207,6 +241,7 @@ private:
 
     std::string name_;
     std::vector<JointTrack> tracks_;
+    std::vector<AnimationEvent> events_;
     f32 duration_ = 0.0f;
 };
 
@@ -220,5 +255,26 @@ private:
 // The two poses may differ in length; `out` takes the shorter, and the extra
 // joints of the longer are dropped rather than read past the end.
 void blend_poses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPose& out);
+
+// Appends every event of `clip` whose time playback crossed between
+// `previous_time` and `current_time`, in timeline order, to `out`, and returns
+// how many were appended. `out` is not cleared, so a caller can accumulate events
+// from several clips into one buffer.
+//
+// Both times are *wrapped* positions -- the values `AnimationClip::wrap_time`
+// produced for the frames in question -- so the function compares the two
+// positions rather than the raw clock. The window is half-open, `(previous_time,
+// current_time]`: an event exactly at `current_time` fires and one exactly at
+// `previous_time` does not, so a marker is reported exactly once as the clock
+// passes it. A wrap (`current_time` behind `previous_time`) is a loop restart:
+// the window is `(previous_time, duration]` followed by `[0, current_time]`, in
+// that order, which is the order the playback actually passed them in.
+//
+// Forward playback only: a caller driving a clip backwards (a negative speed, or
+// `LoopMode::PingPong`'s reflected half) sees a wrap where there is none and
+// should collect its own events from the raw clock instead. A clip with no events
+// or no duration appends nothing.
+usize collect_clip_events(const AnimationClip& clip, f32 previous_time, f32 current_time,
+                          std::vector<AnimationEvent>& out);
 
 } // namespace fe::anim

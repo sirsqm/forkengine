@@ -149,6 +149,7 @@ rather than editing it.
 | [0141](0141-two-axis-blend-space.md) | A two-axis blend space for directional locomotion | Accepted |
 | [0142](0142-per-layer-joint-mask.md) | A per-layer joint mask for additive animation | Accepted |
 | [0143](0143-stacked-additive-layers.md) | Stacked additive layers: several additive effects over one base | Accepted |
+| [0144](0144-animation-events.md) | Animation events on the clip timeline | Accepted |
 
 ## Format
 

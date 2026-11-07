@@ -184,6 +184,21 @@ AnimationClip::AnimationClip(std::string path, std::string name, std::vector<Joi
     recompute_duration();
 }
 
+void AnimationClip::set_events(std::vector<AnimationEvent> events) {
+    events_ = std::move(events);
+    std::stable_sort(events_.begin(), events_.end(),
+                     [](const AnimationEvent& a, const AnimationEvent& b) { return a.time < b.time; });
+}
+
+usize AnimationClip::add_event(std::string_view name, f32 time) {
+    AnimationEvent event{std::string(name), time};
+    const auto it = std::upper_bound(events_.begin(), events_.end(), event,
+                                     [](const AnimationEvent& a, const AnimationEvent& b) { return a.time < b.time; });
+    const usize index = static_cast<usize>(std::distance(events_.begin(), it));
+    events_.insert(it, std::move(event));
+    return index;
+}
+
 void AnimationClip::recompute_duration() {
     f32 longest = 0.0f;
     for (const JointTrack& track : tracks_) {
@@ -261,6 +276,37 @@ f32 AnimationClip::wrap_time(f32 time, f32 duration, LoopMode mode) noexcept {
     default:
         return std::fmod(time, duration);
     }
+}
+
+usize collect_clip_events(const AnimationClip& clip, f32 previous_time, f32 current_time,
+                          std::vector<AnimationEvent>& out) {
+    const f32 duration = clip.duration();
+    if (duration <= 0.0f || clip.events().empty()) {
+        return 0;
+    }
+    const usize before = out.size();
+    const auto& events = clip.events();
+
+    // Appends every event with `time` in the half-open window `(low, high]`,
+    // preserving timeline order because `events` is sorted. Returns nothing; the
+    // caller counts the total appended across the one or two windows.
+    const auto append_range = [&](f32 low, f32 high) {
+        for (const AnimationEvent& event : events) {
+            if (event.time > low && event.time <= high) {
+                out.push_back(event);
+            }
+        }
+    };
+
+    if (current_time >= previous_time) {
+        append_range(previous_time, current_time);
+    } else {
+        // The clock wrapped: playback passed the end of the clip and restarted.
+        // The tail is reported before the head, which is the order it happened.
+        append_range(previous_time, duration);
+        append_range(-1.0f, current_time);
+    }
+    return out.size() - before;
 }
 
 void blend_poses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPose& out) {

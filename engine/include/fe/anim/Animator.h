@@ -156,6 +156,17 @@ public:
     [[nodiscard]] f32 blend_time() const noexcept { return blend_time_; }
     void set_blend_time(f32 clock) noexcept { blend_time_ = clock; }
 
+    // The clip position the last frame sampled, *after* wrapping, so the next
+    // frame can tell which timeline markers playback crossed between the two. It
+    // is derived state like the pose -- recomputed every frame from the clock --
+    // and is neither serialized nor reflected.
+    //
+    // Zero before the system has run once, which is the correct start for a clip
+    // whose first frame is at time zero: the first frame's window is `(0, t]` and
+    // reports the markers in it.
+    [[nodiscard]] f32 previous_wrapped_time() const noexcept { return previous_wrapped_time_; }
+    void set_previous_wrapped_time(f32 wrapped_time) noexcept { previous_wrapped_time_ = wrapped_time; }
+
     // The root joint's local translation in the pose just computed, and the
     // value it held the previous frame, which is what a root-motion delta is
     // measured between. Both are zero when there is no skeleton or no root.
@@ -190,6 +201,8 @@ private:
     f32 blend_duration_ = 0.0f;
     f32 blend_remaining_ = 0.0f;
     f32 blend_time_ = 0.0f;
+
+    f32 previous_wrapped_time_ = 0.0f;
 
     Vec3 root_translation_{};
     Vec3 previous_root_translation_{};

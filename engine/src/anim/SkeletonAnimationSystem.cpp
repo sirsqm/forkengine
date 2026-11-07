@@ -38,6 +38,7 @@ void SkeletonAnimationSystem::update(const FrameContext& context, Scene& scene) 
     advanced_ = 0;
     skipped_ = 0;
     animators_.clear();
+    events_.clear();
 
     // One traversal to gather the animators, exactly as the sprite systems do.
     // The scene's node count is what a frame pays for this, not the animator
@@ -75,7 +76,14 @@ void SkeletonAnimationSystem::update(const FrameContext& context, Scene& scene) 
 
         const AnimationClip* primary = animator->clip_resource();
         if (primary != nullptr) {
+            const f32 duration = primary->duration();
+            const f32 wrapped = AnimationClip::wrap_time(animator->time, duration, animator->loop);
             sample_clip(*primary, animator->time, animator->loop, pose);
+            // Report the timeline markers playback crossed into this position,
+            // against the position the previous frame sampled. Only the primary
+            // clip contributes, so a cross-fade does not fire a marker twice.
+            collect_clip_events(*primary, animator->previous_wrapped_time(), wrapped, events_);
+            animator->set_previous_wrapped_time(wrapped);
         }
 
         // --- 3. Cross-fade ----------------------------------------------------
