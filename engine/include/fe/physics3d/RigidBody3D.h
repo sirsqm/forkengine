@@ -44,6 +44,20 @@ public:
     // frame is later work; this is a single authored value, like gravity.
     Vec3 torque{};
 
+    // A force accumulated for the current step only, in newtons. Unlike
+    // `torque`, which is an authored constant, this is meant to be added to
+    // during the frame -- by a script, a thruster, a wind zone -- through
+    // `add_force`, and is cleared after the solver runs, so it must be re-added
+    // every step the force should act. The resulting acceleration is
+    // `force * inverse_mass`. A body with infinite mass ignores it.
+    Vec3 force{};
+
+    // A torque accumulated for the current step only, in newton-metres, added
+    // through `add_torque` and cleared after the solver runs. It is summed with
+    // the constant `torque`, so an author can combine a steady spin with a
+    // per-step push. A body with infinite inertia ignores it.
+    Vec3 applied_torque{};
+
     // Mass in kilograms. Must be > 0 for a movable body; a zero or negative mass
     // is treated as infinite (immovable) by the solver, which is how a "static"
     // body is expressed without a separate flag.
@@ -141,6 +155,30 @@ public:
     }
 
     [[nodiscard]] bool is_dynamic() const noexcept { return inverse_mass() > 0.0f; }
+
+    // Adds a force in newtons to act for this step, and wakes the body so a
+    // force applied to a settled body takes effect. Accumulates, so several
+    // sources (a thruster, wind, a script) compose by adding. The force is
+    // cleared by the system after the step, so it must be re-added each step.
+    void add_force(const Vec3& value) noexcept {
+        force += value;
+        wake();
+    }
+
+    // Adds a torque in newton-metres for this step, and wakes the body. Summed
+    // with the constant `torque`; cleared after the step.
+    void add_torque(const Vec3& value) noexcept {
+        applied_torque += value;
+        wake();
+    }
+
+    // Clears the per-step force and applied torque. The system calls this after
+    // the step so a force that is not re-added does not persist; a test or a
+    // caller that steps the solver by hand can call it too.
+    void clear_forces() noexcept {
+        force = Vec3{};
+        applied_torque = Vec3{};
+    }
 
     // True when the body's motion is slow enough to count as at rest: both the
     // linear speed and the angular speed are below their thresholds. A sleeping

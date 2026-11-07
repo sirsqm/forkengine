@@ -302,11 +302,19 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         if (entry.body->affected_by_gravity) {
             entry.velocity += gravity * delta_time;
         }
+        // A per-step force acts through the body's inverse mass, and the
+        // accumulated torque is summed with the constant one. Both are cleared
+        // after the step, so a force must be re-added each step to persist.
+        if (entry.body->force.x != 0.0f || entry.body->force.y != 0.0f || entry.body->force.z != 0.0f) {
+            entry.velocity += entry.body->force * (entry.inv_mass * delta_time);
+        }
         // Torque is the rotational counterpart of gravity: a constant angular
         // acceleration of `torque * inverse_inertia`. A body with infinite
-        // inertia (fixed_rotation, or no shape-derived inertia) ignores it.
+        // inertia (fixed_rotation, or no shape-derived inertia) ignores it. The
+        // per-step applied torque is summed with the constant one.
         if (entry.inv_inertia > 0.0f) {
-            entry.angular_velocity += entry.body->torque * (entry.inv_inertia * delta_time);
+            const Vec3 total_torque = entry.body->torque + entry.body->applied_torque;
+            entry.angular_velocity += total_torque * (entry.inv_inertia * delta_time);
         }
         const f32 damping = clamp_unit(entry.body->linear_damping);
         if (damping > 0.0f) {
@@ -597,6 +605,14 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     apply_sleep_checks(delta_time);
 
     reconcile_contacts(scene);
+
+    // The per-step force and applied torque have been integrated; clear them so
+    // a force that is not re-added next step does not keep acting.
+    scene.for_each_node([](Node& node) {
+        if (auto* body = node.get_component<RigidBody3D>(); body != nullptr) {
+            body->clear_forces();
+        }
+    });
 }
 
 void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {

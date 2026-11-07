@@ -141,6 +141,7 @@ rather than editing it.
 | [0133](0133-prefab-instancing.md) | Prefab instancing: a subtree captured once, instantiated many | Accepted |
 | [0134](0134-extended-joint-set.md) | The extended joint set: fixed and prismatic joints, and distance-joint length limits, in both worlds | Accepted |
 | [0135](0135-joint-reactions-and-breaking.md) | Joint reactions and breaking: a joint reports the force it carries and snaps past a threshold | Accepted |
+| [0136](0136-per-step-force-accumulator.md) | A per-step force and torque accumulator on a rigid body | Accepted |
 
 ## Format
 

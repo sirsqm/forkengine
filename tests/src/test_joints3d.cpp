@@ -833,3 +833,69 @@ TEST_CASE("a 3D fixed joint snaps under a torque it cannot hold") {
 
     CHECK(joint->broken);
 }
+
+// ---------------------------------------------------------------------------
+// Per-step force accumulator in 3D: a force added during the frame acts for
+// that step only, through the body's inverse mass, and is cleared afterwards.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D body accelerates by force over mass") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 2.0f, 0.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    body->add_force(Vec3{10.0f, 0.0f, 0.0f});
+    run(system, scene, 1.0f, 1);
+
+    CHECK(body->velocity.x == doctest::Approx(5.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 3D force is cleared after the step it was added") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 0.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    body->add_force(Vec3{4.0f, 0.0f, 0.0f});
+    run(system, scene, 0.5f, 1);
+    const f32 after_first = body->velocity.x;
+    CHECK(after_first == doctest::Approx(2.0f).epsilon(0.01));
+    CHECK(body->force.x == doctest::Approx(0.0f));
+
+    run(system, scene, 0.5f, 1);
+    CHECK(body->velocity.x == doctest::Approx(after_first).epsilon(0.01));
+}
+
+TEST_CASE("a 3D applied torque spins a body and is cleared") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 2.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    body->add_torque(Vec3{0.0f, 6.0f, 0.0f});
+    run(system, scene, 1.0f, 1);
+
+    CHECK(body->angular_velocity.y == doctest::Approx(3.0f).epsilon(0.01));
+    CHECK(body->applied_torque.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 3D force wakes a sleeping body") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 0.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->sleep();
+
+    physics3d::Physics3DSystem system;
+    body->add_force(Vec3{3.0f, 0.0f, 0.0f});
+    CHECK_FALSE(body->is_sleeping);
+    run(system, scene, 1.0f, 1);
+    CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
+}

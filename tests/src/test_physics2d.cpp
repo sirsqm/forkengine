@@ -2938,3 +2938,94 @@ TEST_CASE("a joint re-armed by clearing broken constrains again") {
     system.update(step(1.0f / 60.0f), scene);
     CHECK(system.joint_count() == 1);
 }
+
+// ---------------------------------------------------------------------------
+// Per-step force accumulator: a force added during the frame acts for that step
+// only, through the body's inverse mass, and is cleared afterwards.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 2D body accelerates by force over mass") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 2.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics2d::Physics2DSystem system;
+    // A 10 N push on a 2 kg body for one second is 5 m/s.
+    body->add_force(Vec2{10.0f, 0.0f});
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(1.0f), scene);
+    }
+
+    CHECK(body->velocity.x == doctest::Approx(5.0f).epsilon(0.01));
+    CHECK(body->velocity.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 2D force is cleared after the step it was added") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics2d::Physics2DSystem system;
+    body->add_force(Vec2{4.0f, 0.0f});
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(0.5f), scene);
+    }
+    const f32 after_first = body->velocity.x;
+    CHECK(after_first == doctest::Approx(2.0f).epsilon(0.01));
+    CHECK(body->force.x == doctest::Approx(0.0f));
+
+    // No force is re-added, so the velocity is unchanged by the next step.
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(0.5f), scene);
+    }
+    CHECK(body->velocity.x == doctest::Approx(after_first).epsilon(0.01));
+}
+
+TEST_CASE("a 2D applied torque spins a body and is cleared") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+    body->inertia = 2.0f;
+
+    physics2d::Physics2DSystem system;
+    // 6 N*m on inertia 2 for one second is 3 rad/s.
+    body->add_torque(6.0f);
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(1.0f), scene);
+    }
+
+    CHECK(body->angular_velocity == doctest::Approx(3.0f).epsilon(0.01));
+    CHECK(body->applied_torque == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 2D force on a static body does nothing") {
+    Scene scene;
+    Node* node = add_floor(scene, 4.0f); // a collider with no rigid body
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(1.0f), scene);
+    }
+    CHECK(node->transform().position.y == doctest::Approx(-0.5f));
+}
+
+TEST_CASE("a 2D force wakes a sleeping body") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->sleep();
+
+    physics2d::Physics2DSystem system;
+    body->add_force(Vec2{3.0f, 0.0f});
+    CHECK_FALSE(body->is_sleeping);
+    for (int i = 0; i < 1; ++i) {
+        system.update(step(1.0f), scene);
+    }
+    CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
+}

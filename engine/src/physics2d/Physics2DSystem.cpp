@@ -385,8 +385,15 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         if (entry.body->affected_by_gravity) {
             entry.velocity += gravity * delta_time;
         }
-        if (entry.body->torque != 0.0f && entry.inv_inertia > 0.0f) {
-            entry.angular_velocity += entry.body->torque * entry.inv_inertia * delta_time;
+        // A per-step force acts through the body's inverse mass, and the
+        // accumulated torque is summed with the constant one. Both are cleared
+        // after the step, so a force must be re-added each step to persist.
+        if (entry.inv_mass > 0.0f && (entry.body->force.x != 0.0f || entry.body->force.y != 0.0f)) {
+            entry.velocity += entry.body->force * (entry.inv_mass * delta_time);
+        }
+        const f32 total_torque = entry.body->torque + entry.body->applied_torque;
+        if (total_torque != 0.0f && entry.inv_inertia > 0.0f) {
+            entry.angular_velocity += total_torque * entry.inv_inertia * delta_time;
         }
         const f32 damping = clamp_unit(entry.body->linear_damping);
         if (damping > 0.0f) {
@@ -685,6 +692,14 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
     apply_sleep_checks(delta_time);
 
     reconcile_contacts(scene);
+
+    // The per-step force and applied torque have been integrated; clear them so
+    // a force that is not re-added next step does not keep acting.
+    scene.for_each_node([](Node& node) {
+        if (auto* body = node.get_component<RigidBody2D>(); body != nullptr) {
+            body->clear_forces();
+        }
+    });
 }
 
 namespace {
