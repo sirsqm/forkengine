@@ -6,6 +6,9 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace fe::physics3d {
 
 // The pure half of joint solving for 3D: the per-body state a constraint row
@@ -82,10 +85,55 @@ struct ConstraintRow3D {
     return denom > 0.0f ? 1.0f / denom : 0.0f;
 }
 
+// --- Extended joint set (ADR-0134) ----------------------------------------
+
+// The rotation vector (axis * angle, in world space) of a unit quaternion: the
+// smallest rotation that takes the identity to `q`. For a tiny rotation it
+// returns the small-angle limit 2 * vec(q), so a near-identity quaternion still
+// reports its small error rather than collapsing to zero.
+[[nodiscard]] inline Vec3 rotation_vector(const Quat& q_in) noexcept {
+    Quat q = q_in.normalized();
+    if (q.w < 0.0f) {
+        q = q * -1.0f; // q and -q are the same rotation; take the shorter arc
+    }
+    const Vec3 axis{q.x, q.y, q.z};
+    const f32 sin_half = axis.length();
+    if (sin_half < 1e-6f) {
+        return axis * 2.0f; // small-angle limit, where angle ~ 2 * |vec|
+    }
+    const f32 w = std::clamp(q.w, -1.0f, 1.0f);
+    const f32 angle = 2.0f * std::acos(w);
+    return axis / sin_half * angle;
+}
+
+// Rotates `q` by the world-space rotation vector `delta` (left-multiply, so the
+// axis is a world axis). This is the positional counterpart of an angular
+// velocity impulse: where `apply_row` adds to `angular_velocity`, this turns the
+// orientation directly.
+[[nodiscard]] inline Quat apply_rotation_delta(const Quat& q, const Vec3& delta) noexcept {
+    const f32 angle = delta.length();
+    if (angle < 1e-9f) {
+        return q;
+    }
+    return (Quat::from_axis_angle(delta / angle, angle) * q).normalized();
+}
+
+// Two unit vectors orthogonal to the unit `axis`, forming a right-handed basis
+// with it. Used by the prismatic joint to name the two directions it removes.
+inline void perpendicular_basis(const Vec3& axis, Vec3& out_a, Vec3& out_b) noexcept {
+    const Vec3 reference = std::abs(axis.x) < 0.9f ? Vec3{1.0f, 0.0f, 0.0f} : Vec3{0.0f, 1.0f, 0.0f};
+    out_a = axis.cross(reference).normalized();
+    out_b = axis.cross(out_a).normalized();
+}
+
 // How many rows a joint needs: one for a distance joint, three for a revolute
-// joint (the x, y and z components of the shared anchor).
+// joint (the x, y and z components of the shared anchor), six for a fixed joint
+// (three translation plus three rotation), five for a prismatic joint (two
+// translation perpendicular to its axis, plus three rotation).
 inline constexpr usize kDistanceJoint3DRows = 1;
 inline constexpr usize kRevoluteJoint3DRows = 3;
+inline constexpr usize kFixedJoint3DRows = 6;
+inline constexpr usize kPrismaticJoint3DRows = 5;
 
 // The distance-joint parameters, decoupled from the component so the maths can be
 // exercised on its own. The constraint measures between the two body centres.
@@ -104,6 +152,46 @@ struct DistanceJoint3DParams {
 struct RevoluteJoint3DParams {
     Vec3 anchor_a{};
     Vec3 anchor_b{};
+};
+
+// The fixed (weld) joint parameters. A fixed joint removes every degree of
+// freedom between its two bodies: they keep the relative position *and* the
+// relative orientation they had when the joint was authored. The anchors name
+// the shared point in each body's local frame, exactly as the revolute joint's
+// do; the `reference_*` fields hold the relative rotation the joint is to
+// preserve, expressed as each body's local frame rotation relative to the
+// other, so the pair is welded in the pose it was built in rather than forced
+// to a common world orientation.
+//
+// `reference_relative` is the target rotation of B relative to A (`q_a^-1 * q_b`
+// at build time). A caller that wants to weld the bodies at their *current*
+// orientations passes the value `fixed_reference_relative` computes; passing the
+// identity instead welds them to a common orientation.
+struct FixedJoint3DParams {
+    Vec3 anchor_a{};
+    Vec3 anchor_b{};
+    Quat reference_relative = Quat::identity();
+};
+
+// The relative rotation to preserve for a fixed joint built from two bodies in
+// their current orientations: `q_a^-1 * q_b`.
+[[nodiscard]] inline Quat fixed_reference_relative(const JointBody3D& a, const JointBody3D& b) noexcept {
+    return a.orientation.conjugate() * b.orientation;
+}
+
+// The prismatic (slider) joint parameters. A prismatic joint allows exactly one
+// translational degree of freedom: the two bodies may slide along a shared axis
+// but not perpendicular to it, and they may not rotate relative to one another.
+// The axis is authored in each body's local frame; a caller that wants the
+// bodies to slide along a world direction sets both to that direction. As with
+// the fixed joint, `reference_relative` holds the relative rotation to preserve,
+// so the slider's axis is a frame the pair shares rather than a world direction
+// recomputed each step.
+struct PrismaticJoint3DParams {
+    Vec3 anchor_a{};
+    Vec3 anchor_b{};
+    Vec3 axis_a{0.0f, 0.0f, 1.0f};
+    Quat reference_relative = Quat::identity();
 };
 
 // Builds the single distance-constraint row for the current state of the two
@@ -127,6 +215,27 @@ struct RevoluteJoint3DParams {
 // Useful for tests and for the editor's debug overlay.
 [[nodiscard]] Vec3 revolute_world_anchor(const JointBody3D& a, const RevoluteJoint3DParams& params) noexcept;
 
+// Builds the six fixed-joint rows: three pin the two anchors together (as the
+// revolute rows do) and three remove the relative rotation about the x, y and z
+// axes. Rows 0-2 are translation, rows 3-5 rotation. `reference_relative` is the
+// relative orientation to preserve; the identity welds the bodies to a common
+// world orientation.
+[[nodiscard]] Result<void> build_fixed_rows(const JointBody3D& a, const JointBody3D& b,
+                                            const FixedJoint3DParams& params, f32 delta_time,
+                                            ConstraintRow3D out_rows[kFixedJoint3DRows]);
+
+// Builds the five prismatic-joint rows: two remove translation perpendicular to
+// the joint axis (rows 0-1) and three remove the relative rotation (rows 2-4),
+// leaving sliding along the axis as the single free degree of freedom. The axis
+// is taken from body A's local frame, rotated into world space.
+[[nodiscard]] Result<void> build_prismatic_rows(const JointBody3D& a, const JointBody3D& b,
+                                                const PrismaticJoint3DParams& params, f32 delta_time,
+                                                ConstraintRow3D out_rows[kPrismaticJoint3DRows]);
+
+// The world-space axis a prismatic joint currently slides along, from body A's
+// side. Useful for tests and for the editor's debug overlay.
+[[nodiscard]] Vec3 prismatic_world_axis(const JointBody3D& a, const PrismaticJoint3DParams& params) noexcept;
+
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
 // current relative velocity along the row (linear and angular) plus the row's
 // bias, scaled by the row's effective mass. This is the one place the sign
@@ -137,5 +246,14 @@ void apply_row(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexc
 // position error is removed along the row, split by inverse mass and inertia. A
 // no-op when the row has no position term (a spring) or is unsolvable.
 void apply_row_position(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
+
+// Applies a solved row's *orientation* correction, the angular counterpart of
+// `apply_row_position`: `position_factor` of the row's rotation error is removed
+// about the row's angular Jacobian, split by inverse inertia. The linear
+// Jacobians are ignored, so a row whose constraint is purely rotational (a weld
+// or a slider's rotation lock) corrects the two orientations directly rather
+// than through the velocity response. A no-op when the row has no position term
+// or is unsolvable.
+void apply_row_orientation(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 
 } // namespace fe::physics3d
