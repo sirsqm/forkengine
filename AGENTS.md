@@ -327,6 +327,12 @@ defect, not noise.
   box makes a panel taller than the frame paint nothing instead of its visible
   part. A pixel-readback test with a panel twice the frame's height pins the
   clamp; the same test paints nothing with the empty-box version.
+- The clang-format job checks every tracked first-party file, not the push's
+  diff, so one unformatted file left on `main` turns the job red for every later
+  push -- a docs-only commit included. A push that only adds a doc can therefore
+  "fail" the format check, and the fix is to format the offending file, not the
+  doc. Match the pinned version (`pip install clang-format==23.1.3`); a newer
+  local clang-format can reformat the same file differently and disagree with CI.
 
 ## Commit attribution
 
