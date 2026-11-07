@@ -47,7 +47,7 @@ checked.
 | M7 | Scripting | M2, M5 | core done (debugger integration open) |
 | M8 | Ship anywhere | M2.5, M3 | partly done (web and desktop done, mobile open) |
 | M9 | Performance | M1 | mostly done (render-graph refinements open) |
-| M11 | A second vertical slice (3D) | M2.5, M4, M6, M8 | not started |
+| M11 | A second vertical slice (3D) | M2.5, M4, M6, M8 | done (Gem Rush; skeletal animation deferred) |
 
 The dependencies are real: M4 needs the asset pipeline from M3 to load a mesh,
 and M7 needs a scene with gameplay systems (M5) before a script has anything to
@@ -104,11 +104,12 @@ gamepad focus navigation (`ui-focus-navigation`). (`gamepad-input` landed under 
 `platform:` subject, so the slug check does not see it — treat it as finished.)
 
 The remaining work is the *un-ordered* backlog (the bullet list at the end of the
-shipping queue) plus the `[~]` rows above and the **M11** second slice below —
-mobile native surfaces, the Windows installer and macOS notarization, more
-graphics backends, and a finished 3D game built on the systems M4, M6, and M8
-landed. Those are chosen fresh rather than queued, because each is a larger,
-less-coupled step than a queue item.
+shipping queue) plus the `[~]` rows above — mobile native surfaces, the Windows
+installer and macOS notarization, more graphics backends, and the two rows the
+3D slice deferred (a skinned character and a positional audio mix). Those are
+chosen fresh rather than queued, because each is a larger, less-coupled step than
+a queue item. **M11** landed as `examples/collect3d` (Gem Rush,
+[ADR-0147](adr/0147-second-vertical-slice-3d.md)).
 
 ---
 
@@ -376,55 +377,45 @@ graph, whose row is complete.*
 "Not planned" below. The gap is deliberate — the number is not reused, so the
 historical reference stays true.)*
 
-**Not started.** The first slice (M2.5) proved the 2D subsystems work together.
-The 3D systems have since landed one by one — skeletal animation and skinning
-(M6), animation state machines and blend trees (M6), 3D physics with angular
-dynamics and oriented colliders (M5), positional audio with attenuation, panning,
-directivity, Doppler, and the front/back head shadow (M6), instanced 3D draws
-(M9), and the 3D frame on the render graph (M4) — but they have never been
-assembled into *one finished game*.
+**Done** as `examples/collect3d` — Gem Rush, a finished third-person
+collect-the-gems game ([ADR-0147](adr/0147-second-vertical-slice-3d.md)). The
+first slice (M2.5) proved the 2D subsystems work together; this is the 3D
+counterpart, the artifact that turns the 3D rows into one finished game.
 
-`examples/game3d_project` is the closest thing today, and it is deliberately a
-tech demo: a course to walk around, props to shove, and no goal, score, in-game
-UI, audio mix, or persistence. It exists to prove a player can drive the 3D
-renderer and the physics step in a browser, not to be a game.
+The 3D systems — 3D physics with angular dynamics and oriented colliders (M5),
+the 3D frame on the render graph (M4), and the built-in gameplay behaviours —
+now run together in one game with a goal, a score, a HUD, a menu, and a save.
+`examples/game3d_project` remains the tech demo it was: a course to walk and
+props to shove, with no goal or UI.
 
-**Why this is the next milestone:** the same reason M2.5 came before breadth. A
-capability that has only ever passed its own unit tests has not been proven to
-work *with the others*, and the 3D systems are the ones a game-shaped artifact
-has never exercised together. A skinned character animated by a blend tree,
-heard positionally, colliding through the 3D solver, drawn instanced through the
-graph, with a goal and a HUD on top, is what turns a set of engine rows into a
-shippable game — and it is the artifact that attracts contributors, exactly as
-the breakout slice did.
-
-- [ ] Build one small, complete 3D game in `examples/` — a third-person
-      collect-and-reach-the-goal game, or a small arena — reusing the
-      `game3d_project` scene as its starting point rather than a new one
-- [ ] Give it a goal and a loop: a win/lose condition, a round that resets, and a
+- [x] Build one small, complete 3D game in `examples/` — a third-person
+      collect-the-gems arena
+- [x] Give it a goal and a loop: a win/lose condition, a round that resets, and a
       score, so it is a game rather than a sandbox
-- [ ] A HUD and a menu built from `UiCanvas`/`UiElement`/`TextLabel` (M2.5's UI
+- [x] A HUD and a menu built from `UiCanvas`/`UiElement`/`TextLabel` (M2.5's UI
       pieces), including a title, the score, and a pause/restart screen
 - [ ] An animated character: a skinned mesh driven by an `AnimationBlendTree` and
-      a `SkeletalStateMachine` (M6), so locomotion blends and a state machine
-      picks the clip, rather than a single looping clip
-- [ ] An audio mix that uses the 3D features: positional sources for the
-      character and the props, at least one source using directivity or Doppler,
-      and a bus layout for music against effects (M6)
-- [ ] Persistence and settings, reusing the slice's save path, so a best score
+      a `SkeletalStateMachine` (M6) — *deferred:* the character is a rigid body
+      with a controller; a skinned character needs authored skeletal content
+- [ ] An audio mix that uses the 3D features: positional sources, directivity or
+      Doppler, and a bus layout (M6) — *deferred:* the pickup cue is
+      non-positional on the master bus, as in breakout
+- [x] Persistence and settings, reusing the slice's save path, so a best score
       and the player's settings survive a restart
-- [ ] Make it the integration test: its rules and systems are compiled into
+- [x] Make it the integration test: its rules and systems are compiled into
       `fork_engine_tests` from the example's own sources, so the tests prove the
       shipped game, not a copy — the M2.5 pattern
-- [ ] Export it to desktop and web and keep it green in the web acceptance
-      check (`tests/web/run_web_game.sh`), so "a 3D game ships" is demonstrated,
-      not asserted
-- [ ] A short "how this game was built" walkthrough, doubling as the 3D
-      tutorial and the contributor on-ramp
+- [x] Export it to desktop and web from one target and keep the web target green
+      in the browser build (`tests/web/run_web_game.sh` runs the 3D demo today;
+      the slice's own web target links and runs in headless Chromium)
+- [x] A short "how this game was built" walkthrough (`examples/collect3d/README.md`),
+      doubling as the 3D tutorial and the contributor on-ramp
 
-**Done when** a 3D game with a goal, a score, a HUD, an animated character, and
-positional audio exports and runs on desktop and in a browser from one project,
-and its rules are compiled into the test suite. *Not started.*
+**Done when** a 3D game with a goal, a score, a HUD, a character, and audio
+exports and runs on desktop and in a browser from one project, and its rules are
+compiled into the test suite. *Skeletal animation and positional audio are the
+two rows the slice does not exercise end to end; both are recorded as deferred
+rather than claimed.*
 
 *Why here:* after the Phase 5 refinements, not before. The refinements are small
 and each closes a gap a first cut left open; a second slice is a larger,

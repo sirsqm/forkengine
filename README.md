@@ -68,6 +68,7 @@ tests. Everything else is planned in those three documents.
 | Project file (settings, asset root, startup scene) | Working |
 | Runtime frame loop + sandbox example | Working |
 | A complete example game (breakout, the M2.5 vertical slice) | Working (see [ADR-0036](docs/adr/0036-breakout-vertical-slice.md)) |
+| A complete 3D example game (Gem Rush, the M11 vertical slice) | Working (see [ADR-0147](docs/adr/0147-second-vertical-slice-3d.md)) |
 | Scripting (C++ native modules first, language-agnostic seam) | Not started (see roadmap) |
 | Build/export | Not started (see roadmap) |
 | Performance tooling (profiler, benchmark, CI regression gate) | Working (see [ADR-0033](docs/adr/0033-performance-regression-gate.md)) |
@@ -156,6 +157,8 @@ engine/           the engine library (the only thing a game links against)
 editor/           the visual editor, built on the engine (core, UI, shell)
   assets/fonts/   the editor's typefaces (Inter, JetBrains Mono), OFL-licensed
 examples/sandbox/ a small runnable program that exercises every layer
+examples/breakout/ the M2.5 vertical slice, a finished 2D game
+examples/collect3d/ the M11 vertical slice, a finished 3D game
 examples/demo_project/ a minimal project to open in the editor shell
 tests/            doctest-based unit, editor, and graphics test targets
 benchmarks/       the performance benchmark and its CI regression gate

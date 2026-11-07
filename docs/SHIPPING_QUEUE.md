@@ -1135,11 +1135,16 @@ a pixel the unclipped control paints.
   independent upper- and lower-body blends is one component rather than an
   enumeration of clips ([ADR-0146](adr/0146-nested-blend-trees.md)). The skeletal
   animation backlog is complete.
-- More example games beyond the breakout slice, once the first one ships. The
-  next one is planned as a **finished 3D game** — the roadmap's
-  [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from
-  the 3D systems that have landed but never run together; it is chosen fresh
-  rather than queued, so its detail lives in the roadmap, not here.
+- More example games beyond the breakout slice. The second one has shipped: the
+  roadmap's [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end),
+  a finished 3D game, landed as `examples/collect3d` (Gem Rush,
+  [ADR-0147](adr/0147-second-vertical-slice-3d.md)) — the 3D counterpart of
+  breakout, built from the 3D systems that had landed but never run together. It
+  is an integration test like breakout: its rules and systems compile into
+  `fork_engine_tests` and it builds for desktop and web. Two rows it deliberately
+  left open (a skinned character and a positional audio mix) are noted in the
+  roadmap as deferred, not claimed. A third slice, if one is ever wanted, has a
+  template in the two that exist.
 
 ## Ongoing
 

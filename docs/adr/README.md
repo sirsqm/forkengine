@@ -152,6 +152,7 @@ rather than editing it.
 | [0144](0144-animation-events.md) | Animation events on the clip timeline | Accepted |
 | [0145](0145-ui-focus-navigation.md) | Keyboard and gamepad focus navigation for UI | Accepted |
 | [0146](0146-nested-blend-trees.md) | A blend tree feeding a blend tree | Accepted |
+| [0147](0147-second-vertical-slice-3d.md) | The second vertical slice, and the 3D integration test it is | Accepted |
 
 ## Format
 
