@@ -320,6 +320,13 @@ defect, not noise.
   run, so a hanging test looks like an infrastructure stall. CI passes
   `--timeout 300` to every `ctest` and bounds the job with `timeout-minutes`, so
   a hang fails and is named well inside a job.
+- A GL scissor rectangle is bottom-left origin and its width/height are
+  unsigned, so a top-left-origin clip has to be flipped against the *current*
+  framebuffer's height (a render target's, not the window's) and clamped, not
+  zeroed, when it runs past an edge: collapsing an oversized clip to an empty
+  box makes a panel taller than the frame paint nothing instead of its visible
+  part. A pixel-readback test with a panel twice the frame's height pins the
+  clamp; the same test paints nothing with the empty-box version.
 
 ## Commit attribution
 
