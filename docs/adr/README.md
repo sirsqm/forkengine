@@ -161,6 +161,7 @@ rather than editing it.
 | [0153](0153-joint-motors-and-limits.md) | Joint motors and prismatic translation limits | Accepted |
 | [0154](0154-revolute-angular-limits.md) | Revolute joint angular limits | Accepted |
 | [0155](0155-joint-position-motors.md) | Joint position (servo) motors | Accepted |
+| [0156](0156-navigation-and-ai.md) | Navigation and AI | Accepted |
 
 ## Format
 

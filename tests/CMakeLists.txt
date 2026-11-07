@@ -80,6 +80,7 @@ add_executable(fork_engine_tests
     src/test_builtin_behaviours.cpp
     src/test_export.cpp
     src/test_example_projects.cpp
+    src/test_nav.cpp
 )
 target_link_libraries(fork_engine_tests PRIVATE FE::engine ${FE_DOCTEST_TARGET} fe_warnings)
 target_compile_features(fork_engine_tests PRIVATE cxx_std_20)

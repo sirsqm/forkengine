@@ -5,6 +5,7 @@
 #include "fe/anim/AnimationTypes.h"
 #include "fe/anim/SkeletalAnimationTypes.h"
 #include "fe/audio/AudioTypes.h"
+#include "fe/nav/NavTypes.h"
 #include "fe/physics2d/PhysicsTypes.h"
 #include "fe/physics3d/Physics3DTypes.h"
 #include "fe/reflect/ComponentTypes.h"
@@ -24,6 +25,7 @@ void register_all_component_types() {
     reflect::register_skeletal_animation_types();
     reflect::register_physics_types();
     reflect::register_physics3d_types();
+    reflect::register_nav_types();
     reflect::register_scene3d_types();
     reflect::register_audio_types();
 }

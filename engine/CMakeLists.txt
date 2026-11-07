@@ -18,6 +18,8 @@
 #     module can be loaded — see ADR-0078)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
+#   core, scene, systems, physics2d, physics3d  <-  nav (navigation grids, A*,
+#     steering, and the agent systems; see ADR-0156)
 #   core  <-  physics (the shared, pure island graph; see ADR-0111)
 #   core, scene, systems, resources  <-  audio
 #   core, resources  <-  pack
@@ -171,6 +173,14 @@ set(FE_ENGINE_SOURCES
     src/physics3d/Physics3DQueries.cpp
     src/physics3d/Physics3DSystem.cpp
     src/physics3d/Physics3DTypes.cpp
+    src/nav/NavGrid2D.cpp
+    src/nav/NavGrid3D.cpp
+    src/nav/Path2D.cpp
+    src/nav/Path3D.cpp
+    src/nav/Steering.cpp
+    src/nav/NavTypes.cpp
+    src/nav/NavigationSystem2D.cpp
+    src/nav/NavigationSystem3D.cpp
     src/mesh/Mesh.cpp
     src/mesh/ObjLoader.cpp
     src/mesh/GltfLoader.cpp
