@@ -3,8 +3,20 @@
 #include <doctest/doctest.h>
 
 #include "fe/core/Math.h"
+#include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/FixedJoint3D.h"
 #include "fe/physics3d/Geometry3D.h"
 #include "fe/physics3d/JointSolver3D.h"
+#include "fe/physics3d/Physics3DSystem.h"
+#include "fe/physics3d/Physics3DTypes.h"
+#include "fe/physics3d/PrismaticJoint3D.h"
+#include "fe/physics3d/RigidBody3D.h"
+#include "fe/reflect/ComponentTypes.h"
+#include "fe/reflect/Registry.h"
+#include "fe/scene/Node.h"
+#include "fe/scene/Scene.h"
+#include "fe/serialization/SceneSerializer.h"
+#include "fe/systems/FrameContext.h"
 
 #include <cmath>
 
@@ -24,6 +36,30 @@ physics3d::JointBody3D joint_body(const Vec3& position, f32 inv_mass, f32 inv_in
 // number to assert a relative orientation against.
 f32 rotation_angle_between(const Quat& from, const Quat& to) {
     return physics3d::rotation_vector(from.conjugate() * to).length();
+}
+
+FrameContext step(f32 delta) {
+    FrameContext context;
+    context.delta_time = delta;
+    context.elapsed_time = static_cast<f64>(delta);
+    return context;
+}
+
+void run(physics3d::Physics3DSystem& system, Scene& scene, f32 delta, int steps) {
+    for (int i = 0; i < steps; ++i) {
+        system.update(step(delta), scene);
+    }
+}
+
+// A dynamic body with an explicit inertia and no collider, so a joint is the
+// only thing acting on it and its rotation is free to be driven.
+Node* add_bare_body(Scene& scene, const Vec3& position, f32 mass, f32 inertia) {
+    Node* node = scene.create_node("Body");
+    auto* body = node->add_component<physics3d::RigidBody3D>();
+    body->mass = mass;
+    body->inertia = inertia;
+    node->transform().position = position;
+    return node;
 }
 
 } // namespace
@@ -157,10 +193,16 @@ TEST_CASE("applying the fixed rows pulls a separated pair together and squares a
 
     physics3d::ConstraintRow3D rows[physics3d::kFixedJoint3DRows];
     REQUIRE(physics3d::build_fixed_rows(a, b, params, 1.0f / 60.0f, rows));
-    for (const auto& row : rows) {
-        physics3d::apply_row(row, a, b);
-        physics3d::apply_row_position(row, a, b);
-        physics3d::apply_row_orientation(row, a, b);
+    // The system's convention: rows 0-2 are translation and are corrected by
+    // apply_row_position (which also carries their lever-arm angular term); rows
+    // 3-5 are pure rotation and are corrected by apply_row_orientation.
+    for (usize i = 0; i < physics3d::kFixedJoint3DRows; ++i) {
+        physics3d::apply_row(rows[i], a, b);
+        if (i < physics3d::kRevoluteJoint3DRows) {
+            physics3d::apply_row_position(rows[i], a, b);
+        } else {
+            physics3d::apply_row_orientation(rows[i], a, b);
+        }
     }
 
     // The bodies moved together along x and the relative rotation shrank.
@@ -243,4 +285,158 @@ TEST_CASE("prismatic_world_axis rotates the local axis by the body orientation")
     // A quarter turn about +x takes +z to -y.
     CHECK(axis.y == doctest::Approx(-1.0f).epsilon(1e-3));
     CHECK(std::abs(axis.z) < 1e-3f);
+}
+
+// ---------------------------------------------------------------------------
+// System wiring: a fixed joint welds a body to a pivot, a prismatic joint lets
+// a body slide on one axis, and both round-trip through the serializer.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a fixed joint welds a dynamic body to a static pivot") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot");
+    pivot->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    // A body placed off the pivot with gravity on: the weld must hold it in
+    // place instead of letting it fall.
+    Node* body_node = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = body_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Weld");
+    auto* joint = host->add_component<physics3d::FixedJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = body_node->id();
+    // Weld the body's left end (1 unit from its centre) to the pivot, so the
+    // weld holds the body out at x = 1 rather than pulling its centre to the
+    // pivot.
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f};
+    joint->reference_relative = Quat::identity();
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    // The weld held the body at its authored offset: gravity could not pull it
+    // down, because the anchor is pinned to the static pivot.
+    CHECK(body_node->transform().position.x == doctest::Approx(1.0f).epsilon(0.1));
+    CHECK(std::abs(body_node->transform().position.y) < 0.1f);
+}
+
+TEST_CASE("a fixed joint squares a body that starts rotated against the reference") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot");
+
+    Node* body_node = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = body_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    // Starts twisted about y; the joint's reference is the identity, so it must
+    // turn the body back to a common orientation.
+    body_node->transform().rotation = Vec3{0.0f, 0.5f, 0.0f};
+
+    Node* host = scene.create_node("Weld");
+    auto* joint = host->add_component<physics3d::FixedJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = body_node->id();
+    joint->reference_relative = Quat::identity();
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 180);
+
+    // The relative rotation collapsed to (nearly) the identity.
+    CHECK(std::abs(body_node->transform().rotation.y) < 0.05f);
+}
+
+TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
+    Scene scene;
+    Node* rail = scene.create_node("Rail");
+    rail->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    // A body pushed along +x, off the slide axis (+z): the joint must hold the x
+    // separation at zero while leaving z free.
+    Node* slider_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = slider_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec3{2.0f, 0.0f, 2.0f}; // half along the axis, half across it
+
+    Node* host = scene.create_node("Slider");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider_node->id();
+    joint->axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->reference_relative = Quat::identity();
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+
+    CHECK(system.joint_count() == 1);
+    // The across-axis (x) motion was removed; the along-axis (z) motion was not.
+    CHECK(std::abs(slider_node->transform().position.x) < 0.1f);
+    CHECK(slider_node->transform().position.z > 1.0f);
+}
+
+TEST_CASE("a fixed joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Weld");
+    auto* joint = joint_node->add_component<physics3d::FixedJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->anchor_a = Vec3{0.1f, 0.2f, 0.3f};
+    joint->anchor_b = Vec3{-0.4f, 0.5f, -0.6f};
+    joint->reference_relative = Quat::from_axis_angle(Vec3{0.0f, 1.0f, 0.0f}, 0.5f);
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Weld");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics3d::FixedJoint3D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->body_a == a->id());
+    CHECK(loaded_component->body_b == b->id());
+    CHECK(loaded_component->anchor_a.y == doctest::Approx(0.2f));
+    CHECK(loaded_component->reference_relative.y == doctest::Approx(joint->reference_relative.y).epsilon(1e-4));
+}
+
+TEST_CASE("a prismatic joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Slider");
+    auto* joint = joint_node->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->anchor_a = Vec3{1.0f, 0.0f, 0.0f};
+    joint->axis = Vec3{0.0f, 1.0f, 0.0f};
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Slider");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics3d::PrismaticJoint3D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->body_a == a->id());
+    CHECK(loaded_component->body_b == b->id());
+    CHECK(loaded_component->axis.y == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the fixed and prismatic 3D joints are registered with reflection") {
+    reflect::register_physics3d_types();
+    CHECK(reflect::Registry::instance().contains("FixedJoint3D"));
+    CHECK(reflect::Registry::instance().contains("PrismaticJoint3D"));
 }

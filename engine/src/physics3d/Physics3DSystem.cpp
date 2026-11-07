@@ -4,7 +4,9 @@
 
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/DistanceJoint3D.h"
+#include "fe/physics3d/FixedJoint3D.h"
 #include "fe/physics3d/Geometry3D.h"
+#include "fe/physics3d/PrismaticJoint3D.h"
 #include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/scene/Node.h"
@@ -29,6 +31,18 @@ constexpr f32 kPenetrationSlop = 0.005f;
 
 [[nodiscard]] f32 clamp_unit(f32 value) noexcept {
     return std::clamp(value, 0.0f, 1.0f);
+}
+
+// Solves `count` translation rows: a velocity impulse plus a positional
+// correction along each row. Shared by the distance, revolute, fixed and
+// prismatic joints, whose first rows all remove translational error the same
+// way. A rotation-locked joint then solves its remaining rows with
+// `apply_row_orientation` instead.
+void apply_translation_rows(const ConstraintRow3D rows[], usize count, JointBody3D& a, JointBody3D& b) noexcept {
+    for (usize i = 0; i < count; ++i) {
+        apply_row(rows[i], a, b);
+        apply_row_position(rows[i], a, b);
+    }
 }
 
 // The velocity a body at offset `r` from its centre contributes from an angular
@@ -83,6 +97,32 @@ void store_joint_body(Node& node, const JointBody3D& joint) noexcept {
 
 } // namespace
 
+const Uuid& Physics3DSystem::Joint::body_a() const noexcept {
+    if (distance != nullptr) {
+        return distance->body_a;
+    }
+    if (revolute != nullptr) {
+        return revolute->body_a;
+    }
+    if (fixed != nullptr) {
+        return fixed->body_a;
+    }
+    return prismatic->body_a;
+}
+
+const Uuid& Physics3DSystem::Joint::body_b() const noexcept {
+    if (distance != nullptr) {
+        return distance->body_b;
+    }
+    if (revolute != nullptr) {
+        return revolute->body_b;
+    }
+    if (fixed != nullptr) {
+        return fixed->body_b;
+    }
+    return prismatic->body_b;
+}
+
 void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     contacts_ = 0;
     events_.clear();
@@ -108,10 +148,16 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
         // reference are resolved in solve_joints, after the whole scene is
         // indexed, so a joint may point forward to a node that appears later.
         if (auto* distance = node.get_component<DistanceJoint3D>(); distance != nullptr) {
-            joints_.push_back(Joint{distance, nullptr, nullptr, nullptr});
+            joints_.push_back(Joint{distance, nullptr, nullptr, nullptr, nullptr, nullptr});
         }
         if (auto* revolute = node.get_component<RevoluteJoint3D>(); revolute != nullptr) {
-            joints_.push_back(Joint{nullptr, revolute, nullptr, nullptr});
+            joints_.push_back(Joint{nullptr, revolute, nullptr, nullptr, nullptr, nullptr});
+        }
+        if (auto* fixed = node.get_component<FixedJoint3D>(); fixed != nullptr) {
+            joints_.push_back(Joint{nullptr, nullptr, fixed, nullptr, nullptr, nullptr});
+        }
+        if (auto* prismatic = node.get_component<PrismaticJoint3D>(); prismatic != nullptr) {
+            joints_.push_back(Joint{nullptr, nullptr, nullptr, prismatic, nullptr, nullptr});
         }
 
         auto* collider = node.get_component<Collider3D>();
@@ -511,8 +557,8 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
         // Resolve the two ends. A nil, missing, or self-referential reference is
         // a broken joint: skip it rather than constraining nothing or a body
         // against itself.
-        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
-        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
+        const Uuid& id_a = joint.body_a();
+        const Uuid& id_b = joint.body_b();
         if (id_a.is_nil() || id_b.is_nil() || id_a == id_b) {
             continue;
         }
@@ -563,7 +609,7 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             }
             apply_row(row.value(), body_a, body_b);
             apply_row_position(row.value(), body_a, body_b);
-        } else {
+        } else if (joint.revolute != nullptr) {
             RevoluteJoint3DParams params;
             params.anchor_a = joint.revolute->anchor_a;
             params.anchor_b = joint.revolute->anchor_b;
@@ -572,9 +618,39 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             if (auto built = build_revolute_rows(body_a, body_b, params, delta_time, rows); !built) {
                 continue; // unsolvable this step (both immovable)
             }
-            for (const ConstraintRow3D& row : rows) {
-                apply_row(row, body_a, body_b);
-                apply_row_position(row, body_a, body_b);
+            apply_translation_rows(rows, kRevoluteJoint3DRows, body_a, body_b);
+        } else if (joint.fixed != nullptr) {
+            FixedJoint3DParams params;
+            params.anchor_a = joint.fixed->anchor_a;
+            params.anchor_b = joint.fixed->anchor_b;
+            params.reference_relative = joint.fixed->reference_relative;
+
+            ConstraintRow3D rows[kFixedJoint3DRows];
+            if (auto built = build_fixed_rows(body_a, body_b, params, delta_time, rows); !built) {
+                continue;
+            }
+            // Rows 0-2 pin the anchors, rows 3-5 lock the rotation.
+            apply_translation_rows(rows, kRevoluteJoint3DRows, body_a, body_b);
+            for (usize i = kRevoluteJoint3DRows; i < kFixedJoint3DRows; ++i) {
+                apply_row(rows[i], body_a, body_b);
+                apply_row_orientation(rows[i], body_a, body_b);
+            }
+        } else {
+            PrismaticJoint3DParams params;
+            params.anchor_a = joint.prismatic->anchor_a;
+            params.anchor_b = joint.prismatic->anchor_b;
+            params.axis_a = joint.prismatic->axis;
+            params.reference_relative = joint.prismatic->reference_relative;
+
+            ConstraintRow3D rows[kPrismaticJoint3DRows];
+            if (auto built = build_prismatic_rows(body_a, body_b, params, delta_time, rows); !built) {
+                continue;
+            }
+            // Rows 0-1 remove perpendicular translation, rows 2-4 lock the rotation.
+            apply_translation_rows(rows, 2, body_a, body_b);
+            for (usize i = 2; i < kPrismaticJoint3DRows; ++i) {
+                apply_row(rows[i], body_a, body_b);
+                apply_row_orientation(rows[i], body_a, body_b);
             }
         }
 
@@ -635,8 +711,8 @@ void Physics3DSystem::build_islands() {
     // simulated body contributes no link, so a joint to an immovable pivot does
     // not join two islands.
     for (const Joint& joint : joints_) {
-        const Uuid& id_a = joint.distance != nullptr ? joint.distance->body_a : joint.revolute->body_a;
-        const Uuid& id_b = joint.distance != nullptr ? joint.distance->body_b : joint.revolute->body_b;
+        const Uuid& id_a = joint.body_a();
+        const Uuid& id_b = joint.body_b();
         const auto index_a = body_index_.find(id_a);
         const auto index_b = body_index_.find(id_b);
         if (index_a == body_index_.end() || index_b == body_index_.end()) {

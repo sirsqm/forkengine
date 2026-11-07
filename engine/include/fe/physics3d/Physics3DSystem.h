@@ -26,6 +26,8 @@ class Collider3D;
 class RigidBody3D;
 class DistanceJoint3D;
 class RevoluteJoint3D;
+class FixedJoint3D;
+class PrismaticJoint3D;
 
 // Whether a contact event reports a contact that has just appeared or one that
 // has just disappeared.
@@ -213,12 +215,20 @@ private:
 
     // One joint flattened out of the scene for the duration of the update. Both
     // ends are resolved after the whole scene is indexed, so a joint may point
-    // forward to a node that appears later.
+    // forward to a node that appears later. Exactly one of the typed pointers is
+    // non-null, naming the joint's kind.
     struct Joint {
         DistanceJoint3D* distance = nullptr;
         RevoluteJoint3D* revolute = nullptr;
+        FixedJoint3D* fixed = nullptr;
+        PrismaticJoint3D* prismatic = nullptr;
         Node* a = nullptr;
         Node* b = nullptr;
+
+        // The two body references, whichever kind this joint is. Kept here so the
+        // solve and island passes read the ids without re-branching on the kind.
+        [[nodiscard]] const Uuid& body_a() const noexcept;
+        [[nodiscard]] const Uuid& body_b() const noexcept;
     };
 
     // Solves every joint in the scene once, after the contact pass. Joints run

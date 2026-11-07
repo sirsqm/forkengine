@@ -4,6 +4,8 @@
 
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/DistanceJoint3D.h"
+#include "fe/physics3d/FixedJoint3D.h"
+#include "fe/physics3d/PrismaticJoint3D.h"
 #include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/reflect/PropertyBuilders.h"
@@ -170,6 +172,53 @@ void register_revolute_joint3d(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+// A quaternion property: a four-float group, the same shape make_vector_group
+// gives a Vec4, but named "Quat" and with the (x, y, z, w) member order a
+// rotation reads in. Quat is standard-layout with four floats, so the shared
+// vector-group builder already handles the storage.
+template <typename Class>
+Property make_quat_group(std::string name, Quat Class::* field) {
+    return make_vector_group<Class, Quat>(std::move(name), field, "Quat", {"x", "y", "z", "w"});
+}
+
+void register_fixed_joint3d(Registry& registry) {
+    physics3d::FixedJoint3D defaults;
+
+    TypeDesc desc;
+    desc.name = physics3d::FixedJoint3D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics3d::FixedJoint3D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics3d::FixedJoint3D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics3d::FixedJoint3D::body_b));
+    desc.properties.push_back(make_vector_group<physics3d::FixedJoint3D, Vec3>(
+        "anchor_a", &physics3d::FixedJoint3D::anchor_a, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::FixedJoint3D, Vec3>(
+        "anchor_b", &physics3d::FixedJoint3D::anchor_b, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_quat_group("reference_relative", &physics3d::FixedJoint3D::reference_relative));
+
+    registry.register_type(std::move(desc));
+}
+
+void register_prismatic_joint3d(Registry& registry) {
+    physics3d::PrismaticJoint3D defaults;
+
+    TypeDesc desc;
+    desc.name = physics3d::PrismaticJoint3D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<physics3d::PrismaticJoint3D>()); };
+
+    desc.properties.push_back(make_body_ref_property("body_a", &physics3d::PrismaticJoint3D::body_a));
+    desc.properties.push_back(make_body_ref_property("body_b", &physics3d::PrismaticJoint3D::body_b));
+    desc.properties.push_back(make_vector_group<physics3d::PrismaticJoint3D, Vec3>(
+        "anchor_a", &physics3d::PrismaticJoint3D::anchor_a, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::PrismaticJoint3D, Vec3>(
+        "anchor_b", &physics3d::PrismaticJoint3D::anchor_b, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_vector_group<physics3d::PrismaticJoint3D, Vec3>(
+        "axis", &physics3d::PrismaticJoint3D::axis, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_quat_group("reference_relative", &physics3d::PrismaticJoint3D::reference_relative));
+
+    registry.register_type(std::move(desc));
+}
+
 } // namespace
 
 void register_physics3d_types() {
@@ -178,6 +227,8 @@ void register_physics3d_types() {
     register_rigid_body3d(registry);
     register_distance_joint3d(registry);
     register_revolute_joint3d(registry);
+    register_fixed_joint3d(registry);
+    register_prismatic_joint3d(registry);
 }
 
 } // namespace fe::reflect
