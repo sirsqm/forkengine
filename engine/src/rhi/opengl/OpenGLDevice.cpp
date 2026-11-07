@@ -569,6 +569,9 @@ public:
         default_framebuffer_width_ = framebuffer_width;
         default_framebuffer_height_ = framebuffer_height;
         set_viewport(0, 0, framebuffer_width, framebuffer_height);
+        // A frame starts unscissored: a UI clip left enabled in the previous frame
+        // must not confine the first draw of this one.
+        set_scissor(ScissorRect{});
         glDisable(GL_DEPTH_TEST);
         glEnable(GL_BLEND);
         set_blend_mode(BlendMode::Alpha);
@@ -579,6 +582,11 @@ public:
     void end_frame() override { window_->swap_buffers(); }
 
     void bind_render_target(RenderTarget* target) override {
+        // A scissor is in framebuffer pixels and a new target is a new
+        // framebuffer, so any scissor left on belongs to the old one. Clearing it
+        // here (beside the viewport reset, for the same reason) keeps a clipped
+        // pass from confining the first draw of the next target.
+        set_scissor(ScissorRect{});
         if (target == nullptr) {
             // Restore the window. Resetting the viewport to the window's size
             // matters: a caller that renders into a small panel target and then
@@ -594,6 +602,13 @@ public:
     }
 
     [[nodiscard]] RenderTarget* bound_render_target() const noexcept override { return bound_target_; }
+
+    // The height of the framebuffer currently bound for drawing, which the
+    // top-left-origin scissor is flipped against. A render target's own height
+    // when one is bound, else the window's, tracked from begin_frame.
+    [[nodiscard]] u32 current_framebuffer_height() const noexcept {
+        return bound_target_ != nullptr ? bound_target_->height() : default_framebuffer_height_;
+    }
 
     void set_viewport(u32 x, u32 y, u32 width, u32 height) override {
         glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
@@ -625,6 +640,31 @@ public:
     }
 
     void set_primitive_topology(PrimitiveTopology topology) override { topology_ = topology; }
+
+    void set_scissor(const ScissorRect& scissor) override {
+        if (!scissor.enabled) {
+            // Only touch the GL state when it is actually on: the common path
+            // (every world pass) never enables the scissor test, so this is a
+            // no-op for it.
+            if (scissor_enabled_) {
+                glDisable(GL_SCISSOR_TEST);
+                scissor_enabled_ = false;
+            }
+            return;
+        }
+        // OpenGL's scissor origin is the bottom-left, so flip the top-left-origin
+        // rectangle against the current framebuffer's height. A rectangle below the
+        // framebuffer's bottom edge would underflow the unsigned subtraction, so it
+        // is clamped to an empty box at the bottom instead.
+        const u32 framebuffer_height = current_framebuffer_height();
+        const u32 y =
+            scissor.y + scissor.height > framebuffer_height ? 0 : framebuffer_height - (scissor.y + scissor.height);
+        const u32 height = scissor.y + scissor.height > framebuffer_height ? 0 : scissor.height;
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(static_cast<GLint>(scissor.x), static_cast<GLint>(y), static_cast<GLsizei>(scissor.width),
+                  static_cast<GLsizei>(height));
+        scissor_enabled_ = true;
+    }
 
     void bind_shader(Shader& shader) override {
         auto& gl_shader = static_cast<OpenGLShader&>(shader);
@@ -767,6 +807,9 @@ private:
     u32 default_framebuffer_width_ = 0;
     u32 default_framebuffer_height_ = 0;
     PrimitiveTopology topology_ = PrimitiveTopology::Triangles;
+    // Whether GL_SCISSOR_TEST is currently enabled, so a pass that never clips
+    // does not pay a redundant glEnable/glDisable per draw.
+    bool scissor_enabled_ = false;
     // Which attribute locations are currently enabled on the single VAO. Tracked
     // so bind_vertex_buffer can disable the ones a previous pass enabled that the
     // new layout does not use -- an instanced pass leaves its per-instance

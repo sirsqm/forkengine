@@ -194,6 +194,7 @@ public:
     void set_blend_mode(rhi::BlendMode) override {}
     void set_depth_test(bool) override {}
     void set_primitive_topology(rhi::PrimitiveTopology) override {}
+    void set_scissor(const rhi::ScissorRect&) override {}
     void bind_shader(rhi::Shader&) override {}
     void bind_vertex_buffer(rhi::Buffer&) override {}
     void bind_index_buffer(rhi::Buffer&) override {}

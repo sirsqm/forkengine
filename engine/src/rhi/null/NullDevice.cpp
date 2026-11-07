@@ -166,6 +166,11 @@ public:
     void set_blend_mode(BlendMode) override {}
     void set_depth_test(bool) override {}
     void set_primitive_topology(PrimitiveTopology) override {}
+
+    // The null device rasterises nothing, so there is no scissor state to set; the
+    // clip a caller asks for is carried in the extracted instances, which is what a
+    // test without a GL context observes.
+    void set_scissor(const ScissorRect&) override {}
     void bind_shader(Shader&) override {}
     void bind_vertex_buffer(Buffer&) override {}
     void bind_index_buffer(Buffer&) override {}

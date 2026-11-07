@@ -86,6 +86,15 @@ public:
     // it is the caller's job to set it back.
     virtual void set_primitive_topology(PrimitiveTopology topology) = 0;
 
+    // Confines subsequent draws to `scissor`, in framebuffer pixels (top-left
+    // origin, +Y down; see ScissorRect). A disabled scissor restores the whole
+    // framebuffer, so a pass that never clips never calls this and a pass that
+    // does must set it back before the next one. This is what draws a clipped UI
+    // panel's contents: the layout culls what is entirely outside, and the
+    // scissor cuts what is only partly inside. State, not a draw parameter, so it
+    // sits with the other state calls above.
+    virtual void set_scissor(const ScissorRect& scissor) = 0;
+
     // --- Binding and drawing ----------------------------------------------
     virtual void bind_shader(Shader& shader) = 0;
     virtual void bind_vertex_buffer(Buffer& buffer) = 0;

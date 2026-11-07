@@ -254,6 +254,22 @@ enum class BlendMode : u8 {
     Additive, // Additive: src.rgb * src.a + dst.rgb
 };
 
+// A rectangle a draw is confined to, in framebuffer pixels with the origin at
+// the *top-left* and +Y down -- the same space `ui::Rect` uses, so a UI clip
+// rectangle travels to the device without a flip the caller has to remember.
+//
+// `enabled` false means "no scissor": the draw is confined to the whole
+// framebuffer, which is the state every pass but a clipping UI panel wants, and
+// the default. A backend converts the origin to its own convention internally
+// (OpenGL's scissor is bottom-left), so nothing above the RHI has to.
+struct ScissorRect {
+    u32 x = 0;
+    u32 y = 0;
+    u32 width = 0;
+    u32 height = 0;
+    bool enabled = false;
+};
+
 enum class TextureFilter : u8 {
     Nearest,
     Linear,
