@@ -124,6 +124,17 @@ A module nothing schedules is not shipped, so both nav systems are wired in:
 Both systems are no-ops on a scene with no agent of their dimension, so neither
 caller has to know which kind of level it is about to run.
 
+### The shipped example walks the whole path
+
+`examples/game3d_project` carries a `Guard` — a `NavAgent3D` with a
+`PatrolRoute3D` and four `Waypoint` nodes — so the feature is exercised on the
+project a player actually runs, not only in a unit test. A test loads that scene
+through the real `ScriptBinding`/`ScriptHost` and the real schedule (scripts then
+`NavigationSystem3D`) and fails unless the guard leaves its spawn and reaches at
+least two waypoints, so a scene that names a behaviour the build does not
+provide, or a route that does not resolve, fails at the source rather than in a
+browser.
+
 ### The debug overlay draws the grid and the path
 
 `debugdraw` gains `append_nav_grid_2d`/`_3d` (the blocked cells, so a designer

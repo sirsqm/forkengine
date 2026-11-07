@@ -23,16 +23,26 @@
 #include "fe/nav/Steering.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics3d/Collider3D.h"
+#include "fe/player/BuiltinBehaviours.h"
 #include "fe/player/NavBehaviours.h"
 #include "fe/reflect/Registry.h"
+#include "fe/runtime/ComponentRegistration.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Tilemap.h"
+#include "fe/script/ScriptBinding.h"
 #include "fe/script/ScriptHost.h"
+#include "fe/script/ScriptRegistry.h"
+#include "fe/script/ScriptSystem.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/FrameContext.h"
+#include "fe/systems/SceneSchedule.h"
 
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -912,4 +922,86 @@ TEST_CASE("ChaseTarget3D and NavigationSystem3D together move an agent to its ta
     const f32 end_distance = (player.transform().position - enemy.transform().position).length();
     CHECK(end_distance < start_distance); // it closed the gap
     CHECK(end_distance <= doctest::Approx(agent->arrive_radius + 0.2f));
+}
+
+// ---------------------------------------------------------------------------
+// The shipped 3D demo: its guard actually patrols through the real scene load.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    REQUIRE_MESSAGE(in.good(), "cannot open " << path.string());
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
+}
+
+} // namespace
+
+TEST_CASE("the shipped 3D demo's guard patrols its route through the real load path") {
+    // The whole feature end to end, on the project a player actually runs: the
+    // scene file carries a `NavAgent3D` and a `PatrolRoute3D`, it is loaded
+    // through the real `ScriptBinding` and `ScriptHost`, and the same schedule a
+    // shipped build runs (scripts, then the nav system) must walk the guard
+    // between its waypoints. A scene that names a behaviour the build does not
+    // provide, or a route that does not resolve, fails here rather than in a
+    // browser.
+    runtime::register_all_component_types();
+
+    const std::filesystem::path scene_path =
+        std::filesystem::path(FE_SOURCE_DIR) / "examples" / "game3d_project" / "scenes" / "main3d.fescene";
+
+    ScriptRegistry registry;
+    player::register_builtin_behaviours(registry);
+    ScriptHost host;
+    script::ScriptBinding binding(host, registry);
+
+    Scene scene;
+    REQUIRE_FALSE(serialization::scene::from_json(read_text(scene_path), scene, nullptr, &binding));
+    REQUIRE(host.script_count() >= 1);
+
+    Node* guard = scene.find_node_by_name("Guard");
+    REQUIRE(guard != nullptr);
+    const auto* agent = guard->get_component<nav::NavAgent3D>();
+    REQUIRE(agent != nullptr);
+
+    SceneSchedule schedule;
+    schedule.add_system<ScriptSystem>(host);
+    schedule.add_system<nav::NavigationSystem3D>();
+
+    FrameContext context;
+    context.delta_time = 1.0f / 60.0f;
+
+    // Collect the waypoint positions in route order so the test can count how
+    // many the guard actually reaches.
+    std::vector<Vec3> waypoints;
+    for (int i = 1; i <= 4; ++i) {
+        const Node* node = scene.find_node_by_name("Waypoint" + std::to_string(i));
+        REQUIRE(node != nullptr);
+        waypoints.push_back(node->transform().position);
+    }
+
+    const Vec3 start = guard->transform().position;
+    std::vector<bool> visited(waypoints.size(), false);
+    bool moved = false;
+    for (int frame = 0; frame < 20000; ++frame) {
+        schedule.update(context, scene);
+        const Vec3 position = guard->transform().position;
+        if ((position - start).length() > 1.0f) {
+            moved = true;
+        }
+        for (usize i = 0; i < waypoints.size(); ++i) {
+            if ((position - waypoints[i]).length() <= agent->arrive_radius + 0.3f) {
+                visited[i] = true;
+            }
+        }
+    }
+
+    // It left its spawn, and it walked at least two posts: one would prove only
+    // the first goal, two prove the route advances to the next waypoint.
+    CHECK(moved);
+    const usize reached = static_cast<usize>(std::count(visited.begin(), visited.end(), true));
+    CHECK(reached >= 2);
 }

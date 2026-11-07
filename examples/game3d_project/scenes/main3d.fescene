@@ -841,6 +841,69 @@
       ]
     },
     {
+      "name": "Guard",
+      "type": "Node",
+      "transform": {
+        "position": [
+          0.0,
+          1.5,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "components": [
+        {
+          "type": "MeshRenderer3D",
+          "base_color": [
+            0.35,
+            0.85,
+            0.4
+          ],
+          "specular": 0.4,
+          "mesh": "obj:assets/meshes/sphere.obj",
+          "texture": ""
+        },
+        {
+          "type": "NavAgent3D",
+          "goal_node": "00000000-0000-0000-0000-000000000000",
+          "goal": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "has_goal": false,
+          "auto_move": true,
+          "speed": 3.0,
+          "acceleration": 20.0,
+          "waypoint_radius": 0.5,
+          "arrive_radius": 0.5,
+          "separation_weight": 0.5,
+          "avoidance_weight": 0.5,
+          "separation_radius": 2.0,
+          "avoidance_radius": 2.0
+        }
+      ],
+      "scripts": [
+        {
+          "behaviour": "PatrolRoute3D",
+          "properties": {
+            "waypoints": "Waypoint1, Waypoint2, Waypoint3, Waypoint4",
+            "wait_time": 1.5,
+            "loop": true
+          }
+        }
+      ]
+    },
+    {
       "name": "Spinner",
       "type": "Node",
       "transform": {
@@ -884,6 +947,90 @@
           }
         }
       ]
+    },
+    {
+      "name": "Waypoint1",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -6.0,
+          1.5,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "Waypoint2",
+      "type": "Node",
+      "transform": {
+        "position": [
+          6.0,
+          1.5,
+          6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "Waypoint3",
+      "type": "Node",
+      "transform": {
+        "position": [
+          6.0,
+          1.5,
+          -6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "Waypoint4",
+      "type": "Node",
+      "transform": {
+        "position": [
+          -6.0,
+          1.5,
+          -6.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
     }
   ]
 }

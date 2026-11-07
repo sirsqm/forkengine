@@ -32,6 +32,15 @@ scenes/main3d.fescene  the scene: a character, a follow camera, a course, props
   makes it the asset that proves a pruned pack follows a container's own
   references, which is why the web acceptance test exports this project
   (`tests/web/run_web_game.sh`, [ADR-0088](../../docs/adr/0088-transitive-pack-references.md)).
+- **Guard and its four Waypoints** — a `NavAgent3D` driven by a `PatrolRoute3D`,
+  walking a square route of named waypoint nodes and pausing at each. It is the
+  shipped example of the navigation half of
+  [ADR-0156](../../docs/adr/0156-navigation-and-ai.md): the voxel nav grid is
+  derived from the same colliders the player collides with, so the guard walks
+  around the arena's walls and props without a hand-authored navmesh, and the
+  route is a comma-separated list of node names a designer edits in the
+  inspector. The player schedules the `NavigationSystem3D` for the scene because
+  it carries an agent, so a shipped build runs the guard with no extra wiring.
 
 The Player's body has `affected_by_gravity` off and `fixed_rotation` on: the
 controller owns the vertical axis and the facing, and the solver owns everything
