@@ -610,6 +610,11 @@ and `activated` onto the same `UiInteraction` the pointer path writes
 moves focus to the geometrically next element and that a confirm activates it,
 and that a disabled or non-focusable element is not a focus stop.
 
+Landed as `UiFocusSystem` (geometry-scored direction navigation, a held-direction
+repeat cadence, and a confirm that writes `activated`) plus `UiElement::focusable`
+and the `focused`/`activated` fields on `UiInteraction`
+([ADR-0145](adr/0145-ui-focus-navigation.md)).
+
 ### `collision-filtering-and-triggers`
 
 Every collider collides with every other collider, so a game cannot say "these
