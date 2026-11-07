@@ -610,6 +610,10 @@ public:
         return bound_target_ != nullptr ? bound_target_->height() : default_framebuffer_height_;
     }
 
+    [[nodiscard]] u32 current_framebuffer_width() const noexcept {
+        return bound_target_ != nullptr ? bound_target_->width() : default_framebuffer_width_;
+    }
+
     void set_viewport(u32 x, u32 y, u32 width, u32 height) override {
         glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
                    static_cast<GLsizei>(height));
@@ -652,16 +656,26 @@ public:
             }
             return;
         }
-        // OpenGL's scissor origin is the bottom-left, so flip the top-left-origin
-        // rectangle against the current framebuffer's height. A rectangle below the
-        // framebuffer's bottom edge would underflow the unsigned subtraction, so it
-        // is clamped to an empty box at the bottom instead.
+
+        // OpenGL's scissor origin is the bottom-left, so the top-left-origin
+        // rectangle is flipped against the current framebuffer's height. A
+        // rectangle that runs past the framebuffer's right or bottom edge is
+        // clamped to the edge (glScissor accepts an oversized box, but clamping
+        // keeps the numbers the state we mean); one entirely outside becomes an
+        // empty box at the nearest edge, because the width/height are unsigned and
+        // must never wrap.
+        const u32 framebuffer_width = current_framebuffer_width();
         const u32 framebuffer_height = current_framebuffer_height();
-        const u32 y =
-            scissor.y + scissor.height > framebuffer_height ? 0 : framebuffer_height - (scissor.y + scissor.height);
-        const u32 height = scissor.y + scissor.height > framebuffer_height ? 0 : scissor.height;
+        const u32 x = scissor.x < framebuffer_width ? scissor.x : framebuffer_width;
+        const u32 width = scissor.width < framebuffer_width - x ? scissor.width : framebuffer_width - x;
+        const u64 bottom = static_cast<u64>(scissor.y) + scissor.height; // u64 so a huge height cannot wrap.
+        const u32 y = bottom <= framebuffer_height ? framebuffer_height - static_cast<u32>(bottom) : 0;
+        const u32 height = bottom <= framebuffer_height
+                               ? scissor.height
+                               : (scissor.y < framebuffer_height ? framebuffer_height - scissor.y : 0);
+
         glEnable(GL_SCISSOR_TEST);
-        glScissor(static_cast<GLint>(scissor.x), static_cast<GLint>(y), static_cast<GLsizei>(scissor.width),
+        glScissor(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width),
                   static_cast<GLsizei>(height));
         scissor_enabled_ = true;
     }

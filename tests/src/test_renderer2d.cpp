@@ -691,3 +691,38 @@ TEST_CASE("without clipping the same overflowing child paints the whole frame") 
     CHECK(below.r > 200);
     CHECK(below.g < 60);
 }
+
+TEST_CASE("a clip that runs past the framebuffer edge still paints inside it") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // A panel taller than the frame: its clip rectangle runs past the bottom edge,
+    // so the backend has to clamp rather than treat the whole scissor as empty. A
+    // zeroed scissor here would paint nothing, which is the bug this pins down.
+    Scene scene;
+    Node* canvas_node = scene.create_node("Canvas");
+    auto* canvas = canvas_node->add_component<ui::UiCanvas>();
+    canvas->design_width = 64.0f;
+    canvas->design_height = 64.0f;
+
+    Node* panel_node = canvas_node->create_child<Node>("Panel");
+    auto* panel = panel_node->add_component<ui::UiElement>();
+    panel->width = ui::UiSize::fixed(64.0f);
+    panel->height = ui::UiSize::fixed(128.0f); // Twice the frame.
+    panel->anchor = ui::UiAnchor::TopLeft;
+    panel->clip = true;
+
+    Node* child_node = panel_node->create_child<Node>("Child");
+    auto* child = child_node->add_component<ui::UiElement>();
+    child->width = ui::UiSize::fixed(64.0f);
+    child->height = ui::UiSize::fixed(128.0f);
+    child->anchor = ui::UiAnchor::TopLeft;
+    child->fill = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // Red.
+
+    const Pixel inside = render_ui_and_sample(context, scene, 64, 64, 32, 32);
+    CHECK(inside.r > 200);
+    CHECK(inside.g < 60);
+}
