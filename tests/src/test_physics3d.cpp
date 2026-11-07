@@ -1089,3 +1089,46 @@ TEST_CASE("a slow body against a wall is resolved by the discrete pass, not the 
     CHECK(box_node->transform().position.x > 3.5f);
     CHECK_FALSE(any_sweep);
 }
+
+// ---------------------------------------------------------------------------
+// Restitution threshold in 3D: a barely-approaching pair does not bounce, so a
+// bouncy body comes to rest instead of buzzing; a real impact still bounces.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a perfectly bouncy 3D body resting on the floor settles instead of buzzing") {
+    Scene scene;
+    add_floor(scene, 20.0f); // top face at y = 0
+    Node* node = add_dynamic_box(scene, Vec3{0.0f, 0.5f, 0.0f}, 0.5f, 1.0f);
+    node->get_component<physics3d::Collider3D>()->restitution = 1.0f;
+    node->get_component<physics3d::RigidBody3D>()->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    f32 peak_speed = 0.0f;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        peak_speed = std::max(peak_speed, std::abs(body->velocity.y));
+    }
+
+    CHECK(peak_speed < 0.05f);
+}
+
+TEST_CASE("a real 3D impact still bounces with restitution") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* node = add_dynamic_box(scene, Vec3{0.0f, 4.0f, 0.0f}, 0.5f, 1.0f);
+    node->get_component<physics3d::Collider3D>()->restitution = 1.0f;
+
+    physics3d::Physics3DSystem system;
+    bool bounced = false;
+    for (int i = 0; i < 300 && !bounced; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        if (node->get_component<physics3d::RigidBody3D>()->velocity.y > 2.0f) {
+            bounced = true;
+        }
+    }
+    CHECK(bounced);
+}

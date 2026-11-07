@@ -110,6 +110,15 @@ public:
     // supports and is cheap; it is a tunable, not a constant.
     u32 iterations = 4;
 
+    // Relative approach speed below which restitution is not applied, in world
+    // units per second. A bouncy body landing at any speed would otherwise
+    // rebound a hair on every step, because the solver always leaves a small
+    // normal speed after gravity is re-applied; the pile then vibrates forever.
+    // Suppressing restitution under this speed is what lets a bouncy ball come
+    // to rest instead of buzzing, and it does not affect a real impact, which
+    // arrives far faster. The standard fix, and Box2D's rule.
+    f32 restitution_threshold = 1.0f;
+
     // Contacts found in the most recent update. Exposed for tests and the
     // editor's debug overlay.
     [[nodiscard]] usize contact_count() const noexcept { return contacts_; }

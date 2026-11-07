@@ -522,8 +522,11 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
 
             // Restitution of the pair is the larger of the two, which is the
             // conventional choice and keeps a bouncy ball bouncy against a dead
-            // floor.
-            const f32 restitution = std::max(a.restitution, b.restitution);
+            // floor. It is suppressed below the threshold speed: a body that is
+            // barely approaching (a resting pile, re-approaching by the gravity
+            // re-applied each step) must not bounce a hair forever.
+            const f32 restitution =
+                -normal_speed > restitution_threshold ? std::max(a.restitution, b.restitution) : 0.0f;
             const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / effective_mass;
             const Vec3 impulse = contact.normal * impulse_magnitude;
 

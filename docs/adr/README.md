@@ -143,6 +143,7 @@ rather than editing it.
 | [0135](0135-joint-reactions-and-breaking.md) | Joint reactions and breaking: a joint reports the force it carries and snaps past a threshold | Accepted |
 | [0136](0136-per-step-force-accumulator.md) | A per-step force and torque accumulator on a rigid body | Accepted |
 | [0137](0137-impulse-api.md) | An impulse API on a rigid body: a one-shot velocity change, at the centre or off it | Accepted |
+| [0138](0138-restitution-velocity-threshold.md) | A restitution velocity threshold: a barely-approaching pair does not bounce | Accepted |
 
 ## Format
 

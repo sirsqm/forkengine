@@ -3079,3 +3079,55 @@ TEST_CASE("a 2D impulse on a static body is ignored") {
     body->apply_impulse(Vec2{100.0f, 0.0f});
     CHECK(body->velocity.x == doctest::Approx(0.0f));
 }
+
+// ---------------------------------------------------------------------------
+// Restitution threshold: a barely-approaching pair does not bounce, so a bouncy
+// body comes to rest instead of buzzing; a real impact still bounces.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a perfectly bouncy 2D body resting on the floor settles instead of buzzing") {
+    Scene scene;
+    add_floor(scene, 20.0f); // top face at y = 0
+    // Placed resting on the floor: half a unit up, so its bottom face is at y=0.
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.5f}, 0.5f, 1.0f);
+    node->get_component<physics2d::Collider2D>()->restitution = 1.0f;
+    // Sleeping would zero the velocity and hide the buzz this test is about.
+    node->get_component<physics2d::RigidBody2D>()->can_sleep = false;
+
+    physics2d::Physics2DSystem system;
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    // Let it settle, then watch the peak speed over a window: a buzz is a
+    // periodic spike, so a single sample can land on the zero phase by luck.
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    f32 peak_speed = 0.0f;
+    for (int i = 0; i < 120; ++i) { // two seconds of observation
+        system.update(step(1.0f / 60.0f), scene);
+        peak_speed = std::max(peak_speed, std::abs(body->velocity.y));
+    }
+
+    // Gravity re-applied each step drives the body back into the floor at
+    // gravity * dt ~ 0.16 m/s. Without the threshold, restitution 1.0 bounces
+    // that back every step and the body buzzes forever at that speed; with it,
+    // the approach is under the threshold and the body comes to rest.
+    CHECK(peak_speed < 0.05f);
+}
+
+TEST_CASE("a real 2D impact still bounces with restitution") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 4.0f}, 0.5f, 1.0f);
+    node->get_component<physics2d::Collider2D>()->restitution = 1.0f;
+
+    physics2d::Physics2DSystem system;
+    // Fall for a while, then look for an upward rebound after the impact.
+    bool bounced = false;
+    for (int i = 0; i < 300 && !bounced; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        if (node->get_component<physics2d::RigidBody2D>()->velocity.y > 2.0f) {
+            bounced = true;
+        }
+    }
+    CHECK(bounced);
+}
