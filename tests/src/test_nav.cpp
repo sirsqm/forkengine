@@ -11,6 +11,7 @@
 
 #include <doctest/doctest.h>
 
+#include "fe/debugdraw/DebugDraw.h"
 #include "fe/nav/NavAgent.h"
 #include "fe/nav/NavGrid2D.h"
 #include "fe/nav/NavGrid3D.h"
@@ -610,4 +611,54 @@ TEST_CASE("the nav agent types are registered with reflection") {
     CHECK_FALSE(agent->has_goal);
     CHECK(agent->auto_move);
     CHECK(agent->speed == doctest::Approx(3.0f));
+}
+
+// ---------------------------------------------------------------------------
+// The debug overlay.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the nav debug overlay draws blocked cells and leaves walkable ones out") {
+    TestMap test(4, 3);
+    test.open_all();
+    test.set_solid(1, 0, true);
+    test.set_solid(3, 2, true);
+    const NavGrid2D grid = nav::build_nav_grid_2d(test.scene, *test.node, *test.map);
+
+    debugdraw::DebugDrawList list;
+    const usize cells = debugdraw::append_nav_grid_2d(grid, list);
+    CHECK(cells == 2);
+    // A box is 12 edges, so two blocked cells is 24 lines.
+    CHECK(list.size() == 24);
+}
+
+TEST_CASE("the nav debug overlay draws an agent's remaining path") {
+    TestMap test(6, 6);
+    test.open_all();
+    Node* agent_node = test.scene.create_node("Enemy");
+    auto* agent = agent_node->add_component<nav::NavAgent2D>();
+    agent->waypoints = {Vec2{1.0f, -1.0f}, Vec2{2.0f, -2.0f}, Vec2{3.0f, -3.0f}};
+    agent->next_waypoint = 1;
+    agent_node->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    debugdraw::DebugDrawList list;
+    const usize segments = debugdraw::append_nav_paths_2d(test.scene, list);
+    // From the node position through the two remaining waypoints: two segments.
+    CHECK(segments == 2);
+    CHECK(list.size() == 2);
+}
+
+TEST_CASE("the 3D nav debug overlay draws blocked voxels") {
+    Scene scene;
+    Node* wall = scene.create_node("Wall");
+    auto* collider = wall->add_component<physics3d::Collider3D>();
+    collider->shape = physics3d::ShapeType3D::Box;
+    collider->half_extent = Vec3{0.5f, 0.5f, 0.5f};
+    wall->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    const NavGrid3D grid = nav::build_nav_grid_3d(scene, 1.0f);
+    REQUIRE_FALSE(grid.empty());
+    debugdraw::DebugDrawList list;
+    const usize voxels = debugdraw::append_nav_grid_3d(grid, list);
+    CHECK(voxels > 0);
+    CHECK(list.size() == voxels * 12);
 }

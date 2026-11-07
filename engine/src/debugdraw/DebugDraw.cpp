@@ -3,6 +3,7 @@
 #include "fe/debugdraw/DebugDraw.h"
 
 #include "fe/core/Log.h"
+#include "fe/nav/NavAgent.h"
 #include "fe/physics2d/Collider2D.h"
 #include "fe/physics2d/Physics2DQueries.h"
 #include "fe/physics2d/RigidBody2D.h"
@@ -295,6 +296,91 @@ usize append_tilemap_wireframes_2d(const Scene& scene, DebugDrawList& out) {
         out.add_line(Vec3{p3.x, p3.y, 0.0f}, Vec3{p0.x, p0.y, 0.0f}, color);
     }
     return tiles.size();
+}
+
+usize append_nav_grid_2d(const nav::NavGrid2D& grid, DebugDrawList& out) {
+    if (grid.empty()) {
+        return 0;
+    }
+    const Vec4 color = nav_blocked_color();
+    const f32 half = grid.cell_size() * 0.5f;
+    usize drawn = 0;
+    for (u32 y = 0; y < grid.height(); ++y) {
+        for (u32 x = 0; x < grid.width(); ++x) {
+            if (grid.walkable(static_cast<i32>(x), static_cast<i32>(y))) {
+                continue;
+            }
+            const Vec2 center = grid.cell_center(static_cast<i32>(x), static_cast<i32>(y));
+            // A flat box on the z = 0 plane, so a top-down 2D view reads it as a
+            // filled cell rather than an upright one.
+            out.add_box(Vec3{center.x, center.y, 0.0f}, Vec3{half, half, 0.0f}, color);
+            ++drawn;
+        }
+    }
+    return drawn;
+}
+
+usize append_nav_paths_2d(const Scene& scene, DebugDrawList& out) {
+    const Vec4 color = nav_path_color();
+    usize segments = 0;
+    scene.for_each_node([&](const Node& node) {
+        const auto* agent = node.get_component<nav::NavAgent2D>();
+        if (agent == nullptr || agent->waypoints.empty()) {
+            return;
+        }
+        // Draw from the agent's node position through every remaining waypoint,
+        // so the polyline shows where it is going, not only where it planned.
+        const Vec3 world = world_center_of(node);
+        Vec2 previous{world.x, world.y};
+        for (usize i = agent->next_waypoint; i < agent->waypoints.size(); ++i) {
+            const Vec2& point = agent->waypoints[i];
+            out.add_line(Vec3{previous.x, previous.y, 0.0f}, Vec3{point.x, point.y, 0.0f}, color);
+            previous = point;
+            ++segments;
+        }
+    });
+    return segments;
+}
+
+usize append_nav_grid_3d(const nav::NavGrid3D& grid, DebugDrawList& out) {
+    if (grid.empty()) {
+        return 0;
+    }
+    const Vec4 color = nav_blocked_color();
+    const f32 half = grid.cell_size() * 0.5f;
+    const Vec3 half_extent{half, half, half};
+    usize drawn = 0;
+    for (u32 z = 0; z < grid.depth(); ++z) {
+        for (u32 y = 0; y < grid.height(); ++y) {
+            for (u32 x = 0; x < grid.width(); ++x) {
+                if (grid.walkable(static_cast<i32>(x), static_cast<i32>(y), static_cast<i32>(z))) {
+                    continue;
+                }
+                out.add_box(grid.cell_center(static_cast<i32>(x), static_cast<i32>(y), static_cast<i32>(z)),
+                            half_extent, color);
+                ++drawn;
+            }
+        }
+    }
+    return drawn;
+}
+
+usize append_nav_paths_3d(const Scene& scene, DebugDrawList& out) {
+    const Vec4 color = nav_path_color();
+    usize segments = 0;
+    scene.for_each_node([&](const Node& node) {
+        const auto* agent = node.get_component<nav::NavAgent3D>();
+        if (agent == nullptr || agent->waypoints.empty()) {
+            return;
+        }
+        Vec3 previous = world_center_of(node);
+        for (usize i = agent->next_waypoint; i < agent->waypoints.size(); ++i) {
+            out.add_line(previous, agent->waypoints[i], color);
+            previous = agent->waypoints[i];
+            ++segments;
+        }
+    });
+    return segments;
 }
 
 } // namespace fe::debugdraw

@@ -5,6 +5,8 @@
 #include "fe/core/Error.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
+#include "fe/nav/NavGrid2D.h"
+#include "fe/nav/NavGrid3D.h"
 #include "fe/rhi/Resources.h"
 
 #include <vector>
@@ -136,6 +138,32 @@ usize append_collider_wireframes_2d(const Scene& scene, DebugDrawList& out);
 // `Collider2D` of its own, so it would otherwise be invisible to the debug
 // overlay even though the solver collides it. Returns the number of cells drawn.
 usize append_tilemap_wireframes_2d(const Scene& scene, DebugDrawList& out);
+
+// The colour the nav-grid overlay uses for a blocked cell. A walkable cell is
+// left undrawn, so the overlay reads as "where can an agent not go", which is
+// what a designer is looking for.
+[[nodiscard]] constexpr Vec4 nav_blocked_color() noexcept {
+    return Vec4{0.90f, 0.30f, 0.30f, 0.55f};
+}
+
+// The colour an agent's current path is drawn in.
+[[nodiscard]] constexpr Vec4 nav_path_color() noexcept {
+    return Vec4{0.30f, 0.75f, 1.0f, 1.0f};
+}
+
+// Appends the blocked cells of a 2D nav grid as boxes on the z = 0 plane, so a
+// designer can see the grid an agent walks. Returns the number of cells drawn.
+usize append_nav_grid_2d(const nav::NavGrid2D& grid, DebugDrawList& out);
+
+// Appends the path of every `NavAgent2D` in `scene` as a polyline at z = 0,
+// starting from the agent's node position. Returns the number of segments drawn.
+usize append_nav_paths_2d(const Scene& scene, DebugDrawList& out);
+
+// The 3D counterpart of append_nav_grid_2d: a wire box for every blocked voxel.
+usize append_nav_grid_3d(const nav::NavGrid3D& grid, DebugDrawList& out);
+
+// Appends the path of every `NavAgent3D` in `scene` as a 3D polyline.
+usize append_nav_paths_3d(const Scene& scene, DebugDrawList& out);
 
 } // namespace debugdraw
 } // namespace fe
