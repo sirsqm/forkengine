@@ -974,6 +974,18 @@ clipped, so a menu overflows its frame.
 a scroll value, with a test proving a child outside the rect is culled and one
 inside is offset by exactly the scroll amount.
 
+Landed as a clip on the container plus a scissor on the RHI
+([ADR-0132](adr/0132-ui-clipping-and-scrolling.md)). `UiElement` gained `clip`
+and `scroll`; the layout walk carries a design-space clip region down the tree,
+culls a wholly-outside child with its subtree, shifts a clipping container's
+children by `-scroll`, and records the region on each resolved element. `hit_test`
+consults that region, so a partly-scrolled element is hittable only where it is
+visible. `rhi::ScissorRect` and `Device::set_scissor` are new, `SpriteInstance`
+carries the clip per instance, and `Renderer2D` splits a batch when the clip
+changes and scissors each. Tests prove the cull, the exact scroll offset, the
+nested-clip intersection, the batch split, and — under a real GL context — that
+the scissor actually cuts a pixel the unclipped control paints.
+
 ---
 ## Backlog — not yet ordered
 
