@@ -172,6 +172,21 @@ public:
         wake();
     }
 
+    // Adds a force in newtons acting at an offset from the body's centre for
+    // this step. The off-centre part also produces a torque: the lever arm from
+    // the centre of mass to the application point gives
+    // `offset.x * value.y - offset.y * value.x` newton-metres about the Z axis,
+    // added to the per-step applied torque. `offset` is in the body's frame,
+    // measured from the centre of mass (the node origin), the same convention as
+    // `apply_impulse_at_offset`; a force through the centre (`offset` zero) is
+    // exactly `add_force`. A body with infinite mass or inertia ignores the part
+    // it cannot take.
+    void add_force_at_offset(const Vec2& value, const Vec2& offset) noexcept {
+        force += value;
+        applied_torque += offset.x * value.y - offset.y * value.x;
+        wake();
+    }
+
     // Adds a torque in newton-metres about the Z axis for this step, and wakes
     // the body. Summed with the constant `torque`; cleared after the step.
     void add_torque(f32 value) noexcept {

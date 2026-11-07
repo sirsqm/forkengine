@@ -900,6 +900,39 @@ TEST_CASE("a 3D force wakes a sleeping body") {
     CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
 }
 
+TEST_CASE("a 3D off-centre force spins the body and pushes it") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 2.0f, 2.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    // A +x force applied one unit above the centre: 10 N gives 5 m/s, and the
+    // lever arm (r x F = (0,1,0) x (10,0,0) = (0,0,-10)) gives -10 N*m about z,
+    // so 5 rad/s about -z.
+    body->add_force_at_offset(Vec3{10.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+    run(system, scene, 1.0f, 1);
+
+    CHECK(body->velocity.x == doctest::Approx(5.0f).epsilon(0.01));
+    CHECK(body->angular_velocity.z == doctest::Approx(-5.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 3D force through the centre adds no spin") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+
+    physics3d::Physics3DSystem system;
+    body->add_force_at_offset(Vec3{10.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 0.0f});
+    run(system, scene, 1.0f, 1);
+
+    CHECK(body->velocity.x == doctest::Approx(10.0f).epsilon(0.01));
+    CHECK(body->angular_velocity.length() == doctest::Approx(0.0f));
+}
+
 // ---------------------------------------------------------------------------
 // Impulses in 3D: a one-shot change to velocity, at the centre or off it.
 // ---------------------------------------------------------------------------

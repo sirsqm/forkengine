@@ -3030,6 +3030,40 @@ TEST_CASE("a 2D force wakes a sleeping body") {
     CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
 }
 
+TEST_CASE("a 2D off-centre force spins the body and pushes it") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 2.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+    body->inertia = 2.0f;
+
+    physics2d::Physics2DSystem system;
+    // A +x force applied one unit above the centre: 10 N gives 5 m/s, and the
+    // lever arm gives torque -10 N*m, so 5 rad/s clockwise.
+    body->add_force_at_offset(Vec2{10.0f, 0.0f}, Vec2{0.0f, 1.0f});
+    system.update(step(1.0f), scene);
+
+    CHECK(body->velocity.x == doctest::Approx(5.0f).epsilon(0.01));
+    CHECK(body->angular_velocity == doctest::Approx(-5.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 2D force through the centre adds no spin") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->can_sleep = false;
+    body->inertia = 1.0f;
+
+    physics2d::Physics2DSystem system;
+    body->add_force_at_offset(Vec2{10.0f, 0.0f}, Vec2{0.0f, 0.0f});
+    system.update(step(1.0f), scene);
+
+    CHECK(body->velocity.x == doctest::Approx(10.0f).epsilon(0.01));
+    CHECK(body->angular_velocity == doctest::Approx(0.0f));
+}
+
 // ---------------------------------------------------------------------------
 // Impulses: a one-shot change to velocity, at the centre or off it.
 // ---------------------------------------------------------------------------

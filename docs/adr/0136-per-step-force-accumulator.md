@@ -41,6 +41,12 @@ Add a per-step force accumulator to `RigidBody2D` and `RigidBody3D`.
   newton-metres) are the accumulators. They are public fields, added to through
   `add_force`/`add_torque`, which accumulate (so several sources compose) and
   call `wake()`.
+- `add_force_at_offset(value, offset)` adds a force acting at a point `offset`
+  from the centre of mass (in the body's frame, the same convention as
+  `apply_impulse_at_offset`). The lever arm contributes `cross(offset, value)`
+  (2D: the Z component `offset.x * value.y - offset.y * value.x`) to
+  `applied_torque`, so an off-centre push both translates and spins the body. A
+  force through the centre (`offset` zero) is exactly `add_force`.
 - Integration adds `force * inverse_mass * delta_time` to the velocity and
   `(torque + applied_torque) * inverse_inertia * delta_time` to the angular
   velocity. The constant `torque` field is kept and summed with the per-step one,
@@ -67,11 +73,14 @@ Add a per-step force accumulator to `RigidBody2D` and `RigidBody3D`.
 
 **Harder / not yet done:**
 
-- The force is applied at the centre of mass only. A force at an off-centre point
-  (which would also produce a torque) needs an `add_force_at_point` taking the
-  world point; the accumulator carries no application point.
-- There is no impulse form. A one-shot impulse (`velocity += impulse * inv_mass`)
-  is a different operation and is not modelled; a caller adds a force and steps.
+- The force is applied at the centre of mass, or at an offset from it through
+  `add_force_at_offset`. There is still no form taking a *world* point: the
+  offset is in the body's frame, so a caller applying a force at a world point
+  subtracts the body's world centre first (a one-line transform the caller
+  usually already has the data for).
+- There is no impulse form *on this accumulator*: a one-shot impulse is a
+  separate operation, added later as [ADR-0137](0137-impulse-api.md)
+  (`apply_impulse` / `apply_impulse_at_offset`), not a force.
 - The accumulator is a plain field, so it is not thread-safe. The solver is
   single-threaded by design, and a script adding a force runs in the update
   phase, so this is fine, but a parallel gameplay system would need care.
