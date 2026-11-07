@@ -67,20 +67,23 @@ Contact2D intersect_obbs(const Obb2D& a, const Obb2D& b) noexcept {
         }
         Contact2D contact;
         contact.overlapping = true;
+        // The point is the centre of the overlapping region of the two boxes,
+        // which is a point on the contact plane and is the same whichever box is
+        // A. Taking it on A's centre line instead would slide the point onto a
+        // large floor's centre axis, so a small box landing anywhere on a big
+        // floor would report the floor's middle rather than where it landed.
+        const f32 overlap_lo_x = std::max(a.center.x - a.half_extent.x, b.center.x - b.half_extent.x);
+        const f32 overlap_hi_x = std::min(a.center.x + a.half_extent.x, b.center.x + b.half_extent.x);
+        const f32 overlap_lo_y = std::max(a.center.y - a.half_extent.y, b.center.y - b.half_extent.y);
+        const f32 overlap_hi_y = std::min(a.center.y + a.half_extent.y, b.center.y + b.half_extent.y);
         if (overlap_x <= overlap_y) {
             contact.penetration = overlap_x;
             contact.normal = Vec2{delta.x >= 0.0f ? 1.0f : -1.0f, 0.0f};
-            // Centre of the overlapping span on the separating axis, on the
-            // line through A's centre along that axis.
-            const f32 lo = std::max(a.center.x - a.half_extent.x, b.center.x - b.half_extent.x);
-            const f32 hi = std::min(a.center.x + a.half_extent.x, b.center.x + b.half_extent.x);
-            contact.point = Vec2{0.5f * (lo + hi), a.center.y};
+            contact.point = Vec2{0.5f * (overlap_lo_x + overlap_hi_x), 0.5f * (overlap_lo_y + overlap_hi_y)};
         } else {
             contact.penetration = overlap_y;
             contact.normal = Vec2{0.0f, delta.y >= 0.0f ? 1.0f : -1.0f};
-            const f32 lo = std::max(a.center.y - a.half_extent.y, b.center.y - b.half_extent.y);
-            const f32 hi = std::min(a.center.y + a.half_extent.y, b.center.y + b.half_extent.y);
-            contact.point = Vec2{a.center.x, 0.5f * (lo + hi)};
+            contact.point = Vec2{0.5f * (overlap_lo_x + overlap_hi_x), 0.5f * (overlap_lo_y + overlap_hi_y)};
         }
         return contact;
     }

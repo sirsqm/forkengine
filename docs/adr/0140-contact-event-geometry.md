@@ -46,8 +46,11 @@ Constraints that shaped the decision:
 `ContactEvent` gains `point` and `normal`.
 
 - Each narrow-phase test computes the point:
-  - Box versus box (axis-aligned and SAT): the centre of the overlapping span
-    along the separating axis, on the line through the first box's centre.
+  - Box versus box (axis-aligned and SAT): the centre of the region the two boxes
+    overlap. This is a point on the contact plane, and -- crucially -- the same
+    point whichever box is A. An earlier version took it on A's centre line,
+    which put a small box landing anywhere on a wide floor at the floor's centre;
+    the overlap centre puts it where the box actually is.
   - Circle versus circle: halfway between the two surfaces along the normal,
     starting from the first circle's surface.
   - Circle versus box: the same rule from the circle's surface, which lands on

@@ -3231,3 +3231,18 @@ TEST_CASE("a circle landing on a box reports a contact point on the top face") {
     CHECK(std::abs(event.point.x - 2.0f) < 0.05f);
     CHECK(std::abs(std::abs(event.normal.y) - 1.0f) < 0.01f);
 }
+
+TEST_CASE("a box landing off-centre on a wide floor reports the point where it landed") {
+    Scene scene;
+    add_floor(scene, 20.0f); // wide: spans x in [-20, 20], top face at y = 0
+    add_dynamic_box(scene, Vec2{7.0f, 0.5f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    REQUIRE(system.contact_event_count() == 1);
+    const physics2d::ContactEvent& event = system.contact_events().front();
+    // The point is where the box actually sits, not the floor's centre at x = 0.
+    CHECK(std::abs(event.point.x - 7.0f) < 0.05f);
+    CHECK(std::abs(event.point.y) < 0.01f);
+}
