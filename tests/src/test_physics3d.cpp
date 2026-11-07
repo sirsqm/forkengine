@@ -10,6 +10,7 @@
 #include "fe/physics3d/Physics3DQueries.h"
 #include "fe/physics3d/Physics3DSystem.h"
 #include "fe/physics3d/Physics3DTypes.h"
+#include "fe/physics3d/RevoluteJoint3D.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/reflect/ComponentTypes.h"
 #include "fe/reflect/Registry.h"
@@ -700,6 +701,56 @@ TEST_CASE("a distance joint holds a dynamic body at the pivot's distance") {
     CHECK(system.joint_count() == 1);
 }
 
+TEST_CASE("a revolute joint swings a bob about a fixed pivot and it settles below") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot");
+    pivot->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    // A point mass with an explicit moment of inertia. The joint pins a point 1
+    // unit from the centre, so I = m r^2 = 1 lets the bob rotate about the pin;
+    // with no collider the joint is the only thing acting on the body.
+    Node* bob = scene.create_node("Bob");
+    auto* body = bob->add_component<physics3d::RigidBody3D>();
+    body->mass = 1.0f;
+    body->inertia = 1.0f;
+    body->affected_by_gravity = true;
+    // Damping so the swing loses energy and settles instead of ringing forever.
+    body->linear_damping = 1.0f;
+    body->angular_damping = 1.0f;
+    // Starts level with the pivot, so gravity has a lever to turn it.
+    bob->transform().position = Vec3{1.0f, 0.0f, 0.0f};
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = bob->id();
+    // Pin the bob's left end (1 unit from its centre) to the pivot, so the bob
+    // hangs and swings rather than spinning about a point at its own centre.
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f};
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 60); // 1 second
+
+    CHECK(system.joint_count() == 1);
+    // The bob swung down from level: it is now below the pivot.
+    CHECK(bob->transform().position.y < 0.0f);
+
+    run(system, scene, 1.0f / 60.0f, 600); // 10 more seconds, to rest
+
+    // It hangs below the pivot at the pinned radius, and has come to rest.
+    const Vec3 offset = bob->transform().position - pivot->transform().position;
+    CHECK(offset.length() == doctest::Approx(1.0f).epsilon(0.1));
+    CHECK(offset.y == doctest::Approx(-1.0f).epsilon(0.15));
+    CHECK(std::abs(offset.x) < 0.15f);
+    CHECK(body->velocity.length() < 0.1f);
+    CHECK(body->angular_velocity.length() < 0.1f);
+
+    // The anchor stayed pinned: the bob's left end is still at the pivot.
+    const Vec3 anchor = bob->transform().position +
+                        physics3d::rotate_by_quat(joint->anchor_b, Quat::from_euler(bob->transform().rotation));
+    CHECK(anchor.length() < 0.1f);
+}
+
 TEST_CASE("a joint with a nil body reference is skipped") {
     Scene scene;
     Node* joint_node = scene.create_node("Broken");
@@ -800,6 +851,44 @@ TEST_CASE("a distance joint round-trips through the serializer") {
 TEST_CASE("the 3D distance joint is registered with reflection") {
     reflect::register_physics3d_types();
     CHECK(reflect::Registry::instance().contains("DistanceJoint3D"));
+}
+
+TEST_CASE("a revolute joint round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Hinge");
+    auto* joint = joint_node->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->anchor_a = Vec3{0.25f, -0.5f, 0.75f};
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.5f};
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Hinge");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics3d::RevoluteJoint3D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->body_a == a->id());
+    CHECK(loaded_component->body_b == b->id());
+    CHECK(loaded_component->anchor_a.x == doctest::Approx(0.25f));
+    CHECK(loaded_component->anchor_a.y == doctest::Approx(-0.5f));
+    CHECK(loaded_component->anchor_a.z == doctest::Approx(0.75f));
+    CHECK(loaded_component->anchor_b.x == doctest::Approx(-1.0f));
+    CHECK(loaded_component->anchor_b.z == doctest::Approx(0.5f));
+}
+
+TEST_CASE("the 3D revolute joint is registered with reflection") {
+    reflect::register_physics3d_types();
+    CHECK(reflect::Registry::instance().contains("RevoluteJoint3D"));
 }
 
 // ---------------------------------------------------------------------------

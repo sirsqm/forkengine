@@ -942,17 +942,19 @@ axis) is solved and a test proves a body hanging from a static anchor swings
 about the axis and comes to rest hanging below it, while the existing joint types
 are unchanged.
 
-Partly landed: `RevoluteJoint3D` exists (two bodies share an anchor, relative
-translation removed, relative rotation free), it names its bodies by node id like
-`DistanceJoint3D` and serializes as a stable reference, and the system gathers
-both joint types in one scene-walk and links their ends into the same islands
-([ADR-0043](adr/0043-physics3d-angular-dynamics.md)). The row builder already
-carried angular terms, so a local anchor off a body centre couples the constraint
-to rotation with no new solver machinery, and the reflection type is registered
-so the joint round-trips. What is left is the **done-when** test itself: the
-row-level pin and free-rotation tests are in place, but the integrated pendulum
-test (a body hanging from a static anchor that swings about the axis and comes to
-rest below it) is not.
+Landed as `RevoluteJoint3D`: two bodies share an anchor, their relative
+translation is removed and their relative rotation is left free, so one body
+swings about the shared point -- a pendulum, a wheel on an axle, a ragdoll limb.
+It names its bodies by node id like `DistanceJoint3D` and serializes as a stable
+reference; the system gathers both joint types in one scene-walk and links their
+ends into the same islands ([ADR-0043](adr/0043-physics3d-angular-dynamics.md)).
+The row builder already carried angular terms, so a local anchor off a body
+centre couples the constraint to rotation with no new solver machinery, and the
+reflection type is registered so the joint round-trips. The done-when test hangs
+a point mass from a static pivot by a local anchor one unit off its centre and
+proves it swings down and comes to rest hanging below the pivot at the pinned
+radius (removing the joint lets the mass free-fall, which the test catches), with
+the existing distance-joint behaviour unchanged.
 
 ### `audio-pack-streaming`
 
