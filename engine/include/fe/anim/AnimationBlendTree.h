@@ -20,6 +20,7 @@ class ResourceManager;
 namespace fe::anim {
 
 class Animator;
+class AnimationBlendTree;
 class Skeleton;
 
 // A two-clip blend tree over the skeletal `Animator`, plus an additive layer.
@@ -57,20 +58,37 @@ class Skeleton;
 // list-of-struct kind, and a resource reference is a property on the component,
 // not on a sub-value).
 
-// One clip of the blend tree, with the parameter range over which it is active.
+// One entry of the blend tree, with the parameter range over which it is active.
 //
-// `threshold` is the parameter value at which this clip is fully weighted;
-// `other_threshold` is the value of the *other* clip, so the pair describes the
+// An entry is a *clip* or, when `subtree` is set, another whole tree: a tree
+// feeding a tree. Locomotion is the case that needs the second. A character who
+// walks, runs, and also aims has a leg blend that varies with speed and an upper
+// body that varies with aim pitch; neither is a clip, and the two do not share a
+// parameter, so the answer is a tree whose entries are themselves trees, each
+// with its own parameter. The entry's own `threshold`/`other_threshold` place the
+// *sub-tree's output* in the parent's blend, so an upper-body aim tree is mixed
+// against a leg locomotion tree by a third parameter.
+//
+// `threshold` is the parameter value at which this entry is fully weighted;
+// `other_threshold` is the value of the *other* entry, so the pair describes the
 // interval over which the blend happens. Storing both on each entry (rather than
 // one interval on the tree) is what lets the entries be listed in any order and
-// the weights be derived from whichever clip the parameter is nearer.
+// the weights be derived from whichever entry the parameter is nearer.
 struct BlendSample {
     std::string name; // for the editor and for a test; not required to be unique
     std::shared_ptr<AnimationClip> clip;
     std::string clip_key;       // the reference key the clip is loaded from and saved as
-    f32 threshold = 0.0f;       // parameter value at which this clip has full weight
-    f32 other_threshold = 1.0f; // parameter value at which the other clip has full weight
+    f32 threshold = 0.0f;       // parameter value at which this entry has full weight
+    f32 other_threshold = 1.0f; // parameter value at which the other entry has full weight
     f32 speed = 1.0f;           // playback-rate multiplier, so a short clip can match a long one
+
+    // A nested tree this entry evaluates instead of a clip: a tree feeding a
+    // tree. When set, `clip` is ignored. The sub-tree's own samples, thresholds,
+    // and additive layers apply; its `drive_animator` is ignored, because a
+    // sub-tree always produces a pose for its parent to blend.
+    std::shared_ptr<AnimationBlendTree> subtree;
+
+    [[nodiscard]] bool is_subtree() const noexcept { return subtree != nullptr; }
 };
 
 // A two-clip blend tree with an optional additive layer.
@@ -171,6 +189,32 @@ public:
     [[nodiscard]] std::string to_json() const;
     bool from_json(std::string_view text);
 };
+
+// The deepest a tree may nest before evaluation stops recursing and treats the
+// entry as the rest pose. A tree that references itself (or a cycle two trees
+// form) would otherwise recurse forever; the cap turns an authoring mistake into
+// a rest pose rather than a stack overflow.
+inline constexpr usize kMaxBlendTreeDepth = 8;
+
+// Reusable pose scratch for a recursive tree evaluation, so a steady-state scene
+// with nested trees allocates nothing after the first frame. The pool grows to
+// twice the deepest tree evaluated and is indexed by depth.
+struct BlendTreeScratch {
+    std::vector<SkeletonPose> poses;
+};
+
+// Samples `tree`'s base blend into `out`, recursively for any entry that is
+// itself a tree, and returns the pose the tree's parameter produces. `out` is
+// reset to the skeleton's rest pose first, so a joint no entry animates holds its
+// authored position. `base_time` and `previous_time` are the animator's clock
+// this frame and last, used for sampling and (when `events` is non-null) for the
+// timeline markers the entries crossed. `scratch` is caller-owned and reused
+// across frames; `depth` is the current nesting level, capped at
+// `kMaxBlendTreeDepth`. This is the whole behaviour of a tree, so a test asserts
+// on it with no scene and no animator.
+void evaluate_blend_tree(const AnimationBlendTree& tree, const Skeleton& skeleton, f32 base_time, f32 previous_time,
+                         LoopMode mode, BlendTreeScratch& scratch, usize depth, SkeletonPose& out,
+                         std::vector<AnimationEvent>* events);
 
 // --- Pure pose functions ---------------------------------------------------
 //

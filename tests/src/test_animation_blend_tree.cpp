@@ -450,3 +450,118 @@ TEST_CASE("the blend tree is registered and reflects a tree property") {
     CHECK(tree->value_kind == reflect::ValueKind::String);
     CHECK(tree->hint == reflect::Hint::Multiline);
 }
+
+// ---------------------------------------------------------------------------
+// A tree feeding a tree
+// ---------------------------------------------------------------------------
+
+// A sub-tree whose single entry is `clip`, so the parent blends the clip the
+// sub-tree produces rather than the clip directly. `drive_animator` is ignored
+// on a sub-tree; it always produces a pose.
+[[nodiscard]] std::shared_ptr<AnimationBlendTree> make_leaf_tree(const std::shared_ptr<AnimationClip>& clip) {
+    auto tree = std::make_shared<AnimationBlendTree>();
+    tree->samples.push_back(sample(clip, 0.0f, 1.0f));
+    return tree;
+}
+
+TEST_CASE("a blend tree whose entry is itself a tree evaluates the nested tree") {
+    auto skeleton = make_chain_skeleton();
+    // The parent picks entirely the *second* entry (weight 1), which is a
+    // sub-tree holding the run clip. The result must be the run clip's pose, not
+    // the walk clip's, proving the parent blended the sub-tree's output.
+    auto walk = make_root_clip(skeleton, "walk", Quat::identity(), Vec3{0.0f, 5.0f, 0.0f});
+    auto run = make_root_clip(skeleton, "run", Quat::identity(), Vec3{0.0f, 9.0f, 0.0f});
+
+    AnimationBlendTree parent;
+    parent.samples.push_back(sample(walk, 0.0f, 1.0f));
+    BlendSample nested;
+    nested.name = "run_subtree";
+    nested.subtree = make_leaf_tree(run);
+    nested.threshold = 1.0f;
+    nested.other_threshold = 0.0f;
+    parent.samples.push_back(std::move(nested));
+    parent.parameter = 1.0f; // full weight on the nested entry
+
+    BlendTreeScratch scratch;
+    SkeletonPose pose;
+    evaluate_blend_tree(parent, *skeleton, 0.5f, 0.5f, LoopMode::Loop, scratch, 0, pose, nullptr);
+
+    REQUIRE(pose.joint_count() == 3);
+    CHECK(nearly_equal(pose.at(0).translation, Vec3{0.0f, 9.0f, 0.0f}));
+}
+
+TEST_CASE("a nested tree blends toward its parent's other entry") {
+    auto skeleton = make_chain_skeleton();
+    auto walk = make_root_clip(skeleton, "walk", Quat::identity(), Vec3{0.0f, 0.0f, 0.0f});
+    auto run = make_root_clip(skeleton, "run", Quat::identity(), Vec3{0.0f, 10.0f, 0.0f});
+
+    AnimationBlendTree parent;
+    parent.samples.push_back(sample(walk, 0.0f, 1.0f));
+    BlendSample nested;
+    nested.name = "run_subtree";
+    nested.subtree = make_leaf_tree(run);
+    nested.threshold = 1.0f;
+    nested.other_threshold = 0.0f;
+    parent.samples.push_back(std::move(nested));
+    parent.parameter = 0.5f; // halfway
+
+    BlendTreeScratch scratch;
+    SkeletonPose pose;
+    evaluate_blend_tree(parent, *skeleton, 0.5f, 0.5f, LoopMode::Loop, scratch, 0, pose, nullptr);
+
+    REQUIRE(pose.joint_count() == 3);
+    CHECK(nearly_equal(pose.at(0).translation, Vec3{0.0f, 5.0f, 0.0f}));
+}
+
+TEST_CASE("a tree that nests past the depth cap falls back to the rest pose") {
+    auto skeleton = make_chain_skeleton();
+    auto clip = make_root_clip(skeleton, "deep", Quat::identity(), Vec3{0.0f, 42.0f, 0.0f});
+
+    // A chain of trees, each with one entry that is the next. Longer than the cap,
+    // so evaluation stops and the deepest pose is the rest pose rather than a
+    // stack overflow.
+    auto leaf = make_leaf_tree(clip);
+    auto chain = leaf;
+    for (usize i = 0; i < kMaxBlendTreeDepth + 2; ++i) {
+        auto next = std::make_shared<AnimationBlendTree>();
+        BlendSample entry;
+        entry.name = "next";
+        entry.subtree = chain;
+        next->samples.push_back(std::move(entry));
+        chain = std::move(next);
+    }
+
+    BlendTreeScratch scratch;
+    SkeletonPose pose;
+    evaluate_blend_tree(*chain, *skeleton, 0.5f, 0.5f, LoopMode::Loop, scratch, 0, pose, nullptr);
+
+    // No crash; the pose is the rest pose, so the root is at its authored place.
+    REQUIRE(pose.joint_count() == 3);
+    CHECK(nearly_equal(pose.at(0).translation, Vec3{0.0f, 0.0f, 0.0f}));
+}
+
+TEST_CASE("a nested tree round-trips through the parent's serialized form") {
+    auto skeleton = make_chain_skeleton();
+    auto walk = make_root_clip(skeleton, "walk", Quat::identity(), Vec3{});
+    auto run = make_root_clip(skeleton, "run", Quat::identity(), Vec3{});
+
+    AnimationBlendTree parent;
+    parent.samples.push_back(sample(walk, 0.0f, 1.0f));
+    BlendSample nested;
+    nested.name = "run_subtree";
+    nested.subtree = make_leaf_tree(run);
+    nested.threshold = 1.0f;
+    nested.other_threshold = 0.0f;
+    parent.samples.push_back(std::move(nested));
+
+    const std::string text = parent.to_json();
+
+    AnimationBlendTree reloaded;
+    REQUIRE(reloaded.from_json(text));
+    REQUIRE(reloaded.samples.size() == 2);
+    CHECK_FALSE(reloaded.samples[0].is_subtree());
+    REQUIRE(reloaded.samples[1].is_subtree());
+    REQUIRE(reloaded.samples[1].subtree->samples.size() == 1);
+    CHECK(reloaded.samples[1].subtree->samples[0].name == "run");
+    CHECK(reloaded.samples[1].subtree->samples[0].clip_key == "clip:run");
+}

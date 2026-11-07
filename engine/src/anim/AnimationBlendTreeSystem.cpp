@@ -10,18 +10,6 @@
 #include <algorithm>
 
 namespace fe::anim {
-namespace {
-
-// Samples one blend sample at the animator's clock scaled by the sample's speed.
-// The animator owns the rate; a per-sample speed only matches clips of different
-// lengths, so a short run cycle can play alongside a long walk.
-void sample_sample(const Skeleton& skeleton, const BlendSample& sample, f32 base_time, LoopMode mode,
-                   SkeletonPose& out) {
-    sample_clip_pose(skeleton, sample.clip.get(), base_time * sample.speed, mode, out);
-}
-
-} // namespace
-
 void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene) {
     advanced_ = 0;
     skipped_ = 0;
@@ -63,46 +51,19 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
         bool wrote_pose = false;
 
         // --- 1. The base blend ------------------------------------------------
-        // A tree with two clips blends them; a tree with one is that clip; an
+        // A tree with two entries blends them; a tree with one is that entry; an
         // empty tree leaves the animator's own pose (the animation system's rest
-        // sample, or its own clip) untouched.
-        if (tree->drive_animator) {
-            SkeletonPose& base = animator->mutable_pose();
-            if (tree->samples.size() >= 2) {
-                const f32 weight = tree->blend_weight();
-                sample_sample(*skeleton, tree->samples[0], base_time, mode, pose_a_);
-                sample_sample(*skeleton, tree->samples[1], base_time, mode, pose_b_);
-                blend_poses(pose_a_, pose_b_, weight, base);
-                wrote_pose = true;
-            } else if (tree->samples.size() == 1) {
-                sample_sample(*skeleton, tree->samples[0], base_time, mode, base);
-                wrote_pose = true;
-            }
-        }
-
-        // --- 1b. Timeline events of the base blend ---------------------------
-        // A blend tree has no single clip, so a marker fires when the clock
-        // crossed it in any sample the tree played. Collected from the same
-        // samples the base blend used, at each sample's own rate, so a matched
-        // pair of locomotion clips reports one footstep, not two.
+        // sample, or its own clip) untouched. An entry that is itself a tree is
+        // evaluated recursively, so a tree can feed a tree.
+        //
+        // Timeline events are collected on the same walk: a blend has no single
+        // clip, so a marker fires when the clock crossed it in any entry the tree
+        // played, at that entry's own rate, and a marker two entries share (a
+        // matched pair of locomotion clips) is reported once.
         if (tree->drive_animator && !tree->samples.empty()) {
-            const usize count = std::min<usize>(tree->samples.size(), 2);
-            const f32 weight = tree->samples.size() >= 2 ? tree->blend_weight() : 0.0f;
-            BlendClipTiming timings[2];
-            usize used = 0;
-            for (usize i = 0; i < count; ++i) {
-                const BlendSample& sample = tree->samples[i];
-                if (sample.clip == nullptr) {
-                    continue;
-                }
-                timings[used].clip = sample.clip.get();
-                timings[used].previous_time = previous_base_time * sample.speed;
-                timings[used].current_time = base_time * sample.speed;
-                timings[used].mode = mode;
-                timings[used].weight = count == 1 ? 1.0f : (i == 0 ? 1.0f - weight : weight);
-                ++used;
-            }
-            collect_blend_events(timings, used, events_);
+            evaluate_blend_tree(*tree, *skeleton, base_time, previous_base_time, mode, tree_scratch_, 0,
+                                animator->mutable_pose(), &events_);
+            wrote_pose = true;
         }
 
         // --- 2. The additive layer -------------------------------------------

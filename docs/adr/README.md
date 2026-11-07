@@ -151,6 +151,7 @@ rather than editing it.
 | [0143](0143-stacked-additive-layers.md) | Stacked additive layers: several additive effects over one base | Accepted |
 | [0144](0144-animation-events.md) | Animation events on the clip timeline | Accepted |
 | [0145](0145-ui-focus-navigation.md) | Keyboard and gamepad focus navigation for UI | Accepted |
+| [0146](0146-nested-blend-trees.md) | A blend tree feeding a blend tree | Accepted |
 
 ## Format
 

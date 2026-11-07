@@ -65,11 +65,10 @@ public:
 private:
     std::vector<AnimationBlendTree*> trees_;
 
-    // Reused across frames so a steady-state scene allocates nothing. One for
-    // each side of the base blend and one for the additive delta.
-    SkeletonPose pose_a_;
-    SkeletonPose pose_b_;
+    // Reused across frames so a steady-state scene allocates nothing: one scratch
+    // for the additive delta and a pool the recursive tree evaluation draws from.
     SkeletonPose additive_scratch_;
+    BlendTreeScratch tree_scratch_;
 
     std::vector<AnimationEvent> events_;
 

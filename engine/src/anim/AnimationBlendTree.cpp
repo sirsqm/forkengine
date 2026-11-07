@@ -73,6 +73,10 @@ usize AnimationBlendTree::resolve_clips(ResourceManager& manager) {
     };
 
     for (BlendSample& sample : samples) {
+        if (sample.subtree != nullptr) {
+            resolved += sample.subtree->resolve_clips(manager);
+            continue;
+        }
         resolve(sample.clip, sample.clip_key);
     }
     resolve(additive_clip, additive_clip_key);
@@ -80,6 +84,100 @@ usize AnimationBlendTree::resolve_clips(ResourceManager& manager) {
         resolve(layer.clip, layer.clip_key);
     }
     return resolved;
+}
+
+namespace {
+
+// Grows the pose pool to the whole allowed depth up front. It is sized for every
+// level at once rather than on demand, because a reference into the pool taken at
+// one level must stay valid while a deeper level recurses; a resize mid-recursion
+// would dangle it. Two poses per level (each side of the blend).
+void ensure_scratch(BlendTreeScratch& scratch) {
+    const usize needed = kMaxBlendTreeDepth * 2;
+    if (scratch.poses.size() < needed) {
+        scratch.poses.resize(needed);
+    }
+}
+
+// The weight of entry `index` in a two-entry blend, given the tree's parameter.
+[[nodiscard]] f32 entry_weight(const AnimationBlendTree& tree, usize index) noexcept {
+    if (tree.samples.size() < 2) {
+        return index == 0 ? 1.0f : 0.0f;
+    }
+    const BlendSample& a = tree.samples[0];
+    const BlendSample& b = tree.samples[1];
+    const f32 second = weight_between(tree.use_parameter ? tree.parameter : 0.0f, a.threshold, b.threshold);
+    const f32 w = tree.use_parameter ? second : clamp01(tree.weight);
+    return index == 0 ? 1.0f - w : w;
+}
+
+} // namespace
+
+void evaluate_blend_tree(const AnimationBlendTree& tree, const Skeleton& skeleton, f32 base_time, f32 previous_time,
+                         LoopMode mode, BlendTreeScratch& scratch, usize depth, SkeletonPose& out,
+                         std::vector<AnimationEvent>* events) {
+    out.reset_to_rest(skeleton);
+
+    if (tree.samples.empty()) {
+        return;
+    }
+    ensure_scratch(scratch);
+    if (depth >= kMaxBlendTreeDepth) {
+        // Too deep: a cycle or a pathological nesting. The rest pose is the safe
+        // answer -- a joint no entry animates holds its authored position.
+        return;
+    }
+
+    // Samples one entry into `target`, recursing when it is itself a tree.
+    auto sample_entry = [&](const BlendSample& sample, SkeletonPose& target) {
+        if (sample.subtree != nullptr) {
+            evaluate_blend_tree(*sample.subtree, skeleton, base_time, previous_time, mode, scratch, depth + 1, target,
+                                events);
+            return;
+        }
+        sample_clip_pose(skeleton, sample.clip.get(), base_time * sample.speed, mode, target);
+    };
+
+    if (tree.samples.size() == 1) {
+        sample_entry(tree.samples[0], out);
+        if (events != nullptr && !tree.samples[0].is_subtree()) {
+            const BlendSample& sample = tree.samples[0];
+            if (sample.clip != nullptr) {
+                BlendClipTiming timing{sample.clip.get(), previous_time * sample.speed, base_time * sample.speed, mode,
+                                       1.0f};
+                collect_blend_events(&timing, 1, *events);
+            }
+        }
+        return;
+    }
+
+    SkeletonPose& a = scratch.poses[depth * 2];
+    SkeletonPose& b = scratch.poses[depth * 2 + 1];
+    sample_entry(tree.samples[0], a);
+    sample_entry(tree.samples[1], b);
+    blend_poses(a, b, tree.use_parameter ? tree.blend_weight() : clamp01(tree.weight), out);
+
+    if (events == nullptr) {
+        return;
+    }
+    // A marker fires when the clock crossed it in any entry the tree played, at
+    // that entry's own rate. An entry that is itself a tree reports its own
+    // markers during its recursion, so only leaf entries are collected here.
+    BlendClipTiming timings[2];
+    usize used = 0;
+    for (usize i = 0; i < 2; ++i) {
+        const BlendSample& sample = tree.samples[i];
+        if (sample.is_subtree() || sample.clip == nullptr) {
+            continue;
+        }
+        timings[used].clip = sample.clip.get();
+        timings[used].previous_time = previous_time * sample.speed;
+        timings[used].current_time = base_time * sample.speed;
+        timings[used].mode = mode;
+        timings[used].weight = entry_weight(tree, i);
+        ++used;
+    }
+    collect_blend_events(timings, used, *events);
 }
 
 void sample_clip_pose(const Skeleton& skeleton, const AnimationClip* clip, f32 time, LoopMode mode, SkeletonPose& out) {
@@ -195,13 +293,17 @@ std::string AnimationBlendTree::to_json() const {
         if (key.empty() && sample.clip != nullptr) {
             key = sample.clip->path();
         }
-        samples_json.push_back(nlohmann::json{
-            {"name", sample.name},
-            {"clip", key},
-            {"threshold", sample.threshold},
-            {"other_threshold", sample.other_threshold},
+        nlohmann::json entry{
+            {"name", sample.name},           {"clip", key},
+            {"threshold", sample.threshold}, {"other_threshold", sample.other_threshold},
             {"speed", sample.speed},
-        });
+        };
+        // A nested tree travels inline, since it is authored data rather than a
+        // resource reference: the whole tree feeding a tree is one document.
+        if (sample.subtree != nullptr) {
+            entry["subtree"] = nlohmann::json::parse(sample.subtree->to_json());
+        }
+        samples_json.push_back(std::move(entry));
     }
     document["samples"] = std::move(samples_json);
 
@@ -237,6 +339,12 @@ bool AnimationBlendTree::from_json(std::string_view text) {
             sample.threshold = entry.value("threshold", 0.0f);
             sample.other_threshold = entry.value("other_threshold", 1.0f);
             sample.speed = entry.value("speed", 1.0f);
+            if (entry.contains("subtree") && entry.at("subtree").is_object()) {
+                auto subtree = std::make_shared<AnimationBlendTree>();
+                if (subtree->from_json(entry.at("subtree").dump())) {
+                    sample.subtree = std::move(subtree);
+                }
+            }
             new_samples.push_back(std::move(sample));
         }
     }
