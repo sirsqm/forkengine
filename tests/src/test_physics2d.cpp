@@ -2381,10 +2381,12 @@ TEST_CASE("a fixed joint turns a body that starts rotated against the reference"
 TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     Scene scene;
     Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
-    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    // Starts 1 unit off the axis, so only the perpendicular position row can
+    // pull it back: a velocity-only constraint would leave it there.
+    Node* slider = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
     auto* body = slider->get_component<physics2d::RigidBody2D>();
     body->affected_by_gravity = false;
-    body->velocity = Vec2{2.0f, 2.0f}; // half across the axis (+x), half along it (+y)
+    body->velocity = Vec2{0.0f, 2.0f}; // straight along the +y slide axis
 
     Node* host = scene.create_node("Slider");
     auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
@@ -2399,7 +2401,8 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     }
 
     CHECK(system.joint_count() == 1);
-    // The across-axis (x) motion was removed; the along-axis (y) motion was not.
+    // The off-axis start was pulled back to the rail; the along-axis motion was
+    // left free to carry the body down the axis.
     CHECK(std::abs(slider->transform().position.x) < 0.1f);
     CHECK(slider->transform().position.y > 1.0f);
 }
