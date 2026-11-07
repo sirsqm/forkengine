@@ -188,6 +188,15 @@ void register_revolute_joint3d(Registry& registry) {
         "motor_max_torque", &physics3d::RevoluteJoint3D::motor_max_torque, ValueKind::Float, &defaults));
 
     desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, bool>(
+        "motor_use_target", &physics3d::RevoluteJoint3D::motor_use_target, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "motor_target_angle", &physics3d::RevoluteJoint3D::motor_target_angle, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "motor_stiffness", &physics3d::RevoluteJoint3D::motor_stiffness, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "motor_damping", &physics3d::RevoluteJoint3D::motor_damping, ValueKind::Float, &defaults));
+
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, bool>(
         "enable_limits", &physics3d::RevoluteJoint3D::enable_limits, ValueKind::Bool, &defaults));
     desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
         "limit_axis", &physics3d::RevoluteJoint3D::limit_axis, "Vec3", {"x", "y", "z"}));
@@ -264,6 +273,16 @@ void register_prismatic_joint3d(Registry& registry) {
         "motor_speed", &physics3d::PrismaticJoint3D::motor_speed, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
         "motor_max_force", &physics3d::PrismaticJoint3D::motor_max_force, ValueKind::Float, &defaults));
+
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, bool>(
+        "motor_use_target", &physics3d::PrismaticJoint3D::motor_use_target, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "motor_target_translation", &physics3d::PrismaticJoint3D::motor_target_translation, ValueKind::Float,
+        &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "motor_stiffness", &physics3d::PrismaticJoint3D::motor_stiffness, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "motor_damping", &physics3d::PrismaticJoint3D::motor_damping, ValueKind::Float, &defaults));
 
     desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
         "break_force", &physics3d::PrismaticJoint3D::break_force, ValueKind::Float, &defaults));

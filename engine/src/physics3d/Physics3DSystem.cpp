@@ -812,10 +812,27 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             motor.axis = rotate_by_quat(joint.revolute->motor_axis, body_a.orientation);
             motor.target_speed = joint.revolute->motor_speed;
             motor.max_impulse = joint.revolute->motor_max_torque * delta_time;
+            motor.use_target = joint.revolute->motor_use_target;
+            motor.target_position = joint.revolute->motor_target_angle;
+            motor.stiffness = joint.revolute->motor_stiffness;
+            motor.damping = joint.revolute->motor_damping;
             ConstraintRow3D motor_row{};
             if (motor.is_enabled()) {
-                if (auto row = build_revolute_motor_row(body_a, body_b, motor); row) {
-                    motor_row = row.value();
+                // A position target makes the motor a servo: it drives the swing
+                // about `motor.axis` to `motor_target_angle` instead of a speed.
+                // The current angle is the relative rotation projected onto the
+                // axis, the same quantity the angular limits measure.
+                const auto built = [&] {
+                    if (!motor.use_target) {
+                        return build_revolute_motor_row(body_a, body_b, motor);
+                    }
+                    const Vec3 axis = motor.axis.length_squared() > 0.0f ? motor.axis.normalized() : motor.axis;
+                    const Quat relative = body_a.orientation.conjugate() * body_b.orientation;
+                    const f32 angle = rotation_vector(relative).dot(axis);
+                    return build_revolute_position_motor_row(body_a, body_b, motor, angle);
+                }();
+                if (built) {
+                    motor_row = built.value();
                     apply_row(motor_row, body_a, body_b);
                 }
             }
@@ -876,10 +893,21 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             JointMotor3D motor;
             motor.target_speed = joint.prismatic->motor_speed;
             motor.max_impulse = joint.prismatic->motor_max_force * delta_time;
+            motor.use_target = joint.prismatic->motor_use_target;
+            motor.target_position = joint.prismatic->motor_target_translation;
+            motor.stiffness = joint.prismatic->motor_stiffness;
+            motor.damping = joint.prismatic->motor_damping;
             ConstraintRow3D motor_row{};
             if (motor.is_enabled()) {
-                if (auto row = build_prismatic_motor_row(body_a, body_b, params, motor); row) {
-                    motor_row = row.value();
+                // A position target makes the motor a servo: it drives the slide
+                // to `motor_target_translation` instead of a speed.
+                const auto built =
+                    motor.use_target
+                        ? build_prismatic_position_motor_row(body_a, body_b, params, motor,
+                                                             prismatic_slide_coordinate(body_a, body_b, params))
+                        : build_prismatic_motor_row(body_a, body_b, params, motor);
+                if (built) {
+                    motor_row = built.value();
                     apply_row(motor_row, body_a, body_b);
                 }
             }

@@ -57,6 +57,20 @@ public:
     f32 motor_speed = 0.0f;
     f32 motor_max_torque = 0.0f;
 
+    // A position target turns the motor into a servo: when `motor_use_target` is
+    // set the joint drives its swing about `motor_axis` towards
+    // `motor_target_angle` (radians, B's rotation relative to A about the axis)
+    // instead of a speed, with a proportional `motor_stiffness` and derivative
+    // `motor_damping` gain, still bounded by `motor_max_torque`. A stiff, damped
+    // target holds a pose against a load -- a robot arm, a door held ajar, a limb
+    // posed -- where the speed motor only drives a rate. Off by default, so a
+    // motor with no target is the speed motor it was. Ignored while
+    // `motor_max_torque` is zero, which disables the motor.
+    bool motor_use_target = false;
+    f32 motor_target_angle = 0.0f;
+    f32 motor_stiffness = 0.0f;
+    f32 motor_damping = 0.0f;
+
     // Angular limits about the hinge axis. When `enable_limits` is set the joint
     // swings freely between `lower_angle` and `upper_angle` (radians, measured
     // about `limit_axis` as the rotation of B relative to A) and is stopped at

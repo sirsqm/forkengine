@@ -129,6 +129,19 @@ struct ConstraintRow3D {
     return (Quat::from_axis_angle(delta / angle, angle) * q).normalized();
 }
 
+// The shortest signed difference between two angles, in (-pi, pi]. Used by a
+// position motor to take the short way to its target across the +/-pi seam.
+[[nodiscard]] inline f32 angle_difference(f32 from, f32 to) noexcept {
+    f32 difference = to - from;
+    while (difference > 3.14159265358979323846f) {
+        difference -= 6.28318530717958647692f;
+    }
+    while (difference <= -3.14159265358979323846f) {
+        difference += 6.28318530717958647692f;
+    }
+    return difference;
+}
+
 // Two unit vectors orthogonal to the unit `axis`, forming a right-handed basis
 // with it. Used by the prismatic joint to name the two directions it removes.
 inline void perpendicular_basis(const Vec3& axis, Vec3& out_a, Vec3& out_b) noexcept {
@@ -330,6 +343,18 @@ struct JointMotor3D {
     f32 target_speed = 0.0f;
     f32 max_impulse = 0.0f;
 
+    // A position target turns an angular motor into a servo: with `use_target`
+    // set it drives the joint's swing about `axis` towards `target_position`
+    // (radians, B's rotation relative to A) with a proportional `stiffness` and
+    // derivative `damping` gain, still clamped to `max_impulse`. A stiff,
+    // well-damped target holds a pose against a load where the speed motor only
+    // drives a rate. Off by default, so a motor with no target is the speed
+    // motor it was. Ignored by the prismatic linear motor.
+    bool use_target = false;
+    f32 target_position = 0.0f;
+    f32 stiffness = 0.0f;
+    f32 damping = 0.0f;
+
     [[nodiscard]] bool is_enabled() const noexcept { return max_impulse > 0.0f; }
 };
 
@@ -341,6 +366,18 @@ struct JointMotor3D {
 [[nodiscard]] Result<ConstraintRow3D> build_revolute_motor_row(const JointBody3D& a, const JointBody3D& b,
                                                                const JointMotor3D& motor) noexcept;
 
+// Builds the position-target (servo) row for a revolute joint: with
+// `motor.use_target` set it drives the joint's swing about `motor.axis` towards
+// `motor.target_position` with `stiffness`/`damping` gains, clamped to
+// `max_impulse`. `current_angle` is the present signed swing (the system passes
+// the projection of the relative rotation vector onto the world axis, the same
+// quantity the angular limits measure); the error is the shortest signed
+// difference to the target. Errors when the target is off, the axis is
+// degenerate, or neither body can rotate.
+[[nodiscard]] Result<ConstraintRow3D> build_revolute_position_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                                        const JointMotor3D& motor,
+                                                                        f32 current_angle) noexcept;
+
 // Builds the motor row for a prismatic joint: it drives the relative speed along
 // the slide axis towards `motor.target_speed`, clamped to `max_impulse`. The row
 // acts along the joint axis (body A's local frame, rotated to world), so it is a
@@ -349,6 +386,23 @@ struct JointMotor3D {
 [[nodiscard]] Result<ConstraintRow3D> build_prismatic_motor_row(const JointBody3D& a, const JointBody3D& b,
                                                                 const PrismaticJoint3DParams& params,
                                                                 const JointMotor3D& motor) noexcept;
+
+// Builds the position-target (servo) row for a prismatic joint: with
+// `motor.use_target` set it drives the slide along the joint axis towards
+// `motor.target_position` (the same signed translation the limits measure: B's
+// anchor relative to A's along the axis) with `stiffness`/`damping` gains,
+// clamped to `max_impulse`. Errors when the target is off, the axis is
+// degenerate, or neither body can move.
+[[nodiscard]] Result<ConstraintRow3D> build_prismatic_position_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                                         const PrismaticJoint3DParams& params,
+                                                                         const JointMotor3D& motor,
+                                                                         f32 current_translation) noexcept;
+
+// The signed position of a prismatic joint's slide: B's anchor relative to A's,
+// measured along the joint axis. This is the single free coordinate the joint
+// leaves, the same quantity the translation limits and a position motor use.
+[[nodiscard]] f32 prismatic_slide_coordinate(const JointBody3D& a, const JointBody3D& b,
+                                             const PrismaticJoint3DParams& params) noexcept;
 
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
 // current relative velocity along the row (linear and angular) plus the row's

@@ -434,6 +434,44 @@ Result<ConstraintRow3D> build_revolute_motor_row(const JointBody3D& a, const Joi
     return row;
 }
 
+Result<ConstraintRow3D> build_revolute_position_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                          const JointMotor3D& motor, f32 current_angle) noexcept {
+    if (!motor.use_target) {
+        return Error("revolute position motor: no position target is set");
+    }
+
+    const f32 axis_length = motor.axis.length();
+    if (axis_length <= 1e-6f) {
+        return Error("revolute position motor: the spin axis is degenerate");
+    }
+    const Vec3 axis = motor.axis / axis_length;
+
+    // The same angular row as the speed motor, but the bias is a spring: a
+    // restoring velocity proportional to the angle error plus a damping term
+    // opposing the current relative spin about the axis. The error is the
+    // shortest signed difference (target - current), so a joint past its target
+    // is driven back. The impulse is clamped to `max_impulse`, so a servo too
+    // weak to hold its pose slips.
+    ConstraintRow3D row;
+    row.angular_a = axis * -1.0f;
+    row.angular_b = axis;
+    row.effective_mass = row_effective_mass(row, a, b);
+
+    if (row.effective_mass <= 0.0f) {
+        return Error(
+            "revolute position motor: neither body can rotate about the axis, so the motor has nothing to drive");
+    }
+
+    const f32 error = angle_difference(motor.target_position, current_angle);
+    const f32 row_velocity = a.angular_velocity.dot(row.angular_a) + b.angular_velocity.dot(row.angular_b);
+    row.bias = motor.stiffness * error + motor.damping * row_velocity;
+
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
+}
+
 Result<ConstraintRow3D> build_prismatic_motor_row(const JointBody3D& a, const JointBody3D& b,
                                                   const PrismaticJoint3DParams& params,
                                                   const JointMotor3D& motor) noexcept {
@@ -464,6 +502,60 @@ Result<ConstraintRow3D> build_prismatic_motor_row(const JointBody3D& a, const Jo
     row.lower_impulse = -motor.max_impulse;
     row.upper_impulse = motor.max_impulse;
     return row;
+}
+
+Result<ConstraintRow3D> build_prismatic_position_motor_row(const JointBody3D& a, const JointBody3D& b,
+                                                           const PrismaticJoint3DParams& params,
+                                                           const JointMotor3D& motor,
+                                                           f32 current_translation) noexcept {
+    if (!motor.use_target) {
+        return Error("prismatic position motor: no position target is set");
+    }
+
+    const Vec3 axis = rotate_by_quat(params.axis_a, a.orientation);
+    if (axis.length_squared() <= 1e-12f) {
+        return Error("prismatic position motor: the slide axis is degenerate");
+    }
+
+    // The same row as the speed motor (it measures the rate the slide coordinate
+    // grows at), but the bias is a spring: a restoring velocity proportional to
+    // the translation error plus a damping term opposing the current slide
+    // speed. The error is `current - target`, so a joint past its target is
+    // driven back. The impulse is clamped to `max_impulse`, so a servo too weak
+    // to hold its position slips.
+    const Vec3 direction = axis.normalized();
+    ConstraintRow3D row;
+    row.jacobian_a = direction * -1.0f;
+    row.jacobian_b = direction;
+    row.effective_mass = row_effective_mass(row, a, b);
+
+    if (row.effective_mass <= 0.0f) {
+        return Error(
+            "prismatic position motor: neither body can move along the axis, so the motor has nothing to drive");
+    }
+
+    const f32 error = current_translation - motor.target_position;
+    const f32 row_velocity = row.jacobian_a.dot(a.velocity) + row.jacobian_b.dot(b.velocity);
+    row.bias = motor.stiffness * error + motor.damping * row_velocity;
+
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
+}
+
+f32 prismatic_slide_coordinate(const JointBody3D& a, const JointBody3D& b,
+                               const PrismaticJoint3DParams& params) noexcept {
+    const Vec3 axis = rotate_by_quat(params.axis_a, a.orientation);
+    if (axis.length_squared() <= 1e-12f) {
+        return 0.0f; // degenerate axis: no slide to measure
+    }
+    const Vec3 lever_a = rotate_by_quat(params.anchor_a, a.orientation);
+    const Vec3 lever_b = rotate_by_quat(params.anchor_b, b.orientation);
+    const Vec3 anchor_error = (a.position + lever_a) - (b.position + lever_b);
+    // The signed translation the limits use: B's anchor relative to A's along the
+    // axis, positive when B is ahead of A.
+    return anchor_error.dot(axis.normalized()) * -1.0f;
 }
 
 } // namespace fe::physics3d
