@@ -181,6 +181,14 @@ defect, not noise.
   the CI runner, not locally. The runner is ~40% slower than a dev machine, so a
   locally recorded baseline fails the gate on its own reference code. Re-record
   from the gate job's `benchmark-result` artifact (see `benchmarks/README.md`).
+- A system test for a constraint must fail when the constraint is removed, or it
+  is testing something else. The two prismatic-joint tests started the slider on
+  the slide axis, so the perpendicular position row had no error to remove and
+  the along-axis integration alone satisfied both checks: setting the row's
+  position factor to zero left them green. Start the body *off* the axis (with
+  its velocity along it) and neuter the row to confirm the test goes red. Prefer
+  this check for any new joint or solver row: a test that cannot fail on the
+  broken code is not evidence the code works.
 
 ## Portability traps seen before
 
