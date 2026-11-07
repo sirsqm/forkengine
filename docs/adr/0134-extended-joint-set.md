@@ -123,13 +123,13 @@ joint with no bounds holds `rest_length` exactly as before.
 
 **Harder / not yet done:**
 
-- A prismatic joint has no limits: it slides freely along its axis. A limited
-  slider (a piston with travel stops) is later work; the same bound machinery the
-  distance joint now has would carry it.
-- A joint still has no motor or spring target: a prismatic or revolute joint
-  cannot be driven to a position by the solver. That is a separate refinement.
-- A joint does not break under load: a force threshold that releases the joint is
-  later work.
+- A prismatic joint's translation limits and a linear motor landed later; so did
+  a revolute motor. See [ADR-0135](0135-joint-reactions-and-breaking.md) for
+  breaking and [ADR-0153](0153-joint-motors-and-limits.md) for the motors and
+  prismatic limits.
+- A revolute joint has no *angular* limits: it swings freely through a full turn.
+  A limited hinge (a door that stops at 90 degrees) needs the same bound machinery
+  the prismatic joint now has, applied to the relative angle row. Not yet done.
 - The 2D and 3D solvers remain separate code, so a joint kind is written twice.
   The two share the design and the tests, not the implementation; unifying them
   is not worth the indirection while the row shapes differ (2D is a `Vec2`, 3D a

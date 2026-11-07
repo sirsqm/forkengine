@@ -158,6 +158,7 @@ rather than editing it.
 | [0150](0150-per-object-shadow-casting.md) | A per-object shadow-casting flag | Accepted |
 | [0151](0151-contact-event-geometry-3d.md) | The 3D contact event carries the point and normal of the touch | Accepted |
 | [0152](0152-coyote-time.md) | Coyote time in the character controller | Accepted |
+| [0153](0153-joint-motors-and-limits.md) | Joint motors and prismatic translation limits | Accepted |
 
 ## Format
 
