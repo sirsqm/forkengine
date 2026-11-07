@@ -142,6 +142,7 @@ rather than editing it.
 | [0134](0134-extended-joint-set.md) | The extended joint set: fixed and prismatic joints, and distance-joint length limits, in both worlds | Accepted |
 | [0135](0135-joint-reactions-and-breaking.md) | Joint reactions and breaking: a joint reports the force it carries and snaps past a threshold | Accepted |
 | [0136](0136-per-step-force-accumulator.md) | A per-step force and torque accumulator on a rigid body | Accepted |
+| [0137](0137-impulse-api.md) | An impulse API on a rigid body: a one-shot velocity change, at the centre or off it | Accepted |
 
 ## Format
 

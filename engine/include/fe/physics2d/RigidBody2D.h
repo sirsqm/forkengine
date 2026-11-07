@@ -181,6 +181,28 @@ public:
         applied_torque = 0.0f;
     }
 
+    // Applies an impulse in newton-seconds immediately: a one-shot change to the
+    // velocity of `impulse * inverse_mass`. Where `add_force` is a sustained push
+    // spread over the step, this is an instant kick (a jump, a hit, a bounce a
+    // game computes itself). It also wakes the body. A body with infinite mass
+    // ignores it.
+    void apply_impulse(const Vec2& impulse) noexcept {
+        velocity += impulse * inverse_mass();
+        wake();
+    }
+
+    // Applies an impulse at an offset from the body's centre, so the off-centre
+    // part also changes the angular velocity. `offset` is the application point
+    // in the body's frame, measured from the centre of mass (the node origin);
+    // the lever arm produces an angular impulse of
+    // `(offset.x * impulse.y - offset.y * impulse.x) * inverse_inertia`. An
+    // impulse through the centre (`offset` zero) leaves the spin unchanged.
+    void apply_impulse_at_offset(const Vec2& impulse, const Vec2& offset) noexcept {
+        velocity += impulse * inverse_mass();
+        angular_velocity += (offset.x * impulse.y - offset.y * impulse.x) * inverse_inertia();
+        wake();
+    }
+
     // True when the body's motion is slow enough to count as at rest: both the
     // linear speed and the angular speed are below their thresholds. A sleeping
     // body is at rest by definition. This is the raw test; the sustained-time

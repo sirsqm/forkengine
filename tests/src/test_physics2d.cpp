@@ -3029,3 +3029,53 @@ TEST_CASE("a 2D force wakes a sleeping body") {
     }
     CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
 }
+
+// ---------------------------------------------------------------------------
+// Impulses: a one-shot change to velocity, at the centre or off it.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 2D impulse changes velocity by impulse over mass") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 4.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->apply_impulse(Vec2{8.0f, 0.0f});
+    CHECK(body->velocity.x == doctest::Approx(2.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 2D impulse through the centre adds no spin") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->inertia = 1.0f;
+    body->apply_impulse_at_offset(Vec2{4.0f, 0.0f}, Vec2{0.0f, 0.0f});
+    CHECK(body->angular_velocity == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 2D off-centre impulse spins the body") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->inertia = 1.0f;
+    // A +x impulse applied one unit above the centre spins it clockwise.
+    body->apply_impulse_at_offset(Vec2{4.0f, 0.0f}, Vec2{0.0f, 1.0f});
+    CHECK(body->velocity.x == doctest::Approx(4.0f).epsilon(0.01));
+    CHECK(body->angular_velocity == doctest::Approx(-4.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 2D impulse wakes a sleeping body") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->sleep();
+    body->apply_impulse(Vec2{2.0f, 0.0f});
+    CHECK_FALSE(body->is_sleeping);
+    CHECK(body->velocity.x == doctest::Approx(2.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 2D impulse on a static body is ignored") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 0.0f}, 0.5f, 0.0f); // zero mass: infinite
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->apply_impulse(Vec2{100.0f, 0.0f});
+    CHECK(body->velocity.x == doctest::Approx(0.0f));
+}

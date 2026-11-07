@@ -899,3 +899,33 @@ TEST_CASE("a 3D force wakes a sleeping body") {
     run(system, scene, 1.0f, 1);
     CHECK(body->velocity.x == doctest::Approx(3.0f).epsilon(0.01));
 }
+
+// ---------------------------------------------------------------------------
+// Impulses in 3D: a one-shot change to velocity, at the centre or off it.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D impulse changes velocity by impulse over mass") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 4.0f, 0.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->apply_impulse(Vec3{8.0f, 0.0f, 0.0f});
+    CHECK(body->velocity.x == doctest::Approx(2.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 3D off-centre impulse spins the body") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    // A +x impulse applied one unit above the centre spins it about -z.
+    body->apply_impulse_at_offset(Vec3{4.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+    CHECK(body->velocity.x == doctest::Approx(4.0f).epsilon(0.01));
+    CHECK(body->angular_velocity.z == doctest::Approx(-4.0f).epsilon(0.01));
+}
+
+TEST_CASE("a 3D impulse through the centre adds no spin") {
+    Scene scene;
+    Node* node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->apply_impulse_at_offset(Vec3{4.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 0.0f});
+    CHECK(body->angular_velocity.length() == doctest::Approx(0.0f));
+}
