@@ -15,6 +15,7 @@
 #include "fe/scene3d/Scene3DTypes.h"
 #include "fe/serialization/SceneReferences.h"
 #include "fe/serialization/SceneSerializer.h"
+#include "fe/ui/UiElement.h"
 
 #include <filesystem>
 #include <fstream>
@@ -680,4 +681,35 @@ TEST_CASE("the reference collector finds a material's texture maps") {
     REQUIRE(references.value().required.size() == 2);
     CHECK(references.value().required[0] == "tex:assets/prop_albedo.png");
     CHECK(references.value().required[1] == "tex:assets/prop_normal.png");
+}
+
+TEST_CASE("a UI element's clip and scroll survive a round trip") {
+    // The clip and scroll fields are what a scrolling list panel is built from, so
+    // they have to persist like every other component property: a panel authored
+    // in the editor and saved must reopen clipped and scrolled, not reset.
+    runtime::register_all_component_types();
+
+    Scene original;
+    Node* canvas_node = original.create_node("Canvas");
+    auto* canvas = canvas_node->add_component<ui::UiCanvas>();
+    canvas->design_width = 320.0f;
+    canvas->design_height = 240.0f;
+
+    Node* panel_node = canvas_node->create_child<Node>("Panel");
+    auto* panel = panel_node->add_component<ui::UiElement>();
+    panel->clip = true;
+    panel->scroll = Vec2{0.0f, 24.0f};
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+
+    Node* restored_panel = restored.find_node_by_name("Panel");
+    REQUIRE(restored_panel != nullptr);
+    const auto* restored_element = restored_panel->get_component<ui::UiElement>();
+    REQUIRE(restored_element != nullptr);
+    CHECK(restored_element->clip == true);
+    CHECK(restored_element->scroll.y == doctest::Approx(24.0f));
 }
