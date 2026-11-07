@@ -187,6 +187,27 @@ when one exists, else the active 3D camera's, else black); `examples/collect3d`,
 headless test checks the ordering and the clear-colour selection, and a graphics
 test proves the colour reaches the framebuffer.
 
+### `collect3d-scene-font-references`
+
+The shipped `collect3d.fescene` carried an empty font reference on every
+`UiCanvas`, so the M11 slice drew a HUD and menus with no words on them. The file
+is regenerated from the code-built scene, and the run was `--null-window`, which
+has no device — and the font loader is registered only when a device exists,
+because a font resolves its atlas through the texture loader. A device-free save
+therefore wrote `"font": ""` for every canvas. The reference is written from the
+*loaded* resource, so the fix is to give the regenerating run the loaders a real
+run has, not to hand-edit the file.
+
+**Done when** a `--save-scene` run registers the font loader (a null RHI device
+is enough), the shipped scene's canvases carry a font reference, and a test fails
+if any shipped example scene has a canvas with no font.
+
+Landed by setting `Engine::Config::headless_render` on a `--save-scene` run in
+`examples/collect3d/src/main.cpp` (a no-op when a window already gave a real
+device), regenerating `examples/collect3d/scenes/collect3d.fescene`, and adding
+"every shipped example scene gives its UI canvases a font" to
+`tests/src/test_example_projects.cpp`, which walks every `examples/**/*.fescene`.
+
 ### `fixed-simulation-step`
 
 The browser input probe measured wall-clock distance, so the same run reported

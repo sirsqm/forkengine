@@ -10,10 +10,13 @@
 #include "fe/scene3d/Camera3D.h"
 #include "fe/serialization/SceneSerializer.h"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 using namespace fe;
 
@@ -87,4 +90,64 @@ TEST_CASE("the 2D demo's camera frames the sprites it was authored around") {
     const Vec3 centre = transform_point(camera->node()->world_matrix(), Vec3{});
     CHECK(centre.x > 0.0f);
     CHECK(centre.y > 0.0f);
+}
+
+// A UI canvas draws no text without a font, so a shipped scene whose canvas font
+// reference is empty renders a HUD and menus with no words on them. The
+// collect3d scene shipped that way: it was regenerated with `--null-window`, a
+// device-free run registers no font loader (the font resolves its atlas through
+// the texture loader, which needs a device), so the save wrote an empty font
+// reference for every canvas and the M11 slice drew a wordless HUD. The reference
+// is written from the *loaded* resource, so the fix is to give the regenerating
+// run the loaders a real run has, not to hand-edit the file.
+//
+// Every scene under `examples/` is checked, so a new example that regenerates
+// device-free fails here rather than in a browser.
+TEST_CASE("every shipped example scene gives its UI canvases a font") {
+    const std::filesystem::path examples = std::filesystem::path(FE_SOURCE_DIR) / "examples";
+
+    int scenes_checked = 0;
+    int canvases_checked = 0;
+    for (const std::filesystem::directory_entry& entry : std::filesystem::recursive_directory_iterator(examples)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".fescene") {
+            continue;
+        }
+        const nlohmann::json document = nlohmann::json::parse(read_file(entry.path()), nullptr, false);
+        REQUIRE_MESSAGE(!document.is_discarded(), "cannot parse " << entry.path().string());
+        ++scenes_checked;
+
+        // A canvas is a component of type UiCanvas; its `font` is the loader key
+        // the label resolves through. Walk the whole node tree the same way the
+        // loader does.
+        std::vector<const nlohmann::json*> pending;
+        if (document.contains("roots") && document.at("roots").is_array()) {
+            for (const nlohmann::json& root : document.at("roots")) {
+                pending.push_back(&root);
+            }
+        }
+        while (!pending.empty()) {
+            const nlohmann::json& node = *pending.back();
+            pending.pop_back();
+            if (node.contains("components") && node.at("components").is_array()) {
+                for (const nlohmann::json& component : node.at("components")) {
+                    if (component.value("type", std::string{}) != "UiCanvas") {
+                        continue;
+                    }
+                    ++canvases_checked;
+                    CHECK_MESSAGE(!component.value("font", std::string{}).empty(),
+                                  entry.path().filename().string() << " has a UiCanvas with no font");
+                }
+            }
+            if (node.contains("children") && node.at("children").is_array()) {
+                for (const nlohmann::json& child : node.at("children")) {
+                    pending.push_back(&child);
+                }
+            }
+        }
+    }
+
+    // A scene walk that found nothing would pass vacuously, so assert the check
+    // actually saw the shipped scenes and their canvases.
+    CHECK(scenes_checked >= 4);
+    CHECK(canvases_checked >= 8);
 }

@@ -391,6 +391,16 @@ int main(int argc, char** argv) {
         config.window.visible = false;
         config.window.vsync = false;
     }
+    if (!options.scene_to_save.empty()) {
+        // Serializing the scene writes each component's reference from the
+        // *loaded* resource, so the run that regenerates the file needs the same
+        // loaders a real run has. The font loader resolves its atlas through the
+        // texture loader, which needs a device, so a device-free save (a plain
+        // `--null-window` run) writes an empty font reference and the shipped HUD
+        // draws no text. A null RHI device is enough to register it, and is a
+        // no-op when a window already gave us a real one.
+        config.headless_render = true;
+    }
 
 #if defined(FE_PLATFORM_WEB)
     web_app = std::make_unique<Collect3DApp>(config, options.headless, options.scene_to_save);

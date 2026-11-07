@@ -1584,7 +1584,7 @@
         {
           "design_height": 720.0,
           "design_width": 1280.0,
-          "font": "",
+          "font": "font:examples/collect3d/assets/fonts/hud.fefont",
           "id": "6aa3a975-866b-49c2-bb32-d5567b734fd1",
           "layer": 10,
           "padding": [
@@ -1813,7 +1813,7 @@
         {
           "design_height": 720.0,
           "design_width": 1280.0,
-          "font": "",
+          "font": "font:examples/collect3d/assets/fonts/hud.fefont",
           "id": "a3a14f18-d01b-400d-83c2-147222f3726a",
           "layer": 20,
           "padding": [
@@ -2042,7 +2042,7 @@
         {
           "design_height": 720.0,
           "design_width": 1280.0,
-          "font": "",
+          "font": "font:examples/collect3d/assets/fonts/hud.fefont",
           "id": "79748b16-5304-4559-85b3-667c5b1b231b",
           "layer": 20,
           "padding": [
@@ -2178,7 +2178,7 @@
         {
           "design_height": 720.0,
           "design_width": 1280.0,
-          "font": "",
+          "font": "font:examples/collect3d/assets/fonts/hud.fefont",
           "id": "f0581ea5-9df7-4e52-9603-435357070aff",
           "layer": 20,
           "padding": [
@@ -2874,7 +2874,7 @@
         {
           "design_height": 720.0,
           "design_width": 1280.0,
-          "font": "",
+          "font": "font:examples/collect3d/assets/fonts/hud.fefont",
           "id": "6fdf31c1-61cc-4a29-8844-50d553446271",
           "layer": 20,
           "padding": [

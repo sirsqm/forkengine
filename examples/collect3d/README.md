@@ -101,6 +101,12 @@ Regenerate the authored scene from the code-built one:
 ./build/bin/fork_collect3d --null-window --save-scene examples/collect3d/scenes/collect3d.fescene
 ```
 
+A save run gives itself a null RHI device, so it registers the font loader and
+writes a real font reference for every canvas. Without that the font reference
+would be empty — a device-free run has no font loader — and the regenerated file
+would ship a HUD with no text on it. `tests/src/test_example_projects.cpp` fails
+if a shipped scene's canvas has no font, so the mistake cannot land silently.
+
 ## Assets
 
 The mesh, the font atlas, and the WAV cue are generated or hand-written, not
