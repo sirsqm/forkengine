@@ -3131,3 +3131,57 @@ TEST_CASE("a real 2D impact still bounces with restitution") {
     }
     CHECK(bounced);
 }
+
+// ---------------------------------------------------------------------------
+// Gravity scale: a per-body multiplier on world gravity.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 2D body with a gravity scale of two falls twice as fast") {
+    Scene scene;
+    Node* normal = add_dynamic_box(scene, Vec2{0.0f, 10.0f}, 0.5f, 1.0f);
+    Node* heavy = add_dynamic_box(scene, Vec2{4.0f, 10.0f}, 0.5f, 1.0f);
+    heavy->get_component<physics2d::RigidBody2D>()->gravity_scale = 2.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 30; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    const f32 normal_fall = 10.0f - normal->transform().position.y;
+    const f32 heavy_fall = 10.0f - heavy->transform().position.y;
+    CHECK(heavy_fall == doctest::Approx(2.0f * normal_fall).epsilon(0.01));
+}
+
+TEST_CASE("a 2D body with a gravity scale of zero does not fall") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 10.0f}, 0.5f, 1.0f);
+    node->get_component<physics2d::RigidBody2D>()->gravity_scale = 0.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    CHECK(node->transform().position.y == doctest::Approx(10.0f));
+}
+
+TEST_CASE("a 2D gravity scale round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* node = scene.create_node("Floaty");
+    auto* body = node->add_component<physics2d::RigidBody2D>();
+    body->gravity_scale = 0.25f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_node = loaded.find_node_by_name("Floaty");
+    REQUIRE(loaded_node != nullptr);
+    const auto* loaded_body = loaded_node->get_component<physics2d::RigidBody2D>();
+    REQUIRE(loaded_body != nullptr);
+    CHECK(loaded_body->gravity_scale == doctest::Approx(0.25f));
+}

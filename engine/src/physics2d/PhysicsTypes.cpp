@@ -103,6 +103,8 @@ void register_rigid_body2d(Registry& registry) {
                                                                         ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
         "affected_by_gravity", &physics2d::RigidBody2D::affected_by_gravity, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RigidBody2D, f32>(
+        "gravity_scale", &physics2d::RigidBody2D::gravity_scale, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RigidBody2D, bool>(
         "fixed_rotation", &physics2d::RigidBody2D::fixed_rotation, ValueKind::Bool, &defaults));
 

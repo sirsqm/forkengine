@@ -300,7 +300,7 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
             continue;
         }
         if (entry.body->affected_by_gravity) {
-            entry.velocity += gravity * delta_time;
+            entry.velocity += gravity * (entry.body->gravity_scale * delta_time);
         }
         // A per-step force acts through the body's inverse mass, and the
         // accumulated torque is summed with the constant one. Both are cleared

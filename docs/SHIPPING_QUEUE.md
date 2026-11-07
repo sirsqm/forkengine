@@ -1025,6 +1025,27 @@ the definition unchanged, that an instance's joint points at its own bodies
 rather than the definition's, that a prefab round-trips through its own document,
 and that an empty prefab reports an error and leaves the scene untouched.
 
+### `physics-body-forces`
+
+The force and impulse rows (ADR-0136, ADR-0137) leave a body's motion inputs
+thin: a body can be pushed by a per-step force or a one-shot impulse, but its
+relation to gravity is still a switch, so a balloon, a moon, or a paper plane
+cannot be expressed as a property.
+
+**Done when** a body can scale the world gravity it feels, with a test proving a
+body at scale 2 falls twice as far as a normal one in the same steps and a body
+at scale 0 does not fall at all, and the value round-trips through the
+serializer.
+
+Landed as `RigidBody2D::gravity_scale` and `RigidBody3D::gravity_scale`
+([ADR-0139](adr/0139-per-body-gravity-scale.md)). Integration multiplies world
+gravity by the scale inside the existing `affected_by_gravity` check, so the
+boolean still gates the whole term and a scale of 1.0 is the frozen default. A
+negative scale lets a body rise, and 0.0 is a composable weightless. The field is
+registered with the reflection registry and round-trips through a scene file in
+both worlds. Tests pin a 2x body falling twice as far as a 1x body over the same
+steps, a 0x body not falling, and the 2D and 3D round trips.
+
 ### `ui-scroll-and-masks`
 
 The in-game UI row (ADR-0058) leaves scrolling and clipping open: a list longer

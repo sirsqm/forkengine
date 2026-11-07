@@ -1132,3 +1132,53 @@ TEST_CASE("a real 3D impact still bounces with restitution") {
     }
     CHECK(bounced);
 }
+
+// ---------------------------------------------------------------------------
+// Gravity scale: a per-body multiplier on world gravity.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D body with a gravity scale of two falls twice as fast") {
+    Scene scene;
+    Node* normal = add_dynamic_box(scene, Vec3{0.0f, 10.0f, 0.0f}, 0.5f, 1.0f);
+    Node* heavy = add_dynamic_box(scene, Vec3{4.0f, 10.0f, 0.0f}, 0.5f, 1.0f);
+    heavy->get_component<physics3d::RigidBody3D>()->gravity_scale = 2.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 30);
+
+    const f32 normal_fall = 10.0f - normal->transform().position.y;
+    const f32 heavy_fall = 10.0f - heavy->transform().position.y;
+    CHECK(heavy_fall == doctest::Approx(2.0f * normal_fall).epsilon(0.01));
+}
+
+TEST_CASE("a 3D body with a gravity scale of zero does not fall") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec3{0.0f, 10.0f, 0.0f}, 0.5f, 1.0f);
+    node->get_component<physics3d::RigidBody3D>()->gravity_scale = 0.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+    CHECK(node->transform().position.y == doctest::Approx(10.0f));
+}
+
+TEST_CASE("a 3D gravity scale round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* node = scene.create_node("Floaty");
+    auto* body = node->add_component<physics3d::RigidBody3D>();
+    body->gravity_scale = 0.25f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_node = loaded.find_node_by_name("Floaty");
+    REQUIRE(loaded_node != nullptr);
+    const auto* loaded_body = loaded_node->get_component<physics3d::RigidBody3D>();
+    REQUIRE(loaded_body != nullptr);
+    CHECK(loaded_body->gravity_scale == doctest::Approx(0.25f));
+}

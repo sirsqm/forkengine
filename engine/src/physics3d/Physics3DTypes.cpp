@@ -101,6 +101,8 @@ void register_rigid_body3d(Registry& registry) {
                                                                         ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>(
         "affected_by_gravity", &physics3d::RigidBody3D::affected_by_gravity, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RigidBody3D, f32>(
+        "gravity_scale", &physics3d::RigidBody3D::gravity_scale, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>(
         "fixed_rotation", &physics3d::RigidBody3D::fixed_rotation, ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RigidBody3D, bool>("can_sleep", &physics3d::RigidBody3D::can_sleep,

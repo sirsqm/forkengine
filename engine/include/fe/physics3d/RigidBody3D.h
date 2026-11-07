@@ -88,6 +88,12 @@ public:
     // by collisions, which is how a kinematic platform moves.
     bool affected_by_gravity = true;
 
+    // Multiplies the world gravity for this body. 1.0 is normal, 0.0 is
+    // weightless (the same effect as `affected_by_gravity = false` but
+    // composable), and a value above 1.0 falls faster. Ignored when
+    // `affected_by_gravity` is false.
+    f32 gravity_scale = 1.0f;
+
     // When true, the solver never changes the body's rotation: it is locked to
     // whatever the transform holds. Collisions still move it linearly, and it
     // still carries its transform rotation into contacts (as zero effective
