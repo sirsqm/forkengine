@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/anim/AnimationBlendSpace2D.h"
+#include "fe/anim/AnimationClip.h"
 #include "fe/anim/Skeleton.h"
 #include "fe/systems/System.h"
 
@@ -45,6 +46,12 @@ public:
     // update. Non-zero only on the frames after a load.
     [[nodiscard]] usize last_resolved_count() const noexcept { return resolved_; }
 
+    // The timeline events of the contributing clips that playback crossed during
+    // the most recent update, in the order they were passed. A marker two samples
+    // share (a matched pair of directional clips) is reported once. Empty when no
+    // sample carried events. Rebuilt every update.
+    [[nodiscard]] const std::vector<AnimationEvent>& events() const noexcept { return events_; }
+
 private:
     std::vector<AnimationBlendSpace2D*> spaces_;
 
@@ -56,6 +63,7 @@ private:
     SkeletonPose pose_c_;
     SkeletonPose additive_scratch_;
 
+    std::vector<AnimationEvent> events_;
     usize advanced_ = 0;
     usize skipped_ = 0;
     usize resolved_ = 0;

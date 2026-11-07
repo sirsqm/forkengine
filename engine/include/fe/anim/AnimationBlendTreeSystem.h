@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/anim/AnimationBlendTree.h"
+#include "fe/anim/AnimationClip.h"
 #include "fe/anim/Skeleton.h"
 #include "fe/systems/System.h"
 
@@ -51,6 +52,16 @@ public:
     // update. Non-zero only on the frames after a load.
     [[nodiscard]] usize last_resolved_count() const noexcept { return resolved_; }
 
+    // The timeline events of the contributing clips that playback crossed during
+    // the most recent update, in the order they were passed. A blend tree has no
+    // single clip, so a marker fires when the animator's clock crosses it in *any*
+    // sample the tree played -- that is what a footstep on a walk clip means when
+    // walk and run are blended. A marker shared by two samples at the same time
+    // (a matched pair of clips) is reported once, not twice. Empty when no sample
+    // carried events. Rebuilt every update; a caller that keeps them past the
+    // frame copies them.
+    [[nodiscard]] const std::vector<AnimationEvent>& events() const noexcept { return events_; }
+
 private:
     std::vector<AnimationBlendTree*> trees_;
 
@@ -59,6 +70,8 @@ private:
     SkeletonPose pose_a_;
     SkeletonPose pose_b_;
     SkeletonPose additive_scratch_;
+
+    std::vector<AnimationEvent> events_;
 
     usize advanced_ = 0;
     usize skipped_ = 0;

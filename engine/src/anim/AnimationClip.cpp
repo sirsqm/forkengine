@@ -309,6 +309,36 @@ usize collect_clip_events(const AnimationClip& clip, f32 previous_time, f32 curr
     return out.size() - before;
 }
 
+usize collect_blend_events(const BlendClipTiming* clips, usize count, std::vector<AnimationEvent>& out) {
+    const usize before = out.size();
+    for (usize i = 0; i < count; ++i) {
+        const BlendClipTiming& timing = clips[i];
+        if (timing.clip == nullptr || timing.weight <= 0.0f) {
+            continue;
+        }
+        const f32 duration = timing.clip->duration();
+        const f32 previous = AnimationClip::wrap_time(timing.previous_time, duration, timing.mode);
+        const f32 current = AnimationClip::wrap_time(timing.current_time, duration, timing.mode);
+
+        // Dedupe against what earlier clips already contributed, but not within
+        // this clip's own contribution: a marker the clip carries twice in one
+        // window is two events (two steps), while a marker two clips share is one.
+        const usize clip_start = out.size();
+        collect_clip_events(*timing.clip, previous, current, out);
+        for (usize j = out.size(); j-- > clip_start;) {
+            const AnimationEvent& event = out[j];
+            const bool duplicated = std::any_of(out.begin(), out.begin() + static_cast<ptrdiff_t>(clip_start),
+                                                [&](const AnimationEvent& earlier) {
+                                                    return earlier.name == event.name && earlier.time == event.time;
+                                                });
+            if (duplicated) {
+                out.erase(out.begin() + static_cast<ptrdiff_t>(j));
+            }
+        }
+    }
+    return out.size() - before;
+}
+
 void blend_poses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPose& out) {
     // Clamp, so a caller that overshoots an ease does not extrapolate into a pose
     // neither clip contains.

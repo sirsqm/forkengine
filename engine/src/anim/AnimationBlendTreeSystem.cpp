@@ -27,6 +27,7 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
     skipped_ = 0;
     resolved_ = 0;
     trees_.clear();
+    events_.clear();
 
     scene.for_each_node([&](Node& node) {
         if (AnimationBlendTree* tree = node.get_component<AnimationBlendTree>(); tree != nullptr) {
@@ -55,6 +56,10 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
 
         const LoopMode mode = animator->loop;
         const f32 base_time = animator->time;
+        // The clock the previous frame sampled at, so the markers the samples
+        // crossed between the two can be reported. Captured before it is updated.
+        const f32 previous_base_time = tree->previous_base_time;
+        tree->previous_base_time = base_time;
         bool wrote_pose = false;
 
         // --- 1. The base blend ------------------------------------------------
@@ -73,6 +78,31 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
                 sample_sample(*skeleton, tree->samples[0], base_time, mode, base);
                 wrote_pose = true;
             }
+        }
+
+        // --- 1b. Timeline events of the base blend ---------------------------
+        // A blend tree has no single clip, so a marker fires when the clock
+        // crossed it in any sample the tree played. Collected from the same
+        // samples the base blend used, at each sample's own rate, so a matched
+        // pair of locomotion clips reports one footstep, not two.
+        if (tree->drive_animator && !tree->samples.empty()) {
+            const usize count = std::min<usize>(tree->samples.size(), 2);
+            const f32 weight = tree->samples.size() >= 2 ? tree->blend_weight() : 0.0f;
+            BlendClipTiming timings[2];
+            usize used = 0;
+            for (usize i = 0; i < count; ++i) {
+                const BlendSample& sample = tree->samples[i];
+                if (sample.clip == nullptr) {
+                    continue;
+                }
+                timings[used].clip = sample.clip.get();
+                timings[used].previous_time = previous_base_time * sample.speed;
+                timings[used].current_time = base_time * sample.speed;
+                timings[used].mode = mode;
+                timings[used].weight = count == 1 ? 1.0f : (i == 0 ? 1.0f - weight : weight);
+                ++used;
+            }
+            collect_blend_events(timings, used, events_);
         }
 
         // --- 2. The additive layer -------------------------------------------

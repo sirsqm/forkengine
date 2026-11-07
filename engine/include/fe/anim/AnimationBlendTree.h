@@ -136,6 +136,15 @@ public:
     f32 additive_time = 0.0f;
     f32 additive_speed = 1.0f;
 
+    // --- Derived state (not serialized) ------------------------------------
+
+    // The animator's clock the previous frame sampled the base blend at. The
+    // system keeps it so it can report the timeline events of the contributing
+    // clips that playback crossed between the two clocks. Zero before the system
+    // has run once, which is the correct start for a clip whose first frame is at
+    // time zero.
+    f32 previous_base_time = 0.0f;
+
     // --- Queried state -----------------------------------------------------
 
     // The blend weight derived from `parameter` and the samples' thresholds,

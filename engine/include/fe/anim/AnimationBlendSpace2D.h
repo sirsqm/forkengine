@@ -111,6 +111,13 @@ public:
     // `AnimationBlendTree::additive_layers`.
     std::vector<AdditiveLayer> additive_layers;
 
+    // --- Derived state (not serialized) ------------------------------------
+
+    // The animator's clock the previous frame sampled the blend at, kept so the
+    // system can report the contributing clips' timeline events that playback
+    // crossed between the two clocks. Zero before the first update.
+    f32 previous_base_time = 0.0f;
+
     // --- Queried state -----------------------------------------------------
 
     // Writes the samples and weights that blend to `parameter` into `out`, up to

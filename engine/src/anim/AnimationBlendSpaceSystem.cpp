@@ -25,6 +25,7 @@ void AnimationBlendSpaceSystem::update(const FrameContext& context, Scene& scene
     skipped_ = 0;
     resolved_ = 0;
     spaces_.clear();
+    events_.clear();
 
     scene.for_each_node([&](Node& node) {
         if (AnimationBlendSpace2D* space = node.get_component<AnimationBlendSpace2D>(); space != nullptr) {
@@ -54,6 +55,8 @@ void AnimationBlendSpaceSystem::update(const FrameContext& context, Scene& scene
 
         const LoopMode mode = animator->loop;
         const f32 base_time = animator->time;
+        const f32 previous_base_time = space->previous_base_time;
+        space->previous_base_time = base_time;
         bool wrote_pose = false;
 
         // --- 1. The base blend ------------------------------------------------
@@ -83,6 +86,28 @@ void AnimationBlendSpaceSystem::update(const FrameContext& context, Scene& scene
                 }
                 wrote_pose = true;
             }
+        }
+
+        // --- 1b. Timeline events of the base blend ---------------------------
+        // A marker fires when the clock crossed it in any sample the space played,
+        // at that sample's own rate. A marker two samples share is reported once.
+        if (space->drive_animator) {
+            const usize count = space->weights(selected, 3);
+            BlendClipTiming timings[3];
+            usize used = 0;
+            for (usize i = 0; i < count; ++i) {
+                const BlendPoint& point = space->samples[selected[i].sample];
+                if (point.clip == nullptr) {
+                    continue;
+                }
+                timings[used].clip = point.clip.get();
+                timings[used].previous_time = previous_base_time * point.speed;
+                timings[used].current_time = base_time * point.speed;
+                timings[used].mode = mode;
+                timings[used].weight = selected[i].weight;
+                ++used;
+            }
+            collect_blend_events(timings, used, events_);
         }
 
         // --- 2. The additive layer -------------------------------------------

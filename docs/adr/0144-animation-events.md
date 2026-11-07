@@ -52,6 +52,13 @@ Add `AnimationEvent` (a name and a time in the clip's own seconds) to
   previous frame and, each frame, collects the markers the primary clip crossed
   into the new position, publishing them through `events()`. Only the primary clip
   contributes, so an outgoing cross-fade clip does not fire a marker twice.
+- A *blend* has no single clip, so `collect_blend_events(clips, count, out)`
+  collects from every contributing clip at that clip's own rate, and reports a
+  marker two clips share (the same name and time, which a matched pair of
+  locomotion clips produces) once, so a blended walk/run pair sounds one footstep.
+  `AnimationBlendTreeSystem` and `AnimationBlendSpaceSystem` publish their
+  contributing clips' events through `events()`, taking the weights from the same
+  blend they applied, so a clip blended out to zero weight contributes nothing.
 
 ## Consequences
 

@@ -40,6 +40,7 @@ add_executable(fork_engine_tests
     src/test_skeletal_state_machine.cpp
     src/test_animation_blend_tree.cpp
     src/test_animation_blend_space.cpp
+    src/test_animation_blend_events.cpp
     src/test_joint_mask.cpp
     src/test_additive_layers.cpp
     src/test_animation_events.cpp

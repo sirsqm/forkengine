@@ -1128,7 +1128,9 @@ a pixel the unclipped control paints.
   weight, clock, and joint mask, composed in order, and a clip now carries named
   timeline events the animation system reports on the frame playback crosses
   them, so a walk cycle can drive a footstep sound and an attack can open a live
-  hitbox window. What remains is the wider shape of a tree feeding a tree.
+  hitbox window -- the blend tree and blend space report the markers of every
+  clip that contributes to the blend, once each, so a blended walk/run pair sounds
+  one footstep. What remains is the wider shape of a tree feeding a tree.
 - More example games beyond the breakout slice, once the first one ships. The
   next one is planned as a **finished 3D game** — the roadmap's
   [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from

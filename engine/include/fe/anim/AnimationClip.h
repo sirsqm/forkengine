@@ -277,4 +277,26 @@ void blend_poses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPo
 usize collect_clip_events(const AnimationClip& clip, f32 previous_time, f32 current_time,
                           std::vector<AnimationEvent>& out);
 
+// One clip as a blend contributes it, for `collect_blend_events`.
+struct BlendClipTiming {
+    const AnimationClip* clip = nullptr;
+    // The clip's own playback clock last frame and this frame, unwrapped: the
+    // function wraps each with the clip's duration and `mode`, so a blend of clips
+    // at different rates each reports the markers it actually passed.
+    f32 previous_time = 0.0f;
+    f32 current_time = 0.0f;
+    LoopMode mode = LoopMode::Loop;
+    // A clip at or below zero weight contributes nothing to the pose, so its
+    // markers are not reported: a blended-out locomotion clip does not sound a
+    // footstep.
+    f32 weight = 1.0f;
+};
+
+// Appends the timeline events every contributing clip of a blend crossed, in
+// clip order, to `out`, and returns how many were appended. A marker two clips
+// share -- the same name and time, which a matched pair of locomotion clips (a
+// walk and a run with a footstep at the same normalised time) produces -- is
+// appended once, so a blended pair does not sound the footstep twice.
+usize collect_blend_events(const BlendClipTiming* clips, usize count, std::vector<AnimationEvent>& out);
+
 } // namespace fe::anim
