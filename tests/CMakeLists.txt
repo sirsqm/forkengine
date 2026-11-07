@@ -106,6 +106,7 @@ target_sources(fork_engine_tests PRIVATE
     src/test_collect3d.cpp
     ${CMAKE_SOURCE_DIR}/examples/collect3d/src/slice_state.cpp
     ${CMAKE_SOURCE_DIR}/examples/collect3d/src/slice_scene.cpp
+    ${CMAKE_SOURCE_DIR}/examples/collect3d/src/slice_systems.cpp
 )
 target_include_directories(fork_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/examples/collect3d/src)
 
