@@ -70,9 +70,17 @@ Contact2D intersect_obbs(const Obb2D& a, const Obb2D& b) noexcept {
         if (overlap_x <= overlap_y) {
             contact.penetration = overlap_x;
             contact.normal = Vec2{delta.x >= 0.0f ? 1.0f : -1.0f, 0.0f};
+            // Centre of the overlapping span on the separating axis, on the
+            // line through A's centre along that axis.
+            const f32 lo = std::max(a.center.x - a.half_extent.x, b.center.x - b.half_extent.x);
+            const f32 hi = std::min(a.center.x + a.half_extent.x, b.center.x + b.half_extent.x);
+            contact.point = Vec2{0.5f * (lo + hi), a.center.y};
         } else {
             contact.penetration = overlap_y;
             contact.normal = Vec2{0.0f, delta.y >= 0.0f ? 1.0f : -1.0f};
+            const f32 lo = std::max(a.center.y - a.half_extent.y, b.center.y - b.half_extent.y);
+            const f32 hi = std::min(a.center.y + a.half_extent.y, b.center.y + b.half_extent.y);
+            contact.point = Vec2{a.center.x, 0.5f * (lo + hi)};
         }
         return contact;
     }
@@ -100,6 +108,16 @@ Contact2D intersect_obbs(const Obb2D& a, const Obb2D& b) noexcept {
     // Normal points from A towards B. A zero projection means the centres are
     // level on this axis; pick + to match the axis-aligned test's tie-break.
     contact.normal = min_axis * (delta.dot(min_axis) < 0.0f ? -1.0f : 1.0f);
+    // Centre of the overlap span along the separating axis, on the line through
+    // A's centre: the projection of a point `a.center + min_axis * t` is
+    // `a.center.dot(min_axis) + t`, so t places it at the span's centre.
+    {
+        const f32 a_proj = a.center.dot(min_axis);
+        const f32 b_proj = b.center.dot(min_axis);
+        const f32 lo = std::max(a_proj - project_radius(a, min_axis), b_proj - project_radius(b, min_axis));
+        const f32 hi = std::min(a_proj + project_radius(a, min_axis), b_proj + project_radius(b, min_axis));
+        contact.point = a.center + min_axis * (0.5f * (lo + hi) - a_proj);
+    }
     return contact;
 }
 
@@ -125,6 +143,9 @@ Contact2D intersect_circles(const Circle2D& a, const Circle2D& b) noexcept {
         // still separates them deterministically instead of dividing by zero.
         contact.normal = Vec2{0.0f, 1.0f};
     }
+    // Halfway between the two surfaces along the normal, starting from A's
+    // surface: the midpoint of the overlap, which is where an impact reads.
+    contact.point = a.center + contact.normal * (a.radius - 0.5f * contact.penetration);
     return contact;
 }
 
@@ -179,6 +200,7 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
                 contact.penetration = min_y + circle.radius;
             }
         }
+        contact.point = circle.center + contact.normal * (circle.radius - 0.5f * contact.penetration);
         return contact;
     }
 
@@ -220,6 +242,7 @@ Contact2D intersect_circle_obb(const Circle2D& circle, const Obb2D& box) noexcep
         }
     }
     contact.normal = rotate(normal_local, box.rotation);
+    contact.point = circle.center + contact.normal * (circle.radius - 0.5f * contact.penetration);
     return contact;
 }
 

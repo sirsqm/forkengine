@@ -1025,6 +1025,25 @@ the definition unchanged, that an instance's joint points at its own bodies
 rather than the definition's, that a prefab round-trips through its own document,
 and that an empty prefab reports an error and leaves the scene untouched.
 
+### `contact-event-geometry`
+
+A contact event says which two nodes touched but not where, so a listener that
+wants to spawn an effect at the point of impact has to re-run the narrow phase.
+
+**Done when** a Begin event reports the world-space contact point and the normal
+of the touch, with a test proving a box resting on the floor reports a point on
+the floor's top face and a circle reports one on the face it landed on.
+
+Landed as `Contact2D::point` plus `ContactEvent::point`/`normal`
+([ADR-0140](adr/0140-contact-event-geometry.md)). Each 2D narrow-phase test
+computes one representative point: the centre of the overlap span on the
+separating axis for boxes, and halfway between the surfaces for a circle. The
+`BodyPair` key carries the point and normal alongside the ids, so the sort and
+diff see the same key as before and the frozen contact stream is unchanged; the
+normal is flipped to run from `pair.first` to `pair.second`. Tests pin a box
+resting on the floor reporting a point on its top face at y = 0 with a vertical
+normal, and a circle landing on the floor reporting a point near its x.
+
 ### `physics-body-forces`
 
 The force and impulse rows (ADR-0136, ADR-0137) leave a body's motion inputs

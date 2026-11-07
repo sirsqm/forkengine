@@ -145,6 +145,7 @@ rather than editing it.
 | [0137](0137-impulse-api.md) | An impulse API on a rigid body: a one-shot velocity change, at the centre or off it | Accepted |
 | [0138](0138-restitution-velocity-threshold.md) | A restitution velocity threshold: a barely-approaching pair does not bounce | Accepted |
 | [0139](0139-per-body-gravity-scale.md) | A per-body gravity scale: a multiplier on world gravity | Accepted |
+| [0140](0140-contact-event-geometry.md) | A contact event carries the point and normal of the touch | Accepted |
 
 ## Format
 

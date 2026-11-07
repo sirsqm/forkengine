@@ -3185,3 +3185,49 @@ TEST_CASE("a 2D gravity scale round-trips through the serializer") {
     REQUIRE(loaded_body != nullptr);
     CHECK(loaded_body->gravity_scale == doctest::Approx(0.25f));
 }
+
+// ---------------------------------------------------------------------------
+// A contact event carries the geometry of the touch: where it happened and the
+// normal, so a game can spawn an effect at the hit.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a begin contact event reports the point and normal of the touch") {
+    Scene scene;
+    add_floor(scene, 20.0f);                              // top face at y = 0
+    add_dynamic_box(scene, Vec2{0.0f, 0.5f}, 0.5f, 1.0f); // resting, bottom face at y=0
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    REQUIRE(system.contact_event_count() == 1);
+    const physics2d::ContactEvent& event = system.contact_events().front();
+    // The touch is on the floor's top face at y = 0, under the body's centre.
+    CHECK(std::abs(event.point.y) < 0.01f);
+    CHECK(std::abs(event.point.x) < 0.01f);
+    // The normal is vertical, from one body to the other; the floor is below, so
+    // it points up or down depending on the pair's stable order.
+    CHECK(std::abs(std::abs(event.normal.y) - 1.0f) < 0.01f);
+    CHECK(std::abs(event.normal.x) < 0.01f);
+}
+
+TEST_CASE("a circle landing on a box reports a contact point on the top face") {
+    Scene scene;
+    add_floor(scene, 20.0f); // top face at y = 0
+    Node* ball = scene.create_node("Ball");
+    auto* collider = ball->add_component<physics2d::Collider2D>();
+    collider->shape = physics2d::ShapeType::Circle;
+    collider->radius = 0.5f;
+    auto* body = ball->add_component<physics2d::RigidBody2D>();
+    body->mass = 1.0f;
+    ball->transform().position = Vec3{2.0f, 0.5f, 0.0f};
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    REQUIRE(system.contact_event_count() == 1);
+    const physics2d::ContactEvent& event = system.contact_events().front();
+    // The contact sits on the floor top (y = 0), near the ball's x.
+    CHECK(std::abs(event.point.y) < 0.02f);
+    CHECK(std::abs(event.point.x - 2.0f) < 0.05f);
+    CHECK(std::abs(std::abs(event.normal.y) - 1.0f) < 0.01f);
+}

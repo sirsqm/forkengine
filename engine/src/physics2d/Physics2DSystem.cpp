@@ -528,6 +528,12 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                                                  b.node->id().bytes().begin(), b.node->id().bytes().end());
                 pair.first = a_first ? a.node->id() : b.node->id();
                 pair.second = a_first ? b.node->id() : a.node->id();
+                // The narrow phase reports the normal from the first gathered
+                // body towards the second; the pair may order them the other way,
+                // so flip it to keep the event's normal from pair.first towards
+                // pair.second. The point is direction-free.
+                pair.point = contact.point;
+                pair.normal = a_first ? contact.normal : Vec2{-contact.normal.x, -contact.normal.y};
                 active_pairs_.push_back(pair);
             }
 
@@ -1342,6 +1348,11 @@ void Physics2DSystem::append_event(ContactPhase phase, const BodyPair& pair, Sce
     if (event.a == nullptr || event.b == nullptr) {
         return;
     }
+    // For a Begin this is where the pair first touched this step; for an End it
+    // is the last recorded touch of the pair, which is the closest the previous
+    // frame got to the point of separation.
+    event.point = pair.point;
+    event.normal = pair.normal;
     events_.push_back(event);
 }
 
