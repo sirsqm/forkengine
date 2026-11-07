@@ -93,6 +93,20 @@ TEST_CASE("the default play schedule includes the physics system") {
     CHECK(session.schedule().find("SpriteAnimationSystem") != nullptr);
 }
 
+TEST_CASE("the default play schedule includes both navigation systems") {
+    // Play mode has to route an AI the same way a shipped build does, so the nav
+    // systems are part of the defaults, not something a game wires by hand. Each
+    // is a no-op on a scene with no agent of its dimension, so the editor does not
+    // need to know which kind of level it is about to play.
+    Scene authored;
+    add_floor(authored, 10.0f);
+
+    PlaySession session;
+    REQUIRE_FALSE(session.start(authored));
+    CHECK(session.schedule().find("NavigationSystem2D") != nullptr);
+    CHECK(session.schedule().find("NavigationSystem3D") != nullptr);
+}
+
 TEST_CASE("advancing play simulates a falling body onto a static floor") {
     Scene authored;
     add_floor(authored, 20.0f);

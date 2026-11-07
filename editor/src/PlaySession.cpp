@@ -5,6 +5,8 @@
 #include "fe/audio/AudioBackend.h"
 #include "fe/audio/AudioSystem.h"
 #include "fe/core/Log.h"
+#include "fe/nav/NavigationSystem2D.h"
+#include "fe/nav/NavigationSystem3D.h"
 #include "fe/physics2d/Physics2DSystem.h"
 #include "fe/physics3d/Physics3DSystem.h"
 #include "fe/renderer2d/Renderer2D.h"
@@ -73,6 +75,19 @@ void PlaySession::register_default_systems() {
     // fixed so a frame's system list is deterministic and greppable.
     if (schedule_.find("Physics3DSystem") == nullptr) {
         schedule_.add_system<physics3d::Physics3DSystem>();
+    }
+
+    // Navigation runs after physics and after the scripts (ScriptSystem is added
+    // by the editor's play start, ahead of these defaults), so an AI behaviour
+    // that set a goal this frame is routed this frame against the world the step
+    // just produced. Both nav systems are registered; each is a no-op on a scene
+    // with no agent of its dimension, so the editor does not have to know which
+    // kind of level it is about to play.
+    if (schedule_.find("NavigationSystem2D") == nullptr) {
+        schedule_.add_system<nav::NavigationSystem2D>();
+    }
+    if (schedule_.find("NavigationSystem3D") == nullptr) {
+        schedule_.add_system<nav::NavigationSystem3D>();
     }
 
     // Audio, last: the listener reads the camera *after* gameplay has moved it,

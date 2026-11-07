@@ -32,6 +32,9 @@
 #include "fe/audio/AudioSystem.h"
 #include "fe/core/FileSystem.h"
 #include "fe/core/Log.h"
+#include "fe/nav/NavAgent.h"
+#include "fe/nav/NavigationSystem2D.h"
+#include "fe/nav/NavigationSystem3D.h"
 #include "fe/pack/ExportManifest.h"
 #include "fe/pack/HttpFetchSource.h"
 #include "fe/pack/PackSource.h"
@@ -295,11 +298,24 @@ protected:
         // rigid bodies were inert, so an exported 3D game could draw but nothing
         // could move or collide. The editor's play mode always had this (it adds
         // both systems in PlaySession); a shipped build did not.
-        if (scene_has_collider<fe::physics3d::Collider3D>()) {
+        if (scene_has_component<fe::physics3d::Collider3D>()) {
             schedule().add_system<fe::physics3d::Physics3DSystem>();
         }
-        if (scene_has_collider<fe::physics2d::Collider2D>()) {
+        if (scene_has_component<fe::physics2d::Collider2D>()) {
             schedule().add_system<fe::physics2d::Physics2DSystem>();
+        }
+
+        // Navigation runs after physics and after the scripts, so an AI behaviour
+        // that set a goal this frame is routed this frame against the world the
+        // step just produced. It runs only when the scene has a navigation agent,
+        // for the same reason the physics systems are conditional: a game with no
+        // AI must not pay for a pathfinder. A 2D agent is routed on the tilemap
+        // grid, a 3D one on the collider voxel grid, and a scene may hold both.
+        if (scene_has_component<fe::nav::NavAgent2D>()) {
+            schedule().add_system<fe::nav::NavigationSystem2D>();
+        }
+        if (scene_has_component<fe::nav::NavAgent3D>()) {
+            schedule().add_system<fe::nav::NavigationSystem3D>();
         }
 
         // Audio, last so a cue a script or a behaviour fired this frame is mixed
@@ -628,12 +644,13 @@ private:
         return fe::Error::none();
     }
 
-    // Whether the loaded scene contains a collider of `T`, which is how the
-    // player decides which physics systems the frame needs. Walking the scene once
-    // at startup is free next to a frame, and it keeps the decision in one place
-    // rather than requiring a project to declare its dimension.
+    // Whether the loaded scene contains a component of `T`. Walking the scene
+    // once at startup is free next to a frame, and it keeps the decision in one
+    // place rather than requiring a project to declare its dimension. It decides
+    // which physics systems the frame needs and whether a nav system is needed at
+    // all.
     template <typename T>
-    [[nodiscard]] bool scene_has_collider() const {
+    [[nodiscard]] bool scene_has_component() const {
         bool found = false;
         scene().for_each_node([&](fe::Node& node) {
             if (!found && node.get_component<T>() != nullptr) {
