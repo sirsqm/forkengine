@@ -4,6 +4,9 @@
 
 #include "fe/physics3d/Geometry3D.h"
 
+#include <algorithm>
+#include <limits>
+
 namespace fe::physics3d {
 namespace {
 
@@ -260,9 +263,42 @@ Result<void> build_prismatic_rows(const JointBody3D& a, const JointBody3D& b, co
 
     // Rows 2-4 lock the relative rotation, so the slider's axis is a shared
     // frame rather than a world direction that drifts as the bodies turn.
-    build_rotation_lock_rows(a, b, params.reference_relative, out_rows, 2);
-    for (usize i = 2; i < kPrismaticJoint3DRows; ++i) {
+    build_rotation_lock_rows(a, b, params.reference_relative, out_rows, kPrismatic3DRotationRow);
+    for (usize i = kPrismatic3DRotationRow; i < kPrismatic3DLowerLimitRow; ++i) {
         any_solvable = any_solvable || out_rows[i].effective_mass > 0.0f;
+    }
+
+    // Rows 5-6 are the translation limits, zero rows when limits are off. Each is
+    // built only when the joint reaches its bound and is clamped to one sign, so a
+    // stop pushes the pair back inside and never pulls it out.
+    out_rows[kPrismatic3DLowerLimitRow] = ConstraintRow3D{};
+    out_rows[kPrismatic3DUpperLimitRow] = ConstraintRow3D{};
+    if (params.enable_limits) {
+        const f32 along = anchor_error.dot(unit_axis) * -1.0f;
+        const f32 lower = std::min(params.lower_translation, params.upper_translation);
+        const f32 upper = std::max(params.lower_translation, params.upper_translation);
+
+        const auto build_limit_row = [&](ConstraintRow3D& row, f32 bound, f32 clamp_lower, f32 clamp_upper) {
+            row.jacobian_a = unit_axis * -1.0f;
+            row.jacobian_b = unit_axis;
+            row.angular_a = lever_a.cross(row.jacobian_a);
+            row.angular_b = lever_b.cross(row.jacobian_b);
+            row.effective_mass = row_effective_mass(row, a, b);
+            row.position_error = along - bound;
+            row.position_factor = kJointPositionFactor;
+            row.clamp_impulse = true;
+            row.lower_impulse = clamp_lower;
+            row.upper_impulse = clamp_upper;
+        };
+
+        if (along >= upper) {
+            build_limit_row(out_rows[kPrismatic3DUpperLimitRow], upper, -std::numeric_limits<f32>::max(), 0.0f);
+        }
+        if (along <= lower) {
+            build_limit_row(out_rows[kPrismatic3DLowerLimitRow], lower, 0.0f, std::numeric_limits<f32>::max());
+        }
+        any_solvable = any_solvable || out_rows[kPrismatic3DLowerLimitRow].effective_mass > 0.0f ||
+                       out_rows[kPrismatic3DUpperLimitRow].effective_mass > 0.0f;
     }
 
     if (!any_solvable) {

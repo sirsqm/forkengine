@@ -54,6 +54,24 @@ public:
     // a frame the pair shares.
     Quat reference_relative{};
 
+    // Translation limits along the slide axis. When `enable_limits` is set the
+    // pair may slide freely between `lower_translation` and `upper_translation`
+    // (B's anchor relative to A's along the axis, so positive means B is ahead)
+    // and is stopped at either bound, like a drawer's stops or a piston's end
+    // caps. Off by default, so the joint slides freely along its whole axis.
+    bool enable_limits = false;
+    f32 lower_translation = 0.0f;
+    f32 upper_translation = 0.0f;
+
+    // A linear motor that drives the slide. `motor_speed` is the relative speed
+    // along the axis it drives B towards, in world units per second.
+    // `motor_max_force` is the largest force, in newtons, the motor may apply; a
+    // force too small to overcome the load slips rather than winning. The default
+    // zero disables the motor, so a joint with no motor behaves exactly as a
+    // plain slider.
+    f32 motor_speed = 0.0f;
+    f32 motor_max_force = 0.0f;
+
     [[nodiscard]] bool is_valid() const noexcept { return !body_a.is_nil() && !body_b.is_nil() && body_a != body_b; }
 };
 

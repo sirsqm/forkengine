@@ -139,12 +139,18 @@ inline void perpendicular_basis(const Vec3& axis, Vec3& out_a, Vec3& out_b) noex
 
 // How many rows a joint needs: one for a distance joint, three for a revolute
 // joint (the x, y and z components of the shared anchor), six for a fixed joint
-// (three translation plus three rotation), five for a prismatic joint (two
-// translation perpendicular to its axis, plus three rotation).
+// (three translation plus three rotation), seven for a prismatic joint (two
+// translation perpendicular to its axis, three rotation, and the two
+// translation-limit rows, which are zero when limits are off).
 inline constexpr usize kDistanceJoint3DRows = 1;
 inline constexpr usize kRevoluteJoint3DRows = 3;
 inline constexpr usize kFixedJoint3DRows = 6;
-inline constexpr usize kPrismaticJoint3DRows = 5;
+inline constexpr usize kPrismaticJoint3DRows = 7;
+// The index of the prismatic joint's first rotation-lock row and its two
+// translation-limit rows, so the system and the tests can name them.
+inline constexpr usize kPrismatic3DRotationRow = 2;
+inline constexpr usize kPrismatic3DLowerLimitRow = 5;
+inline constexpr usize kPrismatic3DUpperLimitRow = 6;
 
 // The distance-joint parameters, decoupled from the component so the maths can be
 // exercised on its own. The constraint measures between the two body centres.
@@ -230,6 +236,15 @@ struct PrismaticJoint3DParams {
     Vec3 anchor_b{};
     Vec3 axis_a{0.0f, 0.0f, 1.0f};
     Quat reference_relative = Quat::identity();
+
+    // Translation limits along the slide axis. When `enable_limits` is set the
+    // pair may slide freely between `lower_translation` and `upper_translation`
+    // (B's anchor relative to A's along the axis, so positive means B is ahead)
+    // and is stopped at either bound, like a drawer's stops or a piston's end
+    // caps. Off by default, so the joint slides freely along its whole axis.
+    bool enable_limits = false;
+    f32 lower_translation = 0.0f;
+    f32 upper_translation = 0.0f;
 };
 
 // Builds the single distance-constraint row for the current state of the two

@@ -225,6 +225,16 @@ void register_prismatic_joint3d(Registry& registry) {
     desc.properties.push_back(make_vector_group<physics3d::PrismaticJoint3D, Vec3>(
         "axis", &physics3d::PrismaticJoint3D::axis, "Vec3", {"x", "y", "z"}));
     desc.properties.push_back(make_quat_group("reference_relative", &physics3d::PrismaticJoint3D::reference_relative));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, bool>(
+        "enable_limits", &physics3d::PrismaticJoint3D::enable_limits, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "lower_translation", &physics3d::PrismaticJoint3D::lower_translation, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "upper_translation", &physics3d::PrismaticJoint3D::upper_translation, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "motor_speed", &physics3d::PrismaticJoint3D::motor_speed, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "motor_max_force", &physics3d::PrismaticJoint3D::motor_max_force, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }

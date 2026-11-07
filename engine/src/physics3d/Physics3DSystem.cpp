@@ -659,16 +659,36 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             params.anchor_b = joint.prismatic->anchor_b;
             params.axis_a = joint.prismatic->axis;
             params.reference_relative = joint.prismatic->reference_relative;
+            params.enable_limits = joint.prismatic->enable_limits;
+            params.lower_translation = joint.prismatic->lower_translation;
+            params.upper_translation = joint.prismatic->upper_translation;
 
             ConstraintRow3D rows[kPrismaticJoint3DRows];
             if (auto built = build_prismatic_rows(body_a, body_b, params, delta_time, rows); !built) {
                 continue;
             }
-            // Rows 0-1 remove perpendicular translation, rows 2-4 lock the rotation.
-            apply_translation_rows(rows, 2, body_a, body_b);
-            for (usize i = 2; i < kPrismaticJoint3DRows; ++i) {
+            // Rows 0-1 remove perpendicular translation; rows 2-4 lock the
+            // rotation; rows 5-6 are the translation limits (zero when off).
+            apply_translation_rows(rows, kPrismatic3DRotationRow, body_a, body_b);
+            for (usize i = kPrismatic3DRotationRow; i < kPrismatic3DLowerLimitRow; ++i) {
                 apply_row(rows[i], body_a, body_b);
                 apply_row_orientation(rows[i], body_a, body_b);
+            }
+            for (usize i = kPrismatic3DLowerLimitRow; i < kPrismaticJoint3DRows; ++i) {
+                apply_row(rows[i], body_a, body_b);
+                apply_row_position(rows[i], body_a, body_b);
+            }
+
+            // The linear motor drives the slide the joint leaves free. A force is
+            // a per-step impulse bound: `force * delta_time`.
+            JointMotor3D motor;
+            motor.target_speed = joint.prismatic->motor_speed;
+            motor.max_impulse = joint.prismatic->motor_max_force * delta_time;
+            if (motor.is_enabled()) {
+                if (auto row = build_prismatic_motor_row(body_a, body_b, params, motor); row) {
+                    ConstraintRow3D motor_row = row.value();
+                    apply_row(motor_row, body_a, body_b);
+                }
             }
         }
 

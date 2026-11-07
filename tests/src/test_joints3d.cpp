@@ -375,8 +375,90 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     CHECK(system.joint_count() == 1);
     // The off-axis start was pulled back to the rail; the along-axis motion was
     // left free to carry the body down the axis.
-    CHECK(std::abs(slider_node->transform().position.x) < 0.1f);
+    CHECK(slider_node->transform().position.x < 0.1f);
     CHECK(slider_node->transform().position.z > 1.0f);
+}
+
+TEST_CASE("a 3D prismatic joint's translation limits stop the slide at its bound") {
+    Scene scene;
+    Node* rail = scene.create_node("Rail");
+    rail->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+    Node* slider_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = slider_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec3{0.0f, 0.0f, 5.0f}; // drive into the upper stop
+
+    Node* host = scene.create_node("Slider");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider_node->id();
+    joint->axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->enable_limits = true;
+    joint->lower_translation = -1.0f;
+    joint->upper_translation = 2.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    CHECK(slider_node->transform().position.z == doctest::Approx(2.0f).epsilon(0.05));
+}
+
+TEST_CASE("a 3D prismatic joint's linear motor drives the slide at its target speed") {
+    Scene scene;
+    Node* rail = scene.create_node("Rail");
+    Node* slider_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = slider_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+
+    Node* host = scene.create_node("Piston");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider_node->id();
+    joint->axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->motor_speed = 2.0f;
+    joint->motor_max_force = 1000.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+
+    CHECK(system.joint_count() == 1);
+    CHECK(body->velocity.z == doctest::Approx(2.0f).epsilon(0.05));
+}
+
+TEST_CASE("a 3D prismatic joint's limits and motor round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Piston");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->enable_limits = true;
+    joint->lower_translation = -0.5f;
+    joint->upper_translation = 1.5f;
+    joint->motor_speed = 3.0f;
+    joint->motor_max_force = 7.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Piston");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics3d::PrismaticJoint3D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->enable_limits);
+    CHECK(loaded_joint->lower_translation == doctest::Approx(-0.5f));
+    CHECK(loaded_joint->upper_translation == doctest::Approx(1.5f));
+    CHECK(loaded_joint->motor_speed == doctest::Approx(3.0f));
+    CHECK(loaded_joint->motor_max_force == doctest::Approx(7.0f));
 }
 
 // ---------------------------------------------------------------------------
