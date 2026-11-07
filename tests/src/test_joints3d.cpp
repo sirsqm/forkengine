@@ -544,6 +544,144 @@ TEST_CASE("a motor on a 3D revolute joint spins a body about its pivot") {
     CHECK(arm->transform().position.length() == doctest::Approx(1.0f).epsilon(0.05));
 }
 
+TEST_CASE("a 3D revolute joint's angular limits build a one-sided row at the bound it is past") {
+    physics3d::JointBody3D a = joint_body(Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    physics3d::JointBody3D b = joint_body(Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    b.orientation = Quat::from_axis_angle(Vec3{0.0f, 0.0f, 1.0f}, 1.2f); // past the upper bound
+
+    physics3d::RevoluteJoint3DParams params;
+    params.enable_limits = true;
+    params.limit_axis = Vec3{0.0f, 0.0f, 1.0f};
+    params.lower_angle = -0.5f;
+    params.upper_angle = 1.0f;
+
+    physics3d::ConstraintRow3D lower;
+    physics3d::ConstraintRow3D upper;
+    physics3d::build_revolute_limit_rows(a, b, params, lower, upper);
+
+    // Past the upper bound the upper row is active, purely angular about the
+    // hinge axis, and clamped to only a negative impulse so it can shrink the
+    // swing but never grow it. The lower row is slack.
+    CHECK(upper.effective_mass > 0.0f);
+    CHECK(upper.angular_a.z == doctest::Approx(-1.0f));
+    CHECK(upper.angular_b.z == doctest::Approx(1.0f));
+    CHECK(upper.lower_impulse < 0.0f);
+    CHECK(upper.upper_impulse == doctest::Approx(0.0f));
+    CHECK(lower.effective_mass == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 3D revolute limit row cancels the spin into the bound") {
+    physics3d::JointBody3D a = joint_body(Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    physics3d::JointBody3D b = joint_body(Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    b.orientation = Quat::from_axis_angle(Vec3{0.0f, 0.0f, 1.0f}, 1.2f);
+    b.angular_velocity = Vec3{0.0f, 0.0f, 5.0f}; // spinning further past the upper bound
+
+    physics3d::RevoluteJoint3DParams params;
+    params.enable_limits = true;
+    params.limit_axis = Vec3{0.0f, 0.0f, 1.0f};
+    params.lower_angle = -0.5f;
+    params.upper_angle = 1.0f;
+
+    physics3d::ConstraintRow3D lower;
+    physics3d::ConstraintRow3D upper;
+    physics3d::build_revolute_limit_rows(a, b, params, lower, upper);
+    physics3d::apply_row(upper, a, b);
+
+    // The row removed the relative spin about the hinge axis into the stop.
+    const Vec3 relative_spin = b.angular_velocity - a.angular_velocity;
+    CHECK(relative_spin.z == doctest::Approx(0.0f).epsilon(0.01));
+}
+
+TEST_CASE("a limited 3D revolute joint stops a swinging arm at its bound") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot"); // a bare, immovable anchor
+    Node* arm = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = arm->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = arm->id();
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f}; // the pivot end of the arm
+    joint->enable_limits = true;
+    joint->limit_axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->lower_angle = -1.0f;
+    joint->upper_angle = 1.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    // Left free, gravity would swing the arm down to about -pi/2 (hanging
+    // straight down); the lower stop holds it at -1.0 instead.
+    const f32 swing = physics3d::rotation_vector(Quat::from_euler(arm->transform().rotation)).z;
+    CHECK(swing >= -1.1f);
+    CHECK(swing == doctest::Approx(-1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a limited 3D revolute joint swings freely inside its limits") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot");
+    Node* arm = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = arm->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = arm->id();
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f};
+    joint->enable_limits = true;
+    joint->limit_axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->lower_angle = -3.0f; // wide enough never to touch
+    joint->upper_angle = 3.0f;
+
+    physics3d::Physics3DSystem system;
+    f32 min_swing = 0.0f;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        min_swing = std::min(min_swing, physics3d::rotation_vector(Quat::from_euler(arm->transform().rotation)).z);
+    }
+
+    // The slack rows exerted nothing: the arm swung past the -1.0 the tighter
+    // joint is stopped at, towards hanging straight down.
+    CHECK(min_swing < -1.2f);
+}
+
+TEST_CASE("a 3D revolute joint's angular limits round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->enable_limits = true;
+    joint->limit_axis = Vec3{0.0f, 1.0f, 0.0f};
+    joint->lower_angle = -0.75f;
+    joint->upper_angle = 1.25f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Hinge");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics3d::RevoluteJoint3D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->enable_limits);
+    CHECK(loaded_joint->limit_axis.y == doctest::Approx(1.0f));
+    CHECK(loaded_joint->lower_angle == doctest::Approx(-0.75f));
+    CHECK(loaded_joint->upper_angle == doctest::Approx(1.25f));
+}
+
 TEST_CASE("a 3D revolute joint motor round-trips through the serializer") {
     reflect::register_builtin_types();
     reflect::register_physics3d_types();

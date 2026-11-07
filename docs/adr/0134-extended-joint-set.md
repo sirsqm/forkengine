@@ -127,12 +127,12 @@ joint with no bounds holds `rest_length` exactly as before.
   a revolute motor. See [ADR-0135](0135-joint-reactions-and-breaking.md) for
   breaking and [ADR-0153](0153-joint-motors-and-limits.md) for the motors and
   prismatic limits.
-- A revolute joint's *angular* limits landed later in 2D, reusing the prismatic
-  joint's one-sided bound machinery on the relative-angle row
+- A revolute joint's *angular* limits landed later, in both 2D and 3D, reusing
+  the prismatic joint's one-sided bound machinery on the relative-angle row
   ([ADR-0154](0154-revolute-angular-limits.md)); a limited hinge (a door that
-  stops at 90 degrees) is now authorable in 2D. The 3D revolute joint still
-  swings freely through a full turn: it needs the same machinery plus an authored
-  reference axis, so 3D angular limits remain not yet done.
+  stops at 90 degrees) is now authorable in either world. The 3D hinge names the
+  one axis it limits with `limit_axis`, since a ball-socket pin leaves rotation
+  about every axis free.
 - The 2D and 3D solvers remain separate code, so a joint kind is written twice.
   The two share the design and the tests, not the implementation; unifying them
   is not worth the indirection while the row shapes differ (2D is a `Vec2`, 3D a

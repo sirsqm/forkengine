@@ -187,6 +187,15 @@ void register_revolute_joint3d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
         "motor_max_torque", &physics3d::RevoluteJoint3D::motor_max_torque, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, bool>(
+        "enable_limits", &physics3d::RevoluteJoint3D::enable_limits, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_vector_group<physics3d::RevoluteJoint3D, Vec3>(
+        "limit_axis", &physics3d::RevoluteJoint3D::limit_axis, "Vec3", {"x", "y", "z"}));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "lower_angle", &physics3d::RevoluteJoint3D::lower_angle, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "upper_angle", &physics3d::RevoluteJoint3D::upper_angle, ValueKind::Float, &defaults));
+
     desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
         "break_force", &physics3d::RevoluteJoint3D::break_force, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(

@@ -57,6 +57,17 @@ public:
     f32 motor_speed = 0.0f;
     f32 motor_max_torque = 0.0f;
 
+    // Angular limits about the hinge axis. When `enable_limits` is set the joint
+    // swings freely between `lower_angle` and `upper_angle` (radians, measured
+    // about `limit_axis` as the rotation of B relative to A) and is stopped at
+    // either bound, the way a door stops at 90 degrees or a jointed limb stops at
+    // its extreme. `limit_axis` is authored in body A's local frame, like the
+    // motor's axis. Off by default, so the joint swings about every axis freely.
+    bool enable_limits = false;
+    Vec3 limit_axis{0.0f, 0.0f, 1.0f};
+    f32 lower_angle = 0.0f;
+    f32 upper_angle = 0.0f;
+
     // Break thresholds. When `break_force` is positive the joint snaps (stops
     // being enforced) once the force it must carry exceeds it; likewise
     // `break_torque` for the torque. Zero (the default) means the joint never

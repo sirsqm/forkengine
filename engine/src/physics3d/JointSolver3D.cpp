@@ -189,6 +189,55 @@ Vec3 revolute_world_anchor(const JointBody3D& a, const RevoluteJoint3DParams& pa
     return a.position + rotate_by_quat(params.anchor_a, a.orientation);
 }
 
+void build_revolute_limit_rows(const JointBody3D& a, const JointBody3D& b, const RevoluteJoint3DParams& params,
+                               ConstraintRow3D& lower_row, ConstraintRow3D& upper_row) noexcept {
+    // Slack rows by default: a zero row is a no-op the apply functions already
+    // skip, so a joint with limits off (or one swinging inside them) is unchanged.
+    lower_row = ConstraintRow3D{};
+    upper_row = ConstraintRow3D{};
+    if (!params.enable_limits) {
+        return;
+    }
+
+    const Vec3 axis_world = rotate_by_quat(params.limit_axis, a.orientation);
+    if (axis_world.length_squared() <= kMinSeparation) {
+        return; // degenerate axis: no limit, rather than a NaN row
+    }
+    const Vec3 axis = axis_world.normalized();
+
+    // The swing about the hinge axis: the rotation vector of B relative to A,
+    // projected onto that axis. `rotation_vector` takes the shorter arc, so the
+    // projection is the signed angle while the swing stays within a half turn.
+    const Quat relative = a.orientation.conjugate() * b.orientation;
+    const f32 angle = rotation_vector(relative).dot(axis);
+    const f32 lower = std::min(params.lower_angle, params.upper_angle);
+    const f32 upper = std::max(params.lower_angle, params.upper_angle);
+
+    // The free coordinate grows with the relative spin about the axis, so a
+    // positive row velocity means the angle is growing and a positive impulse
+    // grows it further -- which fixes each bound's clamp to one sign, as the
+    // motor row's does (angular_a = -axis, angular_b = +axis).
+    const auto build_limit_row = [&](ConstraintRow3D& row, f32 bound, f32 clamp_lower, f32 clamp_upper) {
+        row.angular_a = axis * -1.0f;
+        row.angular_b = axis;
+        row.effective_mass = row_effective_mass(row, a, b);
+        row.position_error = angle - bound;
+        row.position_factor = kJointPositionFactor;
+        row.clamp_impulse = true;
+        row.lower_impulse = clamp_lower;
+        row.upper_impulse = clamp_upper;
+    };
+
+    // Past the upper bound the angle must not grow, so only a negative impulse
+    // (which shrinks it) is allowed; past the lower bound the opposite.
+    if (angle >= upper) {
+        build_limit_row(upper_row, upper, -std::numeric_limits<f32>::max(), 0.0f);
+    }
+    if (angle <= lower) {
+        build_limit_row(lower_row, lower, 0.0f, std::numeric_limits<f32>::max());
+    }
+}
+
 namespace {
 
 // Builds the three rows that remove the relative rotation between two bodies,

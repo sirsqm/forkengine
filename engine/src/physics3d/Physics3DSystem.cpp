@@ -788,12 +788,21 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             RevoluteJoint3DParams params;
             params.anchor_a = joint.revolute->anchor_a;
             params.anchor_b = joint.revolute->anchor_b;
+            params.enable_limits = joint.revolute->enable_limits;
+            params.limit_axis = joint.revolute->limit_axis;
+            params.lower_angle = joint.revolute->lower_angle;
+            params.upper_angle = joint.revolute->upper_angle;
 
-            ConstraintRow3D rows[kRevoluteJoint3DRows];
+            // The pin rows first; the two angular-limit rows (slack when limits
+            // are off) follow them in the same buffer, so one apply/reaction pass
+            // covers the whole joint.
+            ConstraintRow3D rows[kRevoluteJoint3DRows + kRevoluteJoint3DLimitRows];
             if (auto built = build_revolute_rows(body_a, body_b, params, delta_time, rows); !built) {
                 continue; // unsolvable this step (both immovable)
             }
-            apply_translation_rows(rows, kRevoluteJoint3DRows, body_a, body_b);
+            build_revolute_limit_rows(body_a, body_b, params, rows[kRevoluteJoint3DRows],
+                                      rows[kRevoluteJoint3DRows + 1]);
+            apply_translation_rows(rows, kRevoluteJoint3DRows + kRevoluteJoint3DLimitRows, body_a, body_b);
 
             // The motor drives the one spin the ball-socket pin leaves free about
             // its authored axis. A torque is a per-step impulse bound:
@@ -810,7 +819,8 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
                     apply_row(motor_row, body_a, body_b);
                 }
             }
-            row_reactions(rows, kRevoluteJoint3DRows, inv_dt, reaction_force, reaction_torque, peak_force);
+            row_reactions(rows, kRevoluteJoint3DRows + kRevoluteJoint3DLimitRows, inv_dt, reaction_force,
+                          reaction_torque, peak_force);
             Vec3 motor_force{};
             Vec3 motor_torque{};
             f32 motor_peak = 0.0f;

@@ -144,6 +144,9 @@ inline void perpendicular_basis(const Vec3& axis, Vec3& out_a, Vec3& out_b) noex
 // translation-limit rows, which are zero when limits are off).
 inline constexpr usize kDistanceJoint3DRows = 1;
 inline constexpr usize kRevoluteJoint3DRows = 3;
+// The two extra rows a revolute joint solves when its angular limits are on
+// (the lower and upper swing limits about its hinge axis).
+inline constexpr usize kRevoluteJoint3DLimitRows = 2;
 inline constexpr usize kFixedJoint3DRows = 6;
 inline constexpr usize kPrismaticJoint3DRows = 7;
 // The index of the prismatic joint's first rotation-lock row and its two
@@ -196,6 +199,18 @@ struct DistanceJoint3DParams {
 struct RevoluteJoint3DParams {
     Vec3 anchor_a{};
     Vec3 anchor_b{};
+
+    // Angular limits about the hinge axis. When `enable_limits` is set the joint
+    // swings freely between `lower_angle` and `upper_angle` (radians, measured
+    // about `limit_axis` as the rotation of B relative to A) and is stopped at
+    // either bound, the way a door stops at 90 degrees or a jointed limb stops at
+    // its extreme. `limit_axis` is authored in body A's local frame (the same
+    // frame the motor's axis uses); it defaults to the world z axis. Off by
+    // default, so the joint swings about every axis freely.
+    bool enable_limits = false;
+    Vec3 limit_axis{0.0f, 0.0f, 1.0f};
+    f32 lower_angle = 0.0f;
+    f32 upper_angle = 0.0f;
 };
 
 // The fixed (weld) joint parameters. A fixed joint removes every degree of
@@ -267,6 +282,16 @@ struct PrismaticJoint3DParams {
 // The world-space point a revolute joint currently pins, from body A's side.
 // Useful for tests and for the editor's debug overlay.
 [[nodiscard]] Vec3 revolute_world_anchor(const JointBody3D& a, const RevoluteJoint3DParams& params) noexcept;
+
+// Builds the two angular-limit rows for a revolute joint whose limits are on.
+// Each row is one-sided: it stops the swing about `limit_axis` past a bound and
+// is a zero (slack) row otherwise, so inside the range the joint swings freely.
+// `lower_row` and `upper_row` are written in place. A no-op when limits are off.
+// The swing is the signed angle of B relative to A about the hinge axis, taken
+// from the rotation vector of their relative orientation (so it is exact only
+// while the swing stays within a half turn, the usual case for a hinge).
+void build_revolute_limit_rows(const JointBody3D& a, const JointBody3D& b, const RevoluteJoint3DParams& params,
+                               ConstraintRow3D& lower_row, ConstraintRow3D& upper_row) noexcept;
 
 // Builds the six fixed-joint rows: three pin the two anchors together (as the
 // revolute rows do) and three remove the relative rotation about the x, y and z
