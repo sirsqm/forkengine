@@ -1782,6 +1782,142 @@ TEST_CASE("a revolute joint motor round-trips through the serializer") {
     CHECK(loaded_joint->motor_max_torque == doctest::Approx(12.0f));
 }
 
+TEST_CASE("a revolute position motor row drives the angle towards its target") {
+    physics2d::JointBody a;
+    a.inv_inertia = 1.0f;
+    physics2d::JointBody b;
+    b.inv_inertia = 1.0f;
+
+    physics2d::JointMotor motor;
+    motor.max_impulse = 1000.0f; // effectively unlimited
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+    motor.damping = 0.5f;
+
+    // The joint's angle is 2.0 and the target 1.0, so the error (current minus
+    // target) is +1 and the bias is stiffness * error = +2 (with no relative
+    // velocity). The row's impulse is negative, so the relative speed is driven
+    // to -2 -- the angle falls back towards the target.
+    auto built = physics2d::build_revolute_position_motor_row(a, b, motor, 2.0f);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    CHECK(b.angular_velocity - a.angular_velocity == doctest::Approx(-2.0f).epsilon(1e-3));
+}
+
+TEST_CASE("a revolute position motor row takes the short way to a target across the seam") {
+    physics2d::JointBody a;
+    a.inv_inertia = 1.0f;
+    physics2d::JointBody b;
+    b.inv_inertia = 1.0f;
+
+    physics2d::JointMotor motor;
+    motor.max_impulse = 1000.0f;
+    motor.use_target = true;
+    motor.target_position = 3.0f;
+    motor.stiffness = 1.0f;
+
+    // The current angle is -3.0 and the target is +3.0: the short way is a small
+    // turn forward across the +/-pi seam, not the long way back through zero. The
+    // driven speed is the small short-arc error, far less than the 6 radians of
+    // the long way.
+    const f32 current = -3.0f;
+    auto built = physics2d::build_revolute_position_motor_row(a, b, motor, current);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    const f32 relative = b.angular_velocity - a.angular_velocity;
+    CHECK(std::abs(relative) < 0.5f);
+    CHECK(relative == doctest::Approx(-physics2d::angle_difference(motor.target_position, current)).epsilon(1e-3));
+}
+
+TEST_CASE("a revolute position motor's maximum torque caps the impulse it applies") {
+    physics2d::JointBody a;
+    a.inv_inertia = 1.0f;
+    physics2d::JointBody b;
+    b.inv_inertia = 1.0f;
+
+    physics2d::JointMotor motor;
+    motor.max_impulse = 0.25f; // too small to reach the target in one step
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The joint is 1 radian short of the target, so the unclamped impulse would
+    // drive +2; the clamp holds it to 0.25 on each unit-inertia body, so the
+    // relative speed changes by only 0.5 -- the servo slips.
+    auto built = physics2d::build_revolute_position_motor_row(a, b, motor, 0.0f);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    CHECK(b.angular_velocity - a.angular_velocity == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a revolute position motor holds an arm at its target angle") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* arm = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = arm->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = true;
+    body->inertia = 1.0f;
+
+    Node* host = scene.create_node("Servo");
+    auto* joint = add_revolute_joint(*host, *pivot, *arm, Vec2{}, Vec2{-1.0f, 0.0f});
+    joint->motor_use_target = true;
+    joint->motor_target_angle = 0.5f; // hold the arm 0.5 rad above horizontal
+    joint->motor_stiffness = 30.0f;
+    joint->motor_damping = 0.9f; // a fraction in [0, 1], as the distance spring uses
+    joint->motor_max_torque = 1000.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The servo holds the arm against gravity at the target angle (the arm's own
+    // rotation is the relative angle, since the pivot is unrotated).
+    CHECK(arm->transform().rotation.z == doctest::Approx(0.5f).epsilon(0.05));
+}
+
+TEST_CASE("a revolute position motor's target round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Servo");
+    auto* joint = host->add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_use_target = true;
+    joint->motor_target_angle = 0.75f;
+    joint->motor_stiffness = 40.0f;
+    joint->motor_damping = 0.8f;
+    joint->motor_max_torque = 25.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Servo");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::RevoluteJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_use_target);
+    CHECK(loaded_joint->motor_target_angle == doctest::Approx(0.75f));
+    CHECK(loaded_joint->motor_stiffness == doctest::Approx(40.0f));
+    CHECK(loaded_joint->motor_damping == doctest::Approx(0.8f));
+}
+
 // ---------------------------------------------------------------------------
 // Oriented boxes and collider offsets.
 //
@@ -2752,6 +2888,177 @@ TEST_CASE("a prismatic joint's motor gives way under a load it cannot hold") {
     // The motor could not reach its 10 unit/s target in one second: the clamp
     // means it slips, so the body is well short of where a free motor would be.
     CHECK(body->velocity.y < 10.0f);
+}
+
+TEST_CASE("a prismatic joint's position motor row drives the slide towards its target") {
+    physics2d::JointBody a;
+    a.inv_mass = 1.0f;
+    physics2d::JointBody b;
+    b.inv_mass = 1.0f;
+
+    physics2d::PrismaticJointParams params;
+    params.axis = Vec2{0.0f, 1.0f};
+
+    physics2d::JointMotor motor;
+    motor.max_impulse = 1000.0f;
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The slide is at 2.0 and the target 1.0, so the error (current minus target)
+    // is +1 and the bias +2. The row's impulse is negative, so B is driven back
+    // down the axis: the relative velocity becomes -2.
+    auto built = physics2d::build_prismatic_position_motor_row(a, b, params, motor, 2.0f);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    CHECK(b.velocity.y - a.velocity.y == doctest::Approx(-2.0f).epsilon(1e-3));
+    CHECK(b.velocity.x - a.velocity.x == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a prismatic joint's position motor gives way under a load it cannot hold") {
+    physics2d::JointBody a;
+    a.inv_mass = 1.0f;
+    physics2d::JointBody b;
+    b.inv_mass = 1.0f;
+
+    physics2d::PrismaticJointParams params;
+    params.axis = Vec2{0.0f, 1.0f};
+
+    physics2d::JointMotor motor;
+    motor.max_impulse = 0.25f; // a weak servo
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The unclamped impulse would drive +2; the clamp holds it to 0.25 on each
+    // unit-mass body, so the relative velocity changes by only 0.5.
+    auto built = physics2d::build_prismatic_position_motor_row(a, b, params, motor, 0.0f);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    CHECK(b.velocity.y - a.velocity.y == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a prismatic joint's position motor with no target is unsolvable") {
+    physics2d::JointBody a;
+    a.inv_mass = 1.0f;
+    physics2d::JointBody b;
+    b.inv_mass = 1.0f;
+    physics2d::PrismaticJointParams params;
+    params.axis = Vec2{0.0f, 1.0f};
+    physics2d::JointMotor motor;
+    motor.max_impulse = 10.0f;
+    CHECK_FALSE(physics2d::build_prismatic_position_motor_row(a, b, params, motor, 0.0f));
+}
+
+TEST_CASE("a prismatic joint's position motor holds the slide at its target") {
+    Scene scene;
+    Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = slider->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Lift");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider->id();
+    joint->axis = Vec2{0.0f, 1.0f};
+    joint->motor_use_target = true;
+    joint->motor_target_translation = 1.0f; // hold the slider one unit up
+    joint->motor_stiffness = 50.0f;
+    joint->motor_damping = 0.5f;
+    joint->motor_max_force = 1000.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The servo holds the slider at its target against gravity: the stiff spring
+    // reaches the target and stays there, so the hold is the target to within a
+    // small steady-state offset.
+    CHECK(slider->transform().position.y == doctest::Approx(1.0f).epsilon(0.05));
+    CHECK(std::abs(slider->transform().position.x) < 0.01f);
+}
+
+TEST_CASE("a prismatic joint's position motor holds a load where the same joint with no target falls") {
+    // The same lift run twice: once as a servo holding a target, once with the
+    // motor off. The servo holds its position; the plain slider falls under
+    // gravity. This is the acceptance test for the position motor.
+    const auto run_lift = [](bool use_target) {
+        Scene scene;
+        Node* rail = add_pivot(scene, Vec2{0.0f, 0.0f});
+        Node* slider = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+        auto* body = slider->get_component<physics2d::RigidBody2D>();
+        body->affected_by_gravity = true;
+
+        Node* host = scene.create_node("Lift");
+        auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+        joint->body_a = rail->id();
+        joint->body_b = slider->id();
+        joint->axis = Vec2{0.0f, 1.0f};
+        joint->motor_use_target = use_target;
+        joint->motor_target_translation = 1.0f;
+        joint->motor_stiffness = 50.0f;
+        joint->motor_damping = 0.5f;
+        // The comparison is a servo against a joint with *no motor*: leaving the
+        // maximum force set would be a speed motor at target speed zero, which
+        // brakes rather than falling.
+        joint->motor_max_force = use_target ? 1000.0f : 0.0f;
+
+        physics2d::Physics2DSystem system;
+        for (int i = 0; i < 240; ++i) {
+            system.update(step(1.0f / 60.0f), scene);
+        }
+        return slider->transform().position.y;
+    };
+
+    const f32 held = run_lift(true);
+    const f32 fell = run_lift(false);
+
+    CHECK(held == doctest::Approx(1.0f).epsilon(0.05));
+    // With the motor off the slider is free to fall: four seconds of gravity
+    // takes it far below the held position.
+    CHECK(fell < -5.0f);
+    CHECK(held > fell + 5.0f);
+}
+
+TEST_CASE("a prismatic joint's position motor round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Lift");
+    auto* joint = host->add_component<physics2d::PrismaticJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_use_target = true;
+    joint->motor_target_translation = 2.5f;
+    joint->motor_stiffness = 40.0f;
+    joint->motor_damping = 0.8f;
+    joint->motor_max_force = 25.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Lift");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::PrismaticJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_use_target);
+    CHECK(loaded_joint->motor_target_translation == doctest::Approx(2.5f));
+    CHECK(loaded_joint->motor_stiffness == doctest::Approx(40.0f));
+    CHECK(loaded_joint->motor_damping == doctest::Approx(0.8f));
 }
 
 TEST_CASE("a prismatic joint's limits and motor round-trip through the serializer") {
