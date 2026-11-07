@@ -94,24 +94,21 @@ line; the milestones below hold the detail.
 The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
 
-**The queue is in its refinement tail.** Every Phase 1–4 item is done, and
-Phase 5 is down to one open item: the asset/content refinement
-`scene-prefab-instancing`. Each closes a gap a first cut left open, each is small
-enough for one run, and the render graph's own rows, 3D continuous collision, the
-rotational-CCD row (`physics2d-rotational-ccd`), the 3D joint refinement
+**The ordered queue is empty.** Every Phase 1–4 item is done, and the last
+Phase 5 refinement — the asset/content row `scene-prefab-instancing` — has landed
+along with the render graph's own rows, 3D continuous collision, the rotational
+CCD row (`physics2d-rotational-ccd`), the 3D joint refinement
 (`physics-more-joints`), the pack streaming row (`audio-pack-streaming`), and the
-in-game UI's scrolling and clipping (`ui-scroll-and-masks`) have landed, so the
-remaining content row is next. (`gamepad-input` landed under a `platform:`
-subject, so the slug check does not see it — treat it as finished and start at
-the next item.)
+in-game UI's scrolling and clipping (`ui-scroll-and-masks`). (`gamepad-input`
+landed under a `platform:` subject, so the slug check does not see it — treat it
+as finished.)
 
-Once those land the ordered queue is empty and the remaining work is the
-*un-ordered* backlog (the bullet list at the end of the shipping queue) plus the
-`[~]` rows above and the **M11** second slice below — mobile native surfaces,
-the Windows installer and macOS notarization, more graphics backends, and a
-finished 3D game built on the systems M4, M6, and M8 landed. Those are chosen
-fresh rather than queued, because each is a larger, less-coupled step than a
-queue item.
+The remaining work is the *un-ordered* backlog (the bullet list at the end of the
+shipping queue) plus the `[~]` rows above and the **M11** second slice below —
+mobile native surfaces, the Windows installer and macOS notarization, more
+graphics backends, and a finished 3D game built on the systems M4, M6, and M8
+landed. Those are chosen fresh rather than queued, because each is a larger,
+less-coupled step than a queue item.
 
 ---
 

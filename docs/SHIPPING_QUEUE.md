@@ -991,6 +991,20 @@ test proving two instances share the prefab's definition but carry independent
 per-instance transforms, and that editing one instance leaves the other
 unchanged.
 
+Landed as `serialization::Prefab` ([ADR-0133](adr/0133-prefab-instancing.md)).
+A prefab is a scene fragment, not a second format: `capture` serialises the
+chosen subtree with the scene serializer's own writer and `instantiate` reads it
+back with the same reader, appended to a live scene, so a component that persists
+is one that instantiates with no per-type work in the prefab code. Instances are
+independent because their identities are -- instantiation gives every node and
+component a fresh id and rewrites the intra-prefab references (a joint's
+`body_a`/`body_b`) to the new ones, while resource references, which name a shared
+asset, are left alone. Tests prove two instances share the definition but carry
+independent transforms, that editing one instance's sprite leaves the other and
+the definition unchanged, that an instance's joint points at its own bodies
+rather than the definition's, that a prefab round-trips through its own document,
+and that an empty prefab reports an error and leaves the scene untouched.
+
 ### `ui-scroll-and-masks`
 
 The in-game UI row (ADR-0058) leaves scrolling and clipping open: a list longer
