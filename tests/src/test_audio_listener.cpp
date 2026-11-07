@@ -239,6 +239,77 @@ TEST_CASE("switching a scene from a 3D camera to a 2D one clears the facing") {
     CHECK_FALSE(audio.has_listener_orientation());
 }
 
+TEST_CASE("the listener reports the ear's velocity from the camera's motion") {
+    // The ear's velocity drives the Doppler shift of a moving listener. The first
+    // frame has no previous sample, so it reports no velocity; a later frame
+    // reports the position delta over the frame's delta time.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera3D>();
+
+    // The first frame primes the baseline: no previous position, so no velocity.
+    listener.update(step(0.5f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(0.0f));
+
+    // Move the camera +2 in X over a 0.5 s frame: 4 units per second.
+    camera_node->transform().position = Vec3{2.0f, 0.0f, 0.0f};
+    listener.update(step(0.5f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(4.0f));
+    CHECK(audio.listener_velocity().y == doctest::Approx(0.0f));
+    CHECK(audio.listener_velocity().z == doctest::Approx(0.0f));
+
+    // A still frame reports no velocity, so a paused camera stops shifting pitch.
+    listener.update(step(0.5f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a zero-length frame reports no listener velocity") {
+    // A paused step (delta 0) must not divide by zero and must not report the
+    // last motion as still happening; the previous position is kept so the next
+    // real frame measures from the right place.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera3D>();
+    listener.update(step(0.5f), scene);
+
+    camera_node->transform().position = Vec3{5.0f, 0.0f, 0.0f};
+    listener.update(step(0.0f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(0.0f));
+
+    // The next real frame measures from the paused position, so the velocity is
+    // the whole move over the whole delta rather than a spike.
+    listener.update(step(0.5f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(0.0f));
+}
+
+TEST_CASE("the listener drops its velocity when the scene loses its camera") {
+    // No camera means no tracked ear: the velocity is cleared so a sound is not
+    // shifted by motion that is no longer happening, and the baseline is reset so
+    // a camera that reappears elsewhere does not report a teleport as velocity.
+    audio::AudioSystem audio(nullptr);
+    AudioListenerSystem listener(&audio);
+
+    Scene scene;
+    Node* camera_node = scene.create_node("Camera");
+    camera_node->add_component<Camera3D>();
+    listener.update(step(0.5f), scene);
+    camera_node->transform().position = Vec3{2.0f, 0.0f, 0.0f};
+    listener.update(step(0.5f), scene);
+    REQUIRE(audio.listener_velocity().x == doctest::Approx(4.0f));
+
+    // Drop the camera: the scene now has none.
+    const std::unique_ptr<Node> removed = scene.remove_root(camera_node);
+    REQUIRE((removed != nullptr));
+    listener.update(step(0.5f), scene);
+    CHECK(audio.listener_velocity().x == doctest::Approx(0.0f));
+}
+
 TEST_CASE("a schedule drives the listener from a real engine's audio system") {
     // The integration seam the player and the editor both use: adopt the
     // engine's audio system, add the listener before it, and let the schedule

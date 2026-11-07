@@ -4,6 +4,8 @@
 
 #include "fe/systems/System.h"
 
+#include "fe/core/Math.h"
+
 #include <string_view>
 
 namespace fe {
@@ -59,7 +61,15 @@ public:
     [[nodiscard]] audio::AudioSystem* audio_system() const noexcept { return audio_; }
 
 private:
+    // Writes the ear's velocity (the position delta over the frame's delta time)
+    // onto the audio system, so a Doppler mix shifts the pitch of a moving
+    // listener as well as a moving source. Keeps the last position for the next
+    // frame's difference.
+    void set_velocity(const FrameContext& context, const Vec3& position);
+
     audio::AudioSystem* audio_ = nullptr;
+    Vec3 previous_position_{};
+    bool has_previous_position_ = false;
 };
 
 } // namespace fe

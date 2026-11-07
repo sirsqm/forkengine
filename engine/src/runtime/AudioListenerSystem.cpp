@@ -14,7 +14,6 @@
 namespace fe {
 
 void AudioListenerSystem::update(const FrameContext& context, Scene& scene) {
-    (void)context;
     if (audio_ == nullptr) {
         return;
     }
@@ -25,15 +24,21 @@ void AudioListenerSystem::update(const FrameContext& context, Scene& scene) {
     // lookups are the renderers' own, so this agrees with what was drawn.
     if (const Camera3D* camera = renderer3d::Renderer3D::find_active_camera(scene); camera != nullptr) {
         // `eye()` is the owner's world position, and already handles a detached
-        // camera (returns the origin); skip the write rather than move the
-        // listener to a position nobody asked for.
-        if (camera->node() != nullptr) {
-            audio_->set_listener_position(camera->eye());
+        // camera (returns the origin); a detached camera has no tracked ear, so
+        // skip the write rather than move the listener to a position nobody asked
+        // for, and drop the velocity so it does not carry stale motion.
+        if (const Node* owner = camera->node(); owner != nullptr) {
+            const Vec3 eye = camera->eye();
+            audio_->set_listener_position(eye);
+            set_velocity(context, eye);
             // A 3D camera has an ear direction, so the listener also pans: a
             // source to the player's right is heard in the right ear. This is the
             // half a 2D camera cannot supply - a 2D scene has no up vector, so it
             // gets position only and panning stays off (ADR-0099).
             audio_->set_listener_orientation(camera->forward(), camera->up());
+        } else {
+            audio_->set_listener_velocity(Vec3{});
+            has_previous_position_ = false;
         }
         return;
     }
@@ -49,10 +54,34 @@ void AudioListenerSystem::update(const FrameContext& context, Scene& scene) {
     // so switching a scene from 3D to 2D does not leave it panned.
     if (const Camera2D* camera = renderer2d::Renderer2D::find_active_camera(scene); camera != nullptr) {
         if (const Node* owner = camera->node(); owner != nullptr) {
-            audio_->set_listener_position(transform_point(owner->world_matrix(), Vec3{}));
+            const Vec3 position = transform_point(owner->world_matrix(), Vec3{});
+            audio_->set_listener_position(position);
+            set_velocity(context, position);
         }
         audio_->set_listener_orientation(Vec3{}, Vec3{0.0f, 1.0f, 0.0f});
+        return;
     }
+
+    // No camera: the listener keeps its position (the update above wrote nothing),
+    // but the ear is no longer tracked, so it has no velocity to shift by.
+    audio_->set_listener_velocity(Vec3{});
+    has_previous_position_ = false;
+}
+
+void AudioListenerSystem::set_velocity(const FrameContext& context, const Vec3& position) {
+    // The ear's velocity is the position delta over the frame's delta time, the
+    // same finite difference the mixer uses for a source's own velocity. The
+    // first frame the listener is tracked has no previous sample, so the velocity
+    // is zero (no shift); a zero-length delta (a paused step) leaves the previous
+    // position in place and reports no velocity, so a pause does not register as
+    // a huge jump.
+    Vec3 velocity{};
+    if (has_previous_position_ && context.delta_time > 0.0f) {
+        velocity = (position - previous_position_) / context.delta_time;
+    }
+    audio_->set_listener_velocity(velocity);
+    previous_position_ = position;
+    has_previous_position_ = true;
 }
 
 } // namespace fe

@@ -2174,6 +2174,38 @@ TEST_CASE("an enabled Doppler shift changes how fast the clip is read") {
     CHECK(shifted[15] > plain[15]);
 }
 
+TEST_CASE("a moving listener shifts a still source's pitch") {
+    // The mirror of the source-velocity case: the ear moving towards a still
+    // source must shift it too, which is why the listener's velocity is a mix
+    // parameter and not only the source's. A moving listener and a moving source
+    // do not shift by the same amount -- the relation is (c + v_listener) /
+    // (c - v_source) -- so the ear closing at 34.3 gives 377.3/343, where a
+    // source closing at the same speed gave 343/308.7.
+    std::vector<f32> ramp(32);
+    for (usize i = 0; i < ramp.size(); ++i) {
+        ramp[i] = static_cast<f32>(i);
+    }
+    auto clip = mono_clip(8000, std::move(ramp));
+
+    audio::MixParams params;
+    params.listener_position = Vec3{10.0f, 0.0f, 0.0f};
+    params.listener_velocity = Vec3{-34.3f, 0.0f, 0.0f}; // the ear moves towards the source
+    params.doppler_enabled = true;
+
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.loop = true;
+    voice.world_position = Vec3{0.0f, 0.0f, 0.0f};
+    voice.velocity = Vec3{}; // the source is still
+    voice.min_distance = 1.0f;
+    voice.max_distance = 1000.0f;
+
+    f32 out[16] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, out, 16, 1, 8000, params));
+    CHECK(voice.doppler == doctest::Approx(377.3f / 343.0f));
+}
+
 TEST_CASE("the system applies the source cone and reports the Doppler factor") {
     // End to end through AudioSystem: a source whose node faces away from the
     // listener is quieter than one that faces it, and the voice records it.
