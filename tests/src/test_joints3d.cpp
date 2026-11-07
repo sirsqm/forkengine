@@ -353,12 +353,13 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     Node* rail = scene.create_node("Rail");
     rail->transform().position = Vec3{0.0f, 0.0f, 0.0f};
 
-    // A body pushed along +x, off the slide axis (+z): the joint must hold the x
-    // separation at zero while leaving z free.
-    Node* slider_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    // Starts 1 unit off the slide axis (+z) and is pushed straight along the
+    // axis, so only the perpendicular position rows can pull it back onto the
+    // rail: a velocity-only constraint would leave it 1 unit out forever.
+    Node* slider_node = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
     auto* body = slider_node->get_component<physics3d::RigidBody3D>();
     body->affected_by_gravity = false;
-    body->velocity = Vec3{2.0f, 0.0f, 2.0f}; // half along the axis, half across it
+    body->velocity = Vec3{0.0f, 0.0f, 2.0f}; // straight along the +z slide axis
 
     Node* host = scene.create_node("Slider");
     auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
@@ -371,7 +372,8 @@ TEST_CASE("a prismatic joint lets a body slide along its axis but not off it") {
     run(system, scene, 1.0f / 60.0f, 120);
 
     CHECK(system.joint_count() == 1);
-    // The across-axis (x) motion was removed; the along-axis (z) motion was not.
+    // The off-axis start was pulled back to the rail; the along-axis motion was
+    // left free to carry the body down the axis.
     CHECK(std::abs(slider_node->transform().position.x) < 0.1f);
     CHECK(slider_node->transform().position.z > 1.0f);
 }
