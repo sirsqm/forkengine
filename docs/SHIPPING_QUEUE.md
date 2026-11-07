@@ -1095,14 +1095,13 @@ a pixel the unclipped control paints.
 ## Backlog — not yet ordered
 
 - Additional graphics backends (Vulkan, Metal, WebGPU) as targets demand.
-- Skeletal animation, continued: the one-axis blend tree, the additive layer, and
-  the skeletal state machine have landed on the runtime, glTF import, and skinned
-  draw ([ADR-0104](adr/0104-skeletal-animation.md),
+- Skeletal animation, continued: the one-axis blend tree, the additive layer, the
+  skeletal state machine, and the two-axis blend space have landed on the runtime,
+  glTF import, and skinned draw ([ADR-0104](adr/0104-skeletal-animation.md),
   [ADR-0123](adr/0123-skeletal-state-machines.md),
-  [ADR-0124](adr/0124-animation-blend-trees.md)). What remains is the wider shape:
-  a two-axis blend (a locomotion grid of idle/walk/run strafe), a blend of more
-  than two clips, a tree feeding a tree, additive-on-additive, and a per-layer
-  joint mask.
+  [ADR-0124](adr/0124-animation-blend-trees.md),
+  [ADR-0141](adr/0141-two-axis-blend-space.md)). What remains is the wider shape:
+  a tree feeding a tree, additive-on-additive, and a per-layer joint mask.
 - More example games beyond the breakout slice, once the first one ships. The
   next one is planned as a **finished 3D game** — the roadmap's
   [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from

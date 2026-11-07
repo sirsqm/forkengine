@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/anim/SkeletalAnimationTypes.h"
 
+#include "fe/anim/AnimationBlendSpace2D.h"
 #include "fe/anim/AnimationBlendTree.h"
 #include "fe/anim/AnimationClip.h"
 #include "fe/anim/Animator.h"
@@ -313,6 +314,34 @@ void register_animation_blend_tree(Registry& registry) {
     registry.register_type(std::move(desc));
 }
 
+// The blend space's samples and clips, exposed as one String property, exactly
+// as the blend tree and the state machines are. The clip references travel as
+// their keys inside the JSON, and the system resolves them through the manager.
+void register_animation_blend_space(Registry& registry) {
+    TypeDesc desc;
+    desc.name = anim::AnimationBlendSpace2D::kTypeName;
+    desc.factory = [] { return std::unique_ptr<Component>(std::make_unique<anim::AnimationBlendSpace2D>()); };
+
+    Property property;
+    property.name = "space";
+    property.value_kind = ValueKind::String;
+    property.getter = [](const void* object) -> Value {
+        return static_cast<const anim::AnimationBlendSpace2D*>(object)->to_json();
+    };
+    property.setter = [](void* object, const Value& value) -> bool {
+        const auto* as_string = std::get_if<std::string>(&value);
+        if (as_string == nullptr) {
+            return false;
+        }
+        return static_cast<anim::AnimationBlendSpace2D*>(object)->from_json(*as_string);
+    };
+    property.hint = Hint::Multiline;
+    property.default_value = std::string{};
+    desc.properties.push_back(std::move(property));
+
+    registry.register_type(std::move(desc));
+}
+
 void register_skinned_mesh_renderer(Registry& registry) {
     anim::SkinnedMeshRenderer3D defaults;
     TypeDesc desc;
@@ -358,6 +387,7 @@ void register_skeletal_animation_types() {
     register_skinned_mesh_renderer(registry);
     register_skeletal_state_machine(registry);
     register_animation_blend_tree(registry);
+    register_animation_blend_space(registry);
 }
 
 } // namespace fe::reflect
