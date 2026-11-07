@@ -160,6 +160,7 @@ rather than editing it.
 | [0152](0152-coyote-time.md) | Coyote time in the character controller | Accepted |
 | [0153](0153-joint-motors-and-limits.md) | Joint motors and prismatic translation limits | Accepted |
 | [0154](0154-revolute-angular-limits.md) | Revolute joint angular limits | Accepted |
+| [0155](0155-joint-position-motors.md) | Joint position (servo) motors | Accepted |
 
 ## Format
 

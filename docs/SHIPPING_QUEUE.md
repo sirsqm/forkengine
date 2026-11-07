@@ -1205,6 +1205,32 @@ the exact scroll offset, the nested-clip intersection, the batch split, the
 scene round trip, and — under a real GL context — that the scissor actually cuts
 a pixel the unclipped control paints.
 
+### `joint-position-motors`
+
+The joint motors (ADR-0153) drive a *rate*: a revolute motor drives a target
+speed and a prismatic motor drives a slide speed, each clamped to a maximum
+force or torque. That is a wheel or a piston, not a servo. A robot arm that holds
+a pose, a door held ajar, a lift that holds a floor, or a turret tracking a
+bearing all need the joint to drive a *position*: apply whatever torque it takes
+(up to a maximum) to reach and hold it against gravity or a load. ADR-0154 named
+this as the one remaining refinement — "a position/spring motor target remains."
+
+**Done when** a revolute joint and a prismatic joint each take a position target
+that drives the joint towards an authored angle or translation with stiffness and
+damping gains, clamped to the joint's maximum force/torque, in both 2D and 3D;
+the mode is off by default so an existing scene is unchanged; and a test proves a
+motor with a target holds a joint against gravity where the same joint with no
+target falls, with the fields round-tripping through the serializer.
+
+Landed as `motor_use_target`/`motor_target_angle`/`motor_stiffness`/`motor_damping`
+on the revolute joints and `motor_target_translation` on the prismatic joints, in
+both worlds ([ADR-0155](adr/0155-joint-position-motors.md)). Each joint type gets
+a position builder beside its speed builder that builds the same row with a
+spring bias (`stiffness * error + damping * row_velocity`), reusing the speed
+motor's clamp, reaction reporting, and breaking threshold. Tests pin the row
+driving the coordinate towards its target, the clamp giving way under a load it
+cannot hold, a scene servo holding a joint against gravity, and the round trip.
+
 ---
 ## Backlog — not yet ordered
 

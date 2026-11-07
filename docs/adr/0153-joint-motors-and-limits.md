@@ -106,9 +106,10 @@ end caps.
 
 **Harder / not yet done:**
 
-- A motor is a speed target, not a position target: it drives towards a
-  velocity, so a joint cannot be driven to a *position* by the solver without a
-  caller closing the loop. A position/spring target is a separate refinement.
+- A motor is a speed target by default; a *position* (servo) target landed
+  later, in both 2D and 3D, as the same row with a spring bias and stiffness and
+  damping gains, so a joint can hold a pose against a load
+  ([ADR-0155](0155-joint-position-motors.md)).
 - A revolute joint's angular limits landed later in both 2D and 3D (a hinge that
   stops at 90 degrees), reusing the same one-sided bound machinery on the
   relative-angle row; the 3D hinge names the axis it limits
