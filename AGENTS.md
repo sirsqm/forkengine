@@ -232,6 +232,15 @@ defect, not noise.
 - `ctest` skips tests the build did not configure without failing, so a green
   `ctest` is only green for the tests that exist. Confirm the test count, not
   just the exit code.
+- A `build/` configured with `FE_BUILD_EXAMPLES=OFF` builds no `fork_player`, so
+  `cmake --build build --target fork_player` fails with "No rule to make target"
+  and a *stale* `build/bin/fork_player` from an earlier `ON` configure sits there
+  looking current. Running it then reports a false defect: a scene with a new
+  component or behaviour loads as "ignoring unknown component type" / "ignoring
+  unknown script behaviour", because the old binary predates the registration,
+  and the feature looks broken when it is not. Re-configure the tree with
+  `-DFE_BUILD_EXAMPLES=ON` (and rebuild `fork_player`) before reading a player
+  run, or the run is not testing the tree you edited.
 - The graphics tests need a display: with none, `GraphicsContext3D` fails to
   create a context and every 3D test prints "skipping: no graphics context" and
   passes, so a green run on a headless machine has asserted nothing about
