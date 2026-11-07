@@ -156,6 +156,7 @@ rather than editing it.
 | [0148](0148-world-render-hook-and-camera-clear.md) | A world render hook, and the 3D camera's clear colour | Accepted |
 | [0149](0149-physics3d-rotational-ccd.md) | Continuous collision detection for a spinning 3D body | Accepted |
 | [0150](0150-per-object-shadow-casting.md) | A per-object shadow-casting flag | Accepted |
+| [0151](0151-contact-event-geometry-3d.md) | The 3D contact event carries the point and normal of the touch | Accepted |
 
 ## Format
 

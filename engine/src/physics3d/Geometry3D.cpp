@@ -3,6 +3,7 @@
 #include "fe/physics3d/Geometry3D.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -13,6 +14,11 @@ namespace {
 // slab does not divide by it. The value is well under any meaningful world unit
 // and well above denormal noise.
 constexpr f32 kDirectionEpsilon = 1e-8f;
+
+// Defined below `intersect_oriented_boxes`; declared here so that function can
+// call it. Builds the box-box contact point from the overlap of the two faces.
+[[nodiscard]] Vec3 box_box_contact_point(const Obb3D& a, const Obb3D& b, const Vec3& normal, f32 support_a,
+                                         f32 support_b) noexcept;
 
 // Boxes are axis-aligned, so overlap on each axis is an interval test and the
 // separating axis is the one with the smallest overlap. That axis is the contact
@@ -46,6 +52,11 @@ Contact3D intersect_boxes(const Aabb3D& a, const Aabb3D& b) noexcept {
         contact.penetration = overlap_z;
         contact.normal = Vec3{0.0f, 0.0f, b.center.z >= a.center.z ? 1.0f : -1.0f};
     }
+    // The contact point sits at the centre of the overlap region -- the middle
+    // of the box the two shapes share, which is where an impact effect belongs.
+    contact.point = Vec3{(std::max(a.min_x(), b.min_x()) + std::min(a.max_x(), b.max_x())) * 0.5f,
+                         (std::max(a.min_y(), b.min_y()) + std::min(a.max_y(), b.max_y())) * 0.5f,
+                         (std::max(a.min_z(), b.min_z()) + std::min(a.max_z(), b.max_z())) * 0.5f};
     return contact;
 }
 
@@ -71,6 +82,9 @@ Contact3D intersect_spheres(const Sphere3D& a, const Sphere3D& b) noexcept {
         // still separates them deterministically instead of dividing by zero.
         contact.normal = Vec3{0.0f, 1.0f, 0.0f};
     }
+    // The contact point sits on the line between the centres, at the middle of
+    // the overlap: the touching point of the two surfaces.
+    contact.point = a.center + contact.normal * (a.radius - contact.penetration * 0.5f);
     return contact;
 }
 
@@ -119,6 +133,11 @@ Contact3D intersect_sphere_box(const Sphere3D& sphere, const Aabb3D& box) noexce
             contact.penetration = min_z + sphere.radius;
         }
     }
+    // On the segment between the sphere's surface and the box's nearest surface,
+    // half way through the overlap. `normal` points from the sphere towards the
+    // box, so moving from the box's nearest point back along the normal reaches
+    // the middle of the shared region.
+    contact.point = closest + contact.normal * (contact.penetration * 0.5f);
     return contact;
 }
 
@@ -203,7 +222,109 @@ Contact3D intersect_oriented_boxes(const Obb3D& a, const Obb3D& b) noexcept {
     contact.overlapping = true;
     contact.normal = best_axis;
     contact.penetration = best_overlap;
+    // A representative point: the centroid of the two boxes' overlapping face
+    // region perpendicular to the normal, on the touching faces where an impact
+    // effect belongs.
+    f32 support_a = 0.0f;
+    f32 support_b = 0.0f;
+    for (usize i = 0; i < 3; ++i) {
+        support_a += a.half(i) * std::abs(a.axis(i).dot(best_axis));
+        support_b += b.half(i) * std::abs(b.axis(i).dot(best_axis));
+    }
+    contact.point = box_box_contact_point(a, b, best_axis, support_a, support_b);
     return contact;
+}
+
+// The contact point for a box-box touch: the centroid of the *overlap* of the
+// two boxes' faces perpendicular to the contact normal. Both boxes are convex,
+// so their intersection is convex and its centroid lies on the touching faces,
+// which is where an impact effect belongs. Clipping A's face polygon against
+// B's four face planes gives that region; a box-box overlap is never empty, so
+// the result is always at least one point. Falls back to the midpoint of the
+// two support points if a degenerate face leaves nothing, which cannot normally
+// happen.
+[[nodiscard]] Vec3 box_box_contact_point(const Obb3D& a, const Obb3D& b, const Vec3& normal, f32 support_a,
+                                         f32 support_b) noexcept {
+    constexpr usize kMaxVertices = 16;
+    const Vec3 origin = a.center + normal * support_a;
+    const auto comp = [](const Vec3& value, int index) -> f32 {
+        return index == 0 ? value.x : (index == 1 ? value.y : value.z);
+    };
+    const Vec3 n_abs{std::abs(normal.x), std::abs(normal.y), std::abs(normal.z)};
+    // The face is perpendicular to the normal, so the axis most aligned with the
+    // normal is the one the face does not span; drop it and build the face from
+    // the other two.
+    int dropped = 0;
+    for (int axis = 1; axis < 3; ++axis) {
+        if (comp(n_abs, axis) > comp(n_abs, dropped)) {
+            dropped = axis;
+        }
+    }
+    const int u = (dropped + 1) % 3;
+    const int v = (dropped + 2) % 3;
+    const auto basis = [](int index) -> Vec3 {
+        return Vec3{index == 0 ? 1.0f : 0.0f, index == 1 ? 1.0f : 0.0f, index == 2 ? 1.0f : 0.0f};
+    };
+
+    // A's face, as four corners in the plane: centre plus the two in-plane axes
+    // at their half extents.
+    std::array<Vec3, kMaxVertices> poly{};
+    usize count = 4;
+    poly[0] = origin + basis(u) * a.half(u) + basis(v) * a.half(v);
+    poly[1] = origin + basis(u) * a.half(u) - basis(v) * a.half(v);
+    poly[2] = origin - basis(u) * a.half(u) - basis(v) * a.half(v);
+    poly[3] = origin - basis(u) * a.half(u) + basis(v) * a.half(v);
+
+    // Clip against each of B's four side planes. The planes are perpendicular to
+    // the normal, so the third axis is free: clip only along B's other two axes,
+    // where the projected half-extent is |axis_i . axis| * half_i.
+    const Vec3 delta = b.center - a.center;
+    for (int k = 0; k < 3; ++k) {
+        if (k == dropped) {
+            continue;
+        }
+        const Vec3 axis = b.axis(k);
+        f32 half = 0.0f;
+        for (usize i = 0; i < 3; ++i) {
+            half += b.half(i) * std::abs(b.axis(i).dot(axis));
+        }
+        const f32 center = delta.dot(axis);
+        for (const f32 sign : {1.0f, -1.0f}) {
+            const f32 limit = center + sign * half;
+            std::array<Vec3, kMaxVertices> out{};
+            usize out_count = 0;
+            for (usize i = 0; i < count; ++i) {
+                const Vec3 cur = poly[i];
+                const Vec3 next = poly[(i + 1) % count];
+                const f32 d_cur = sign * (cur.dot(axis) - limit);
+                const f32 d_next = sign * (next.dot(axis) - limit);
+                if (d_cur <= 0.0f && out_count < kMaxVertices) {
+                    out[out_count++] = cur;
+                }
+                if ((d_cur < 0.0f) != (d_next < 0.0f) && out_count < kMaxVertices) {
+                    const f32 t = d_cur / (d_cur - d_next);
+                    out[out_count++] = cur + (next - cur) * t;
+                }
+            }
+            poly = out;
+            count = out_count;
+            if (count == 0) {
+                break;
+            }
+        }
+        if (count == 0) {
+            break;
+        }
+    }
+
+    if (count == 0) {
+        return ((a.center + normal * support_a) + (b.center - normal * support_b)) * 0.5f;
+    }
+    Vec3 centroid{};
+    for (usize i = 0; i < count; ++i) {
+        centroid += poly[i];
+    }
+    return centroid / static_cast<f32>(count);
 }
 
 // Sphere against an oriented box: transform the sphere centre into the box's
@@ -225,6 +346,9 @@ Contact3D intersect_sphere_oriented_box(const Sphere3D& sphere, const Obb3D& box
     // The local normal points from the sphere towards the box; rotate it back to
     // world space. The penetration is invariant under the rigid transform.
     contact.normal = rotate_by_quat(contact.normal, q);
+    // The local contact point is relative to the box's centre; rotate and
+    // translate it back to world space the same way the normal is rotated.
+    contact.point = box.center + rotate_by_quat(contact.point, q);
     return contact;
 }
 

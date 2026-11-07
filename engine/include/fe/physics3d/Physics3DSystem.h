@@ -40,13 +40,21 @@ enum class ContactPhase : u8 {
 //
 // `a` and `b` are the two nodes involved, in a stable order (the order the pair
 // is keyed by, not the order they were gathered), so a gameplay listener can tell
-// the same pair apart across frames. The event carries no contact point or
-// normal: it is a signal to react to ("I just landed", "I left the ground"), and
-// a listener that needs the geometry can run a query.
+// the same pair apart across frames. The event carries the contact point and
+// normal recorded when the touch was first seen this step, so a game can spawn an
+// effect where the hit happened and orient it.
 struct ContactEvent {
     ContactPhase phase = ContactPhase::Begin;
     Node* a = nullptr;
     Node* b = nullptr;
+    // The contact point in world space, recorded on the first iteration of the
+    // step that produced the event. Valid for a Begin event and for an End that
+    // came from a real touch; it is the point a game spawns an impact effect at.
+    // A trigger reports it too (the shapes met), since a sensor is still a touch.
+    Vec3 point{};
+    // The contact normal (from `a` towards `b`) at that point, so a game can
+    // orient a splash or a spark without recomputing it.
+    Vec3 normal{};
 };
 
 // Advances the 3D physics world by one frame: integration, then collision
@@ -204,6 +212,8 @@ private:
     struct BodyPair {
         Uuid first;
         Uuid second;
+        Vec3 point{};
+        Vec3 normal{};
 
         [[nodiscard]] bool operator==(const BodyPair& other) const noexcept {
             return first == other.first && second == other.second;

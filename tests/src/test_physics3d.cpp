@@ -178,6 +178,36 @@ TEST_CASE("intersect_shapes flips the normal so it always points from the first 
     CHECK(box_first.normal.x == doctest::Approx(1.0f));
 }
 
+TEST_CASE("an overlapping box pair reports a point in the shared region") {
+    // Two unit boxes overlapping 0.2 on x. The shared region spans x in
+    // [0.3, 0.5], centred at 0.4; the point sits at its centre.
+    const auto contact = physics3d::intersect(box(0, 0, 0, 0.5f, 0.5f, 0.5f), box(0.8f, 0, 0, 0.5f, 0.5f, 0.5f));
+    REQUIRE(contact.overlapping);
+    CHECK(contact.point.x == doctest::Approx(0.4f));
+    CHECK(contact.point.y == doctest::Approx(0.0f));
+    CHECK(contact.point.z == doctest::Approx(0.0f));
+}
+
+TEST_CASE("an overlapping sphere pair reports the touching point between the surfaces") {
+    // Centres 1.5 apart, radius 1 each: the overlap is 0.5, and the point sits
+    // 0.25 inside each surface, at x = 0.75.
+    const auto contact = physics3d::intersect(sphere(0, 0, 0, 1.0f), sphere(1.5f, 0, 0, 1.0f));
+    REQUIRE(contact.overlapping);
+    CHECK(contact.point.x == doctest::Approx(0.75f));
+    CHECK(contact.point.y == doctest::Approx(0.0f));
+    CHECK(contact.point.z == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a sphere against a box face reports a point on the shared segment") {
+    // Sphere centre at x = 0.8, radius 0.5, against the +x face at x = 0.5: the
+    // overlap is 0.2, so the point sits 0.1 inside the face, at x = 0.4.
+    const auto contact = physics3d::intersect(sphere(0.8f, 0, 0, 0.5f), box(0, 0, 0, 0.5f, 0.5f, 0.5f));
+    REQUIRE(contact.overlapping);
+    CHECK(contact.point.x == doctest::Approx(0.4f));
+    CHECK(contact.point.y == doctest::Approx(0.0f));
+    CHECK(contact.point.z == doctest::Approx(0.0f));
+}
+
 TEST_CASE("bounds_overlap is a conservative prefilter") {
     const physics3d::Aabb3D a = box(0, 0, 0, 1, 1, 1);
     CHECK(physics3d::bounds_overlap(a, box(1.5f, 0, 0, 1, 1, 1)));
@@ -415,6 +445,38 @@ TEST_CASE("a contact event is emitted when a body lands") {
         }
     }
     CHECK(began);
+}
+
+TEST_CASE("a contact event carries the point and normal of the touch") {
+    // A box falls onto a floor well away from the origin, so a point that was
+    // never propagated (left at zero) is distinguishable from the real one. The
+    // Begin event must report where the touch happened and the normal from the
+    // first-ordered node towards the second, so a game can spawn an impact effect
+    // at the point and orient it by the normal.
+    Scene scene;
+    add_floor(scene, 10.0f);
+    add_dynamic_box(scene, Vec3{2.0f, 1.0f, -3.0f}, 0.5f, 1.0f);
+    physics3d::Physics3DSystem system;
+
+    physics3d::ContactEvent begin;
+    bool saw_begin = false;
+    for (int i = 0; i < 200 && !saw_begin; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        for (const physics3d::ContactEvent& event : system.contact_events()) {
+            if (event.phase == physics3d::ContactPhase::Begin) {
+                begin = event;
+                saw_begin = true;
+            }
+        }
+    }
+    REQUIRE(saw_begin);
+    // The touch is on the floor's top face (y = 0) under the box's column.
+    CHECK(begin.point.y == doctest::Approx(0.0f).epsilon(0.05));
+    CHECK(begin.point.x == doctest::Approx(2.0f).epsilon(0.1));
+    CHECK(begin.point.z == doctest::Approx(-3.0f).epsilon(0.1));
+    // The normal is vertical, along the touching faces, and unit length.
+    CHECK(std::abs(begin.normal.y) == doctest::Approx(1.0f));
+    CHECK(begin.normal.length() == doctest::Approx(1.0f));
 }
 
 TEST_CASE("a non-positive delta time is a no-op") {

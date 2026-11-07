@@ -42,8 +42,8 @@ Constraints that shaped the decision:
 
 ## Decision
 
-`Contact2D` and `Contact3D` gain a `point` (world space), and the 2D
-`ContactEvent` gains `point` and `normal`.
+`Contact2D` and `Contact3D` gain a `point` (world space), and the 2D and 3D
+`ContactEvent` gain `point` and `normal`.
 
 - Each narrow-phase test computes the point:
   - Box versus box (axis-aligned and SAT): the centre of the region the two boxes
@@ -59,8 +59,9 @@ Constraints that shaped the decision:
   unchanged, so the sort and diff see the same key as before.
 - `append_event` copies them onto the event. The normal is flipped to run from
   `pair.first` to `pair.second`, matching the event's endpoint order.
-- The 3D change adds `point` to `Contact3D`; wiring it onto the 3D event is left
-  for the 3D pass (the 3D solver's contact code is a separate path).
+- The 3D change added `point` to `Contact3D`; the 3D event now carries the point
+  and normal too, in the same shape as 2D
+  ([ADR-0151](0151-contact-event-geometry-3d.md)).
 
 ## Consequences
 
@@ -78,8 +79,6 @@ Constraints that shaped the decision:
 - The point is a single representative point, so a flat box-on-box rest reports
   one point where a real manifold has two. A solver that applies torque from the
   contact needs the manifold; this point is for effects, not for solving.
-- The 3D event does not yet carry the point even though `Contact3D` now computes
-  it; the 3D `ContactEvent` is unchanged in this cut.
 - The point is the first iteration's contact, not a per-iteration average. A
   solver that jitters the contact over the iterations reports the initial one,
   which is the stable choice for an effect (the point should not wander).

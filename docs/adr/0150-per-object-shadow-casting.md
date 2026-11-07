@@ -57,7 +57,11 @@ the *casting* instances. A non-casting mesh is skipped when the union is built,
 so a large ground plane neither casts nor widens the map. A scene whose only
 mesh does not cast therefore fits a degenerate (near-point) box; that is
 harmless because the pass then draws nothing into it, and the main pass is
-unaffected.
+unaffected. Excluding a caster from the fit is safe for the main pass because
+the lit shader already treats a fragment that projects outside the map as lit
+(`shadow_factor` returns 1.0 outside the `[0, 1]` box), so a ground plane that
+now falls outside the tighter map is drawn fully lit rather than wrongly
+self-shadowed.
 
 ### The flag is part of the batch key
 

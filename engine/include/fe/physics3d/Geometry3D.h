@@ -104,6 +104,12 @@ struct Contact3D {
     bool overlapping = false;
     Vec3 normal{};
     f32 penetration = 0.0f;
+    // The contact point in world space: roughly where the two shapes meet,
+    // taken on the contact plane between their surfaces. A game uses it to
+    // spawn an impact effect where the hit happened, or to attach a decal. It is
+    // an approximation -- a true manifold is a set of points, and this is one
+    // representative point -- but it is the one a particle burst wants.
+    Vec3 point{};
 };
 
 // --- Narrow-phase tests ----------------------------------------------------
