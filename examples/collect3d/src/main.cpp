@@ -226,12 +226,24 @@ private:
     // this frame is mixed this frame) and opens the real output device if one is
     // available. A device that will not open is not an error: the mixer still
     // runs, silently.
+    //
+    // The listener system is added before the audio system so the mix this frame
+    // uses the camera's position this frame. Without it the listener sat at the
+    // world origin, so the game's positional pickup cue would be attenuated
+    // against the origin rather than against the player's ear -- the very thing
+    // the M11 audio row named.
     void adopt_audio_system() {
         auto system = engine().take_audio_system();
         if (system == nullptr) {
             return;
         }
         audio_system_ = system.get();
+
+        // The listener and the "sfx" bus the game's effects route to. The listener
+        // goes in before the audio system so the mix this frame uses the camera's
+        // position this frame; without it the game's positional cue would be
+        // attenuated against the world origin rather than the player's ear.
+        collect3d::install_collect3d_audio(schedule(), *audio_system_);
 
         auto device = fe::audio::create_audio_device();
         if (!device) {

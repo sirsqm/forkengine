@@ -91,8 +91,9 @@ public:
     void set_state(CollectState* state) noexcept { state_ = state; }
 
 private:
-    // Starts the pickup sound on the audio node, if one is present.
-    void play_pickup_sound(fe::Scene& scene) const;
+    // Starts the pickup sound on the audio node, if one is present, placing it at
+    // `at` first so a positional cue is heard from where the gem was.
+    void play_pickup_sound(fe::Scene& scene, const fe::Vec3& at) const;
 
     CollectState* state_ = nullptr;
 };
@@ -287,5 +288,16 @@ struct CollectActions {
                                                                         CollectState& state, bool autoplay,
                                                                         const CollectActions& bindings,
                                                                         fe::ScriptHost* host = nullptr);
+
+// Wires the game's audio into `schedule`: adds an `AudioListenerSystem` so a
+// positional cue is attenuated against the active camera rather than the world
+// origin, and creates the "sfx" group bus the pickup cue routes to.
+//
+// The caller owns the device and the engine's audio system, and must add `audio`
+// to the schedule *after* this call (last, so a cue fired this frame is mixed
+// this frame). Adding the listener first is what makes the mix use the camera's
+// position this frame rather than one frame behind. It is a separate function so
+// the wiring -- not just the pieces -- is exercised by a test.
+void install_collect3d_audio(fe::SceneSchedule& schedule, fe::audio::AudioSystem& audio);
 
 } // namespace collect3d

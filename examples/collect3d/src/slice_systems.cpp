@@ -10,6 +10,7 @@
 #include "fe/platform/InputState.h"
 #include "fe/platform/UserData.h"
 #include "fe/player/BuiltinBehaviours.h"
+#include "fe/runtime/AudioListenerSystem.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/script/ScriptHost.h"
@@ -87,11 +88,16 @@ void AutoplaySystem::update(const fe::FrameContext& context, fe::Scene& scene) {
     (void)context;
 }
 
-void CollectibleSystem::play_pickup_sound(fe::Scene& scene) const {
+void CollectibleSystem::play_pickup_sound(fe::Scene& scene, const fe::Vec3& at) const {
     fe::Node* node = scene.find_node_by_name(names::kAudio);
     if (node == nullptr) {
         return;
     }
+    // Place the cue where the gem was before playing it. The audio node is a
+    // single reusable one-shot, so moving it is how each pickup is heard from its
+    // own spot rather than from wherever the last one was; a non-positional cue
+    // ignores the position, so this is harmless when the scene authors it flat.
+    node->transform().position = at;
     if (auto* source = node->get_component<fe::audio::AudioSource>(); source != nullptr) {
         source->play();
     }
@@ -133,7 +139,7 @@ void CollectibleSystem::update(const fe::FrameContext& context, fe::Scene& scene
         if (!state_->collect_one()) {
             break;
         }
-        play_pickup_sound(scene);
+        play_pickup_sound(scene, node->transform().position);
         if (fe::Node* parent = node->parent(); parent != nullptr) {
             static_cast<void>(parent->remove_child(node));
         } else {
@@ -561,6 +567,17 @@ fe::physics3d::Physics3DSystem* install_collect3d_systems(fe::SceneSchedule& sch
     hud->set_state(&state);
 
     return physics;
+}
+
+void install_collect3d_audio(fe::SceneSchedule& schedule, fe::audio::AudioSystem& audio) {
+    // The mixer group bus the game's effects route to. The settings screen drives
+    // the master bus, so the effects bus is an independent layer.
+    audio.set_bus_gain(config::kSfxBusName, config::kSfxBusGain);
+
+    // The listener before the audio system: the AudioSystem mixes the sources'
+    // world positions against whatever listener it holds when its own update runs,
+    // so the listener must have read this frame's camera first.
+    schedule.add_system<fe::AudioListenerSystem>(&audio);
 }
 
 } // namespace collect3d
