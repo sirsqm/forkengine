@@ -121,9 +121,7 @@ Property make_body_ref_property(std::string name, Uuid Joint::* field) {
     Property property;
     property.name = std::move(name);
     property.value_kind = ValueKind::Uuid;
-    property.getter = [field](const void* object) -> Value {
-        return static_cast<const Joint*>(object)->*field;
-    };
+    property.getter = [field](const void* object) -> Value { return static_cast<const Joint*>(object)->*field; };
     property.setter = [field](void* object, const Value& value) -> bool {
         const auto* as_id = std::get_if<Uuid>(&value);
         if (as_id == nullptr) {

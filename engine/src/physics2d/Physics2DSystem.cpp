@@ -597,8 +597,7 @@ Aabb2D union_bounds(const Aabb2D& a, const Aabb2D& b) noexcept {
 // region), which this is: it contains the shape at every sampled angle, and the
 // samples are dense enough that the unsampled sliver between them is far smaller
 // than any wall the pass is meant to catch.
-Aabb2D arc_bounds(const Collider2D& collider, const Vec2& center, f32 start_rotation,
-                  f32 end_rotation) noexcept {
+Aabb2D arc_bounds(const Collider2D& collider, const Vec2& center, f32 start_rotation, f32 end_rotation) noexcept {
     constexpr int kSamples = 4;
     Aabb2D bound = collider.bounds(center, start_rotation);
     for (int s = 1; s <= kSamples; ++s) {
@@ -624,9 +623,8 @@ struct RotationSweep2D {
     f32 time = 0.0f;
 };
 
-RotationSweep2D sweep_rotation(const Collider2D& collider, const Vec2& center, f32 start_rotation,
-                               f32 rotation_delta, const Collider2D& target,
-                               const Vec2& target_center, f32 target_rotation) noexcept {
+RotationSweep2D sweep_rotation(const Collider2D& collider, const Vec2& center, f32 start_rotation, f32 rotation_delta,
+                               const Collider2D& target, const Vec2& target_center, f32 target_rotation) noexcept {
     const Aabb2D target_bounds = target.bounds(target_center, target_rotation);
     // A shape already touching the target at the start of the turn is a resting
     // contact: the discrete solver owns it, and clamping the turn here would
@@ -641,8 +639,8 @@ RotationSweep2D sweep_rotation(const Collider2D& collider, const Vec2& center, f
     for (int s = 1; s <= kSubsteps; ++s) {
         const f32 t = static_cast<f32>(s) / static_cast<f32>(kSubsteps);
         const f32 prev_t = static_cast<f32>(s - 1) / static_cast<f32>(kSubsteps);
-        const Aabb2D swept = arc_bounds(collider, center, start_rotation + rotation_delta * prev_t,
-                                        start_rotation + rotation_delta * t);
+        const Aabb2D swept =
+            arc_bounds(collider, center, start_rotation + rotation_delta * prev_t, start_rotation + rotation_delta * t);
         if (bounds_overlap(swept, target_bounds)) {
             return RotationSweep2D{true, t};
         }
@@ -682,8 +680,8 @@ void Physics2DSystem::apply_continuous_collisions(f32 delta_time) {
         // whose arc exceeds the body's own size can tunnel. A circle's shape does
         // not change as it turns, so rotation alone can never tunnel one.
         const f32 spin_radius = mover.collider->half_extent.length();
-        const bool rotational_motion = mover.collider->shape == ShapeType::Box &&
-                                       std::abs(rotation_delta) * spin_radius > size;
+        const bool rotational_motion =
+            mover.collider->shape == ShapeType::Box && std::abs(rotation_delta) * spin_radius > size;
         if (!linear_motion && !rotational_motion) {
             continue;
         }
@@ -733,9 +731,8 @@ void Physics2DSystem::apply_continuous_collisions(f32 delta_time) {
             }
 
             if (rotational_motion) {
-                const RotationSweep2D spin = sweep_rotation(
-                    *mover.collider, start, start_rotation, rotation_delta, *target.collider,
-                    target.position, target.rotation);
+                const RotationSweep2D spin = sweep_rotation(*mover.collider, start, start_rotation, rotation_delta,
+                                                            *target.collider, target.position, target.rotation);
                 if (spin.hit && spin.time < rotational_earliest) {
                     rotational_earliest = spin.time;
                     rotational_hit = true;

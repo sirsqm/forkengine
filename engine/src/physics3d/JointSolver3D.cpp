@@ -109,8 +109,7 @@ Result<void> build_revolute_rows(const JointBody3D& a, const JointBody3D& b, con
     // a separate row, so a shared anchor removes all three translational degrees
     // of freedom while leaving relative rotation free.
     const Vec3 error = (a.position + lever_a) - (b.position + lever_b);
-    const Vec3 axes[kRevoluteJoint3DRows] = {Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f},
-                                             Vec3{0.0f, 0.0f, 1.0f}};
+    const Vec3 axes[kRevoluteJoint3DRows] = {Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f}};
     const f32 errors[kRevoluteJoint3DRows] = {error.x, error.y, error.z};
 
     bool any_solvable = false;
