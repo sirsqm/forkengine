@@ -863,3 +863,53 @@ TEST_CASE("the nav behaviours register into the script registry") {
     CHECK(registry.find("PatrolRoute3D") != nullptr);
     CHECK(registry.find("ChaseTarget3D") != nullptr);
 }
+
+// ---------------------------------------------------------------------------
+// The whole pipeline: a behaviour sets a goal, the system routes and moves.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("ChaseTarget3D and NavigationSystem3D together move an agent to its target") {
+    // The end-to-end check the two halves exist for: the behaviour decides where
+    // to go and the system walks the node there. Neither alone moves anything, so
+    // a passing run is the seam between them working.
+    Scene scene;
+    Node* floor = scene.create_node("Floor");
+    auto* floor_collider = floor->add_component<physics3d::Collider3D>();
+    floor_collider->shape = physics3d::ShapeType3D::Box;
+    floor_collider->half_extent = Vec3{20.0f, 0.5f, 20.0f};
+    floor->transform().position = Vec3{0.0f, -0.5f, 0.0f};
+
+    Node& player = *scene.create_node("Player");
+    player.transform().position = Vec3{10.0f, 1.0f, 0.0f};
+
+    Node& enemy = *scene.create_node("Enemy");
+    enemy.transform().position = Vec3{0.0f, 1.0f, 0.0f};
+    auto* agent = enemy.add_component<nav::NavAgent3D>();
+    agent->speed = 8.0f;
+    agent->arrive_radius = 0.6f;
+
+    ScriptHost host;
+    auto* chase = attach_behaviour<player::ChaseTarget3D>(host, enemy);
+    chase->target = "Player";
+    chase->sight_radius = 100.0f;
+    chase->lose_radius = 100.0f;
+
+    nav::NavigationSystem3D system;
+    FrameContext context;
+    context.delta_time = 1.0f / 60.0f;
+
+    const f32 start_distance = (player.transform().position - enemy.transform().position).length();
+    for (int frame = 0; frame < 3000; ++frame) {
+        // The production order: the script sets the goal, the system routes it.
+        CHECK(chase->update(context).ok());
+        system.update(context, scene);
+        const f32 distance = (player.transform().position - enemy.transform().position).length();
+        if (distance <= agent->arrive_radius + 0.1f) {
+            break;
+        }
+    }
+
+    const f32 end_distance = (player.transform().position - enemy.transform().position).length();
+    CHECK(end_distance < start_distance); // it closed the gap
+    CHECK(end_distance <= doctest::Approx(agent->arrive_radius + 0.2f));
+}

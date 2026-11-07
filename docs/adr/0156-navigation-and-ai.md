@@ -92,6 +92,45 @@ a game that wants physics can read the published velocity instead.
 The steering weights are reflected component fields, so an agent round-trips
 through the serializer and shows in the inspector like any other component.
 
+### The AI behaviours decide *where* to go
+
+`nav` finds the route; it does not decide the destination. Two engine-shipped
+Scripts do, in `fe/player/NavBehaviours.h` (ADR-0078 — a browser has no dynamic
+loader, so an AI a web game needs must be compiled into the engine):
+
+- `PatrolRoute3D` walks its node's agent around a route of *named* waypoint
+  nodes, waiting at each and looping by default. The route is a comma-separated
+  list of node names, so it lives in the scene file and is editable as one
+  string, and a name that does not resolve is skipped rather than stalling the
+  route.
+- `ChaseTarget3D` sends the agent after (or, with `flee`, away from) a named
+  target, with separate `sight_radius` and `lose_radius` so the goal does not
+  flicker when a target hovers at the edge.
+
+Both only set the agent's goal. They compose: a guard is `PatrolRoute3D` plus
+`ChaseTarget3D` on one node, in that order, and the chase overrides the patrol
+while a target is in play. Neither knows about the other.
+
+### The systems are scheduled where a frame runs
+
+A module nothing schedules is not shipped, so both nav systems are wired in:
+
+- `fork_player` adds the two nav systems after physics and after the scripts, but
+  only when the loaded scene holds an agent of that dimension, so a game with no
+  AI pays nothing — the same conditional shape the physics systems use.
+- `PlaySession` (play-in-editor) registers both among its defaults, so play mode
+  routes an AI the same way a shipped build does.
+
+Both systems are no-ops on a scene with no agent of their dimension, so neither
+caller has to know which kind of level it is about to run.
+
+### The debug overlay draws the grid and the path
+
+`debugdraw` gains `append_nav_grid_2d`/`_3d` (the blocked cells, so a designer
+sees where an agent cannot go) and `append_nav_paths_2d`/`_3d` (each agent's
+remaining route as a polyline), on the same `DebugDrawList` the collider overlay
+uses. The module gains a `nav` edge.
+
 ## Consequences
 
 - A game gets patrolling and chasing enemies from the level it already has: the
