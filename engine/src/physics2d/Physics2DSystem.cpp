@@ -105,7 +105,7 @@ void store_joint_body(Node& node, const JointBody& joint) noexcept {
 // `apply_row_position` corrects translation and rotation together, so every
 // joint kind -- distance, revolute, fixed or prismatic -- solves its rows the
 // same way.
-void apply_rows(const ConstraintRow rows[], usize count, JointBody& a, JointBody& b) noexcept {
+void apply_rows(ConstraintRow rows[], usize count, JointBody& a, JointBody& b) noexcept {
     for (usize i = 0; i < count; ++i) {
         apply_row(rows[i], a, b);
         apply_row_position(rows[i], a, b);
@@ -907,8 +907,9 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 note_joint_skipped(type, id_a, id_b, row.error());
                 continue;
             }
-            apply_row(row.value(), body_a, body_b);
-            apply_row_position(row.value(), body_a, body_b);
+            ConstraintRow distance_row = row.value();
+            apply_row(distance_row, body_a, body_b);
+            apply_row_position(distance_row, body_a, body_b);
         } else if (joint.revolute != nullptr) {
             RevoluteJointParams params;
             params.anchor_a = joint.revolute->anchor_a;
@@ -920,6 +921,23 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 continue;
             }
             apply_rows(rows, kRevoluteJointRows, body_a, body_b);
+
+            // The motor drives the relative spin the pin leaves free. It runs
+            // after the anchor rows so the spin is applied to the pose the pin
+            // just corrected. A torque is a per-step impulse bound: the row's
+            // clamp is `torque * delta_time`, which is what makes the authored
+            // value a torque rather than a step-dependent impulse.
+            JointMotor motor;
+            motor.target_speed = joint.revolute->motor_speed;
+            motor.max_impulse = joint.revolute->motor_max_torque * delta_time;
+            if (motor.is_enabled()) {
+                if (auto row = build_revolute_motor_row(body_a, body_b, motor); row) {
+                    ConstraintRow motor_row = row.value();
+                    apply_row(motor_row, body_a, body_b);
+                } else {
+                    note_joint_skipped(type, id_a, id_b, row.error());
+                }
+            }
         } else if (joint.fixed != nullptr) {
             FixedJointParams params;
             params.anchor_a = joint.fixed->anchor_a;

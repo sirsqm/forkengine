@@ -65,6 +65,17 @@ struct ConstraintRow {
     f32 bias = 0.0f;
     f32 position_error = 0.0f;
     f32 position_factor = 0.0f;
+
+    // Clamped-impulse support, for a motor row. When `clamp_impulse` is true the
+    // row accumulates the velocity impulse it applies in `accumulated_impulse`
+    // and holds it inside [lower_impulse, upper_impulse], so the joint drives its
+    // relative velocity towards the bias up to a maximum force and then gives way
+    // rather than spinning the bodies forever. A row that does not clamp leaves
+    // these fields alone, so a pin or a rod is unchanged.
+    bool clamp_impulse = false;
+    f32 accumulated_impulse = 0.0f;
+    f32 lower_impulse = 0.0f;
+    f32 upper_impulse = 0.0f;
 };
 
 // The scalar 2D cross product: the z component of the 3D cross of two vectors.
@@ -202,7 +213,12 @@ struct PrismaticJointParams {
 // current relative velocity along the row plus the row's bias, scaled by the
 // row's effective mass. This is the one place the sign convention lives, so the
 // solver and any test agree by construction.
-void apply_row(const ConstraintRow& row, JointBody& a, JointBody& b) noexcept;
+//
+// A clamping row (a motor) accumulates its impulse in the row it is given and
+// holds it inside its bounds, so it drives the relative velocity only as hard as
+// the bounds allow. The row is taken by non-const reference for that accumulator;
+// a row that does not clamp is not modified.
+void apply_row(ConstraintRow& row, JointBody& a, JointBody& b) noexcept;
 
 // Applies a solved row's positional correction: `position_factor` of the row's
 // position error is removed along the row, split by inverse mass and inertia. A
@@ -229,6 +245,38 @@ void apply_row_position(const ConstraintRow& row, JointBody& a, JointBody& b) no
 // The world-space axis a prismatic joint currently slides along, from body A's
 // side. Useful for tests and for the editor's debug overlay.
 [[nodiscard]] Vec2 prismatic_world_axis(const JointBody& a, const PrismaticJointParams& params) noexcept;
+
+// A motor drives a joint's one free degree of freedom towards a target speed.
+// `target_speed` is in radians per second (an angular motor) or world units per
+// second (a linear motor); `max_impulse` is the largest impulse the motor may
+// apply in one step, which is what turns it into a *maximum force* rather than an
+// infinite one -- a motor that is too weak to hold a load slips instead of
+// winning. A zero `max_impulse` disables the motor, so a joint with no motor
+// authored behaves exactly as before.
+struct JointMotor {
+    f32 target_speed = 0.0f;
+    f32 max_impulse = 0.0f;
+
+    [[nodiscard]] bool is_enabled() const noexcept { return max_impulse > 0.0f; }
+};
+
+// Builds the motor row for a revolute joint: it drives the relative angular
+// velocity (B minus A) towards `motor.target_speed`, clamped to `max_impulse`.
+// The row is purely angular, so it spins the two bodies about their centres and
+// leaves the anchor constraint to the revolute rows. Errors only when neither
+// body can rotate, so a motor on two fixed-rotation bodies is reported rather
+// than silently doing nothing.
+[[nodiscard]] Result<ConstraintRow> build_revolute_motor_row(const JointBody& a, const JointBody& b,
+                                                             const JointMotor& motor) noexcept;
+
+// Builds the motor row for a prismatic joint: it drives the relative speed along
+// the slide axis towards `motor.target_speed`, clamped to `max_impulse`. The row
+// acts along the joint axis (taken from body A's local frame), so it is a linear
+// motor -- a piston that extends at a set rate, an elevator that climbs at a set
+// speed. Errors when the axis is degenerate or neither body can move.
+[[nodiscard]] Result<ConstraintRow> build_prismatic_motor_row(const JointBody& a, const JointBody& b,
+                                                              const PrismaticJointParams& params,
+                                                              const JointMotor& motor) noexcept;
 
 // The shortest signed difference between two angles, in (-pi, pi].
 [[nodiscard]] inline f32 angle_difference(f32 from, f32 to) noexcept {

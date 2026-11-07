@@ -1545,6 +1545,106 @@ TEST_CASE("a revolute joint round-trips through the serializer") {
 }
 
 // ---------------------------------------------------------------------------
+// Joint motors (ADR-0134): a joint drives its free degree of freedom towards a
+// target speed, up to a maximum force.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a revolute motor row drives the relative spin towards its target") {
+    physics2d::JointBody a;
+    a.inv_inertia = 1.0f;
+    physics2d::JointBody b;
+    b.inv_inertia = 1.0f;
+
+    physics2d::JointMotor motor;
+    motor.target_speed = 2.0f;
+    motor.max_impulse = 100.0f; // effectively unlimited
+
+    auto built = physics2d::build_revolute_motor_row(a, b, motor);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    // The row drives b - a to the target: the two bodies spin apart.
+    CHECK(b.angular_velocity - a.angular_velocity == doctest::Approx(2.0f).epsilon(1e-3));
+}
+
+TEST_CASE("a revolute motor's maximum torque caps the impulse it applies") {
+    physics2d::JointBody a;
+    a.inv_inertia = 1.0f;
+    physics2d::JointBody b;
+    b.inv_inertia = 1.0f;
+
+    physics2d::JointMotor motor;
+    motor.target_speed = 2.0f;
+    motor.max_impulse = 0.25f; // far too small to reach the target in one step
+
+    auto built = physics2d::build_revolute_motor_row(a, b, motor);
+    REQUIRE(built);
+    physics2d::ConstraintRow row = built.value();
+    physics2d::apply_row(row, a, b);
+
+    // The clamped impulse of 0.25 on each unit-inertia body changes the relative
+    // speed by 0.5, not the 2 the target would need -- the motor slips.
+    CHECK(b.angular_velocity - a.angular_velocity == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a motor on a revolute joint spins a wheel about its pivot") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    // A wheel whose centre sits one unit from the pivot: its local anchor is the
+    // pivot point, so the pin holds the axle and leaves the spin free.
+    Node* wheel = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = wheel->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->inertia = 1.0f; // a point mass has no shape to derive inertia from
+
+    Node* host = scene.create_node("Axle");
+    auto* joint = add_revolute_joint(*host, *pivot, *wheel, Vec2{0.0f, 0.0f}, Vec2{-1.0f, 0.0f});
+    joint->motor_speed = 3.0f;
+    joint->motor_max_torque = 100.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The motor brought the wheel up to its target speed ...
+    CHECK(body->angular_velocity == doctest::Approx(3.0f).epsilon(0.1));
+    // ... and the pin still holds the axle, so the centre stays one unit out.
+    CHECK(wheel->transform().position.length() == doctest::Approx(1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a revolute joint motor round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Motor");
+    auto* joint = host->add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_speed = 4.5f;
+    joint->motor_max_torque = 12.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Motor");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::RevoluteJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_speed == doctest::Approx(4.5f));
+    CHECK(loaded_joint->motor_max_torque == doctest::Approx(12.0f));
+}
+
+// ---------------------------------------------------------------------------
 // Oriented boxes and collider offsets.
 //
 // A box collider carries the node's Z rotation and a local offset, so a rotated

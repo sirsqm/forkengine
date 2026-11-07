@@ -40,6 +40,17 @@ public:
     Vec2 anchor_a{};
     Vec2 anchor_b{};
 
+    // A motor that spins the joint. `motor_speed` is the relative angular
+    // velocity it drives B towards, in radians per second (A's frame is the
+    // reference, so a positive value turns B forward about the anchor).
+    // `motor_max_torque` is the largest torque, in newton-metres, the motor may
+    // apply; a torque too small to overcome the load slips rather than winning.
+    // The default zero disables the motor, so a joint with no motor behaves
+    // exactly as a plain pin. A wheel, a windmill, or a driven arm is this motor
+    // on a revolute joint.
+    f32 motor_speed = 0.0f;
+    f32 motor_max_torque = 0.0f;
+
     [[nodiscard]] bool is_valid() const noexcept { return !body_a.is_nil() && !body_b.is_nil() && body_a != body_b; }
 };
 

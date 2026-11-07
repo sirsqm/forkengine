@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "fe/physics2d/JointSolver.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace fe::physics2d {
@@ -121,7 +122,7 @@ Result<void> build_revolute_rows(const JointBody& a, const JointBody& b, const R
     return Result<void>{};
 }
 
-void apply_row(const ConstraintRow& row, JointBody& a, JointBody& b) noexcept {
+void apply_row(ConstraintRow& row, JointBody& a, JointBody& b) noexcept {
     if (row.effective_mass <= 0.0f) {
         return; // unsolvable row: both bodies are immovable along it
     }
@@ -130,7 +131,17 @@ void apply_row(const ConstraintRow& row, JointBody& a, JointBody& b) noexcept {
     // applies the bias. One sign convention, shared with the builder.
     const f32 row_velocity = row.jacobian_a.dot(a.velocity) + row.angular_a * a.angular_velocity +
                              row.jacobian_b.dot(b.velocity) + row.angular_b * b.angular_velocity;
-    const f32 impulse = -row.effective_mass * (row_velocity + row.bias);
+    f32 impulse = -row.effective_mass * (row_velocity + row.bias);
+
+    if (row.clamp_impulse) {
+        // A motor: accumulate the impulse and hold the total inside its bounds,
+        // then apply only the part that is new. A maximum-force motor is exactly
+        // this clamp -- once the accumulated impulse reaches the bound the row
+        // stops adding, so the joint gives way under a load it cannot hold.
+        const f32 previous = row.accumulated_impulse;
+        row.accumulated_impulse = std::clamp(previous + impulse, row.lower_impulse, row.upper_impulse);
+        impulse = row.accumulated_impulse - previous;
+    }
 
     a.velocity += row.jacobian_a * (impulse * a.inv_mass);
     a.angular_velocity += row.angular_a * impulse * a.inv_inertia;
@@ -233,6 +244,66 @@ Result<void> build_prismatic_rows(const JointBody& a, const JointBody& b, const 
 
 Vec2 prismatic_world_axis(const JointBody& a, const PrismaticJointParams& params) noexcept {
     return rotate(params.axis, a.rotation).normalized();
+}
+
+Result<ConstraintRow> build_revolute_motor_row(const JointBody& a, const JointBody& b,
+                                               const JointMotor& motor) noexcept {
+    if (!motor.is_enabled()) {
+        return Error("revolute motor: the maximum impulse is zero, so the motor is disabled");
+    }
+
+    // The row measures the relative angular velocity b - a (angular_a = -1,
+    // angular_b = +1), so a positive impulse spins B forward relative to A. The
+    // bias is set so the row is satisfied when that relative speed reaches the
+    // target: with the impulse `-eff * (row_velocity + bias)`, `bias` must be the
+    // negative of the target.
+    ConstraintRow row;
+    row.angular_a = -1.0f;
+    row.angular_b = 1.0f;
+    row.effective_mass = row_effective_mass(row, a, b);
+    row.bias = -motor.target_speed;
+
+    if (row.effective_mass <= 0.0f) {
+        return Error("revolute motor: neither body can rotate, so the motor has nothing to turn");
+    }
+
+    // A maximum-force motor is an impulse clamp, symmetric about zero.
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
+}
+
+Result<ConstraintRow> build_prismatic_motor_row(const JointBody& a, const JointBody& b,
+                                                const PrismaticJointParams& params, const JointMotor& motor) noexcept {
+    if (!motor.is_enabled()) {
+        return Error("prismatic motor: the maximum impulse is zero, so the motor is disabled");
+    }
+
+    const Vec2 axis = rotate(params.axis, a.rotation);
+    if (axis.length_squared() <= kMinSeparation) {
+        return Error("prismatic motor: the slide axis is degenerate");
+    }
+    // The motor acts along the slide axis at the two centres, the same direction
+    // the joint leaves free. The prismatic's rotation lock keeps the two frames
+    // aligned, so a centre-based row drives the one free degree of freedom
+    // exactly; the sign convention matches the distance row (positive separates
+    // B from A along the axis).
+    const Vec2 direction = axis.normalized();
+    ConstraintRow row;
+    row.jacobian_a = direction * -1.0f;
+    row.jacobian_b = direction;
+    row.effective_mass = row_effective_mass(row, a, b);
+    row.bias = -motor.target_speed;
+
+    if (row.effective_mass <= 0.0f) {
+        return Error("prismatic motor: neither body can move along the axis, so the motor has nothing to drive");
+    }
+
+    row.clamp_impulse = true;
+    row.lower_impulse = -motor.max_impulse;
+    row.upper_impulse = motor.max_impulse;
+    return row;
 }
 
 } // namespace fe::physics2d

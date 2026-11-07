@@ -179,6 +179,10 @@ void register_revolute_joint2d(Registry& registry) {
         "anchor_a", &physics2d::RevoluteJoint2D::anchor_a, "Vec2", {"x", "y"}));
     desc.properties.push_back(make_vector_group<physics2d::RevoluteJoint2D, Vec2>(
         "anchor_b", &physics2d::RevoluteJoint2D::anchor_b, "Vec2", {"x", "y"}));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "motor_speed", &physics2d::RevoluteJoint2D::motor_speed, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "motor_max_torque", &physics2d::RevoluteJoint2D::motor_max_torque, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }
