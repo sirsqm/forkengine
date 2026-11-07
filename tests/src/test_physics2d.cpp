@@ -1376,6 +1376,144 @@ TEST_CASE("a revolute joint swings a bob about a fixed pivot") {
     CHECK(anchor.length() < 0.1f);
 }
 
+// ---------------------------------------------------------------------------
+// Revolute joint angular limits: a limited hinge stops the swing at a bound.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a revolute joint's angular limits build a one-sided row at the bound it is past") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.rotation = 0.0f;
+    b.rotation = 1.2f; // past the upper bound
+
+    physics2d::RevoluteJointParams params;
+    params.enable_limits = true;
+    params.lower_angle = -0.5f;
+    params.upper_angle = 1.0f;
+
+    physics2d::ConstraintRow lower;
+    physics2d::ConstraintRow upper;
+    physics2d::build_revolute_limit_rows(a, b, params, lower, upper);
+
+    // Past the upper bound the upper row is active, purely angular (the free
+    // coordinate is the relative angle), and clamped to only a negative impulse
+    // so it can shrink the angle but never grow it. The lower row is slack.
+    CHECK(upper.effective_mass > 0.0f);
+    CHECK(upper.angular_a == doctest::Approx(-1.0f));
+    CHECK(upper.angular_b == doctest::Approx(1.0f));
+    CHECK(upper.lower_impulse < 0.0f);
+    CHECK(upper.upper_impulse == doctest::Approx(0.0f));
+    CHECK(lower.effective_mass == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a revolute limit row cancels the spin into the bound") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    b.rotation = 1.2f;
+    b.angular_velocity = 5.0f; // spinning further past the upper bound
+
+    physics2d::RevoluteJointParams params;
+    params.enable_limits = true;
+    params.lower_angle = -0.5f;
+    params.upper_angle = 1.0f;
+
+    physics2d::ConstraintRow lower;
+    physics2d::ConstraintRow upper;
+    physics2d::build_revolute_limit_rows(a, b, params, lower, upper);
+    physics2d::apply_row(upper, a, b);
+
+    // The row removed the relative spin into the stop, so the pair no longer
+    // turns further past the bound.
+    CHECK(b.angular_velocity - a.angular_velocity == doctest::Approx(0.0f).epsilon(0.01));
+}
+
+TEST_CASE("a limited revolute joint stops a swinging arm at its bound") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* arm = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = arm->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = true;
+    body->inertia = 1.0f; // a point mass needs a moment about the pin
+
+    Node* host = scene.create_node("Hinge");
+    // The arm's left end is pinned at the pivot, so it swings down from
+    // horizontal; the lower bound stops it before it can hang straight.
+    auto* joint = add_revolute_joint(*host, *pivot, *arm, Vec2{}, Vec2{-1.0f, 0.0f});
+    joint->enable_limits = true;
+    joint->lower_angle = -1.0f;
+    joint->upper_angle = 1.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    CHECK(system.joint_diagnostics().empty());
+    // Left free, gravity would swing the arm to -pi/2 (about -1.571, hanging
+    // straight down); the lower stop holds it at -1.0 instead.
+    const f32 angle = arm->transform().rotation.z;
+    CHECK(angle >= -1.1f);
+    CHECK(angle == doctest::Approx(-1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a limited revolute joint swings freely inside its limits") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* arm = add_point_mass(scene, Vec2{1.0f, 0.0f}, 1.0f);
+    auto* body = arm->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = true;
+    body->inertia = 1.0f;
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = add_revolute_joint(*host, *pivot, *arm, Vec2{}, Vec2{-1.0f, 0.0f});
+    joint->enable_limits = true;
+    joint->lower_angle = -3.0f; // wide enough never to touch
+    joint->upper_angle = 3.0f;
+
+    physics2d::Physics2DSystem system;
+    f32 min_angle = 0.0f;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        min_angle = std::min(min_angle, arm->transform().rotation.z);
+    }
+
+    // The slack rows exerted nothing: the arm swung past the -1.5 the tighter
+    // joint is stopped at, all the way towards hanging straight down.
+    CHECK(min_angle < -1.55f);
+}
+
+TEST_CASE("a revolute joint's angular limits round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Hinge");
+    auto* joint = host->add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->enable_limits = true;
+    joint->lower_angle = -0.75f;
+    joint->upper_angle = 1.25f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Hinge");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics2d::RevoluteJoint2D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->enable_limits);
+    CHECK(loaded_joint->lower_angle == doctest::Approx(-0.75f));
+    CHECK(loaded_joint->upper_angle == doctest::Approx(1.25f));
+}
+
 TEST_CASE("a joint with a nil body reference is skipped with a diagnostic") {
     Scene scene;
     Node* a = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);

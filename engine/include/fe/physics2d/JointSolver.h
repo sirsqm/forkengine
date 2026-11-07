@@ -106,8 +106,14 @@ struct ConstraintRow {
 // (two translation plus the relative angle), four for a prismatic joint (one
 // translation perpendicular to its axis, the relative angle, and the two
 // translation-limit rows, which are zero when limits are off).
+//
+// A revolute joint's row *set* is two; when its angular limits are enabled the
+// system solves two more rows (the lower and upper angular limits), built by
+// `build_revolute_limit_rows` on top of the pin rows.
 inline constexpr usize kDistanceJointRows = 1;
 inline constexpr usize kRevoluteJointRows = 2;
+// The two extra rows a revolute joint solves when its angular limits are on.
+inline constexpr usize kRevoluteJointLimitRows = 2;
 inline constexpr usize kFixedJointRows = 3;
 inline constexpr usize kPrismaticJointRows = 4;
 // The index of the prismatic joint's angle-lock row and the two limit rows, so
@@ -163,9 +169,17 @@ struct DistanceJointParams {
 // The revolute-joint parameters. `anchor_a` and `anchor_b` are the shared point
 // expressed in each body's local frame, so a pin offset from a body's centre
 // (the top of a pendulum bob) needs no separate world anchor to author.
+//
+// `enable_limits` turns the free swing into a limited one: the relative angle
+// `b - a` may range over [`lower_angle`, `upper_angle`] and is stopped at either
+// bound, the way a door stops at 90 degrees. Off by default, so the joint swings
+// through a full turn.
 struct RevoluteJointParams {
     Vec2 anchor_a{};
     Vec2 anchor_b{};
+    bool enable_limits = false;
+    f32 lower_angle = 0.0f;
+    f32 upper_angle = 0.0f;
 };
 
 // The fixed (weld) joint parameters. A fixed joint removes every degree of
@@ -223,6 +237,13 @@ struct PrismaticJointParams {
 [[nodiscard]] Result<void> build_revolute_rows(const JointBody& a, const JointBody& b,
                                                const RevoluteJointParams& params, f32 delta_time,
                                                ConstraintRow out_rows[kRevoluteJointRows]);
+
+// Builds the two angular-limit rows for a revolute joint whose limits are on.
+// Each row is one-sided: it stops the relative angle `b - a` past a bound and is
+// a zero (slack) row otherwise, so inside the range the joint swings freely.
+// `lower_row` and `upper_row` are written in place. A no-op when limits are off.
+void build_revolute_limit_rows(const JointBody& a, const JointBody& b, const RevoluteJointParams& params,
+                               ConstraintRow& lower_row, ConstraintRow& upper_row) noexcept;
 
 // Applies a solved row's velocity impulse to the two bodies: the impulse is the
 // current relative velocity along the row plus the row's bias, scaled by the

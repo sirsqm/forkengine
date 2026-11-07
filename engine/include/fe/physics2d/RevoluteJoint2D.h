@@ -51,6 +51,17 @@ public:
     f32 motor_speed = 0.0f;
     f32 motor_max_torque = 0.0f;
 
+    // Angular limits: when `enable_limits` is set the joint may swing freely
+    // between `lower_angle` and `upper_angle` (the relative angle of B about the
+    // anchor, in radians, measured as B's rotation minus A's) and is stopped at
+    // either bound, the way a door stops at 90 degrees or a jointed limb stops at
+    // its extreme. Off by default, so the joint swings through a full turn. The
+    // limits are compared against the raw relative angle, so author them within
+    // one turn of each other (the usual case: a swing of less than 360 degrees).
+    bool enable_limits = false;
+    f32 lower_angle = 0.0f;
+    f32 upper_angle = 0.0f;
+
     // Break thresholds. When `break_force` is positive the joint snaps (stops
     // being enforced) once the force it must carry exceeds it; likewise
     // `break_torque` for the torque. Zero (the default) means the joint never

@@ -109,9 +109,10 @@ end caps.
 - A motor is a speed target, not a position target: it drives towards a
   velocity, so a joint cannot be driven to a *position* by the solver without a
   caller closing the loop. A position/spring target is a separate refinement.
-- A revolute joint still has no angular limits (a hinge that stops at 90
-  degrees); only the prismatic joint has translation limits. The same bound
-  machinery would carry it, applied to the relative angle row.
+- A revolute joint's angular limits landed later in 2D (a hinge that stops at 90
+  degrees), reusing the same one-sided bound machinery on the relative-angle row
+  ([ADR-0154](0154-revolute-angular-limits.md)). The 3D revolute joint still has
+  none: it needs an authored reference axis on top of the bound rows.
 - The 2D and 3D motor rows are separate functions. They share the design and the
   tests, not the implementation, for the same reason the joint rows differ.
 

@@ -123,6 +123,45 @@ Result<void> build_revolute_rows(const JointBody& a, const JointBody& b, const R
     return Result<void>{};
 }
 
+void build_revolute_limit_rows(const JointBody& a, const JointBody& b, const RevoluteJointParams& params,
+                               ConstraintRow& lower_row, ConstraintRow& upper_row) noexcept {
+    // Slack rows by default: a zero row is a no-op the apply functions already
+    // skip, so a joint with limits off (or one swinging inside them) is unchanged.
+    lower_row = ConstraintRow{};
+    upper_row = ConstraintRow{};
+    if (!params.enable_limits) {
+        return;
+    }
+
+    // The free coordinate is the relative angle `b - a`. The row measures its
+    // rate directly (purely angular Jacobian), so a positive row velocity means
+    // the angle is growing and a positive impulse grows it further -- which fixes
+    // each bound's clamp to one sign, as the prismatic limits' does.
+    const f32 angle = b.rotation - a.rotation;
+    const f32 lower = std::min(params.lower_angle, params.upper_angle);
+    const f32 upper = std::max(params.lower_angle, params.upper_angle);
+
+    const auto build_limit_row = [&](ConstraintRow& row, f32 bound, f32 clamp_lower, f32 clamp_upper) {
+        row.angular_a = -1.0f;
+        row.angular_b = 1.0f;
+        row.effective_mass = row_effective_mass(row, a, b);
+        row.position_error = angle - bound;
+        row.position_factor = kJointPositionFactor;
+        row.clamp_impulse = true;
+        row.lower_impulse = clamp_lower;
+        row.upper_impulse = clamp_upper;
+    };
+
+    // Past the upper bound the angle must not grow, so only a negative impulse
+    // (which shrinks it) is allowed; past the lower bound the opposite.
+    if (angle >= upper) {
+        build_limit_row(upper_row, upper, -std::numeric_limits<f32>::max(), 0.0f);
+    }
+    if (angle <= lower) {
+        build_limit_row(lower_row, lower, 0.0f, std::numeric_limits<f32>::max());
+    }
+}
+
 void apply_row(ConstraintRow& row, JointBody& a, JointBody& b) noexcept {
     if (row.effective_mass <= 0.0f) {
         return; // unsolvable row: both bodies are immovable along it

@@ -192,6 +192,13 @@ void register_revolute_joint2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
         "motor_max_torque", &physics2d::RevoluteJoint2D::motor_max_torque, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, bool>(
+        "enable_limits", &physics2d::RevoluteJoint2D::enable_limits, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "lower_angle", &physics2d::RevoluteJoint2D::lower_angle, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "upper_angle", &physics2d::RevoluteJoint2D::upper_angle, ValueKind::Float, &defaults));
+
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
         "break_force", &physics2d::RevoluteJoint2D::break_force, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(

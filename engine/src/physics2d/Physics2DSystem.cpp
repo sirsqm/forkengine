@@ -1001,13 +1001,20 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
             RevoluteJointParams params;
             params.anchor_a = joint.revolute->anchor_a;
             params.anchor_b = joint.revolute->anchor_b;
+            params.enable_limits = joint.revolute->enable_limits;
+            params.lower_angle = joint.revolute->lower_angle;
+            params.upper_angle = joint.revolute->upper_angle;
 
-            ConstraintRow rows[kRevoluteJointRows];
+            // The pin rows first; the two angular-limit rows (slack when limits
+            // are off) follow them in the same buffer, so one apply/reaction pass
+            // covers the whole joint.
+            ConstraintRow rows[kRevoluteJointRows + kRevoluteJointLimitRows];
             if (auto built = build_revolute_rows(body_a, body_b, params, delta_time, rows); !built) {
                 note_joint_skipped(type, id_a, id_b, built.error());
                 continue;
             }
-            apply_rows(rows, kRevoluteJointRows, body_a, body_b);
+            build_revolute_limit_rows(body_a, body_b, params, rows[kRevoluteJointRows], rows[kRevoluteJointRows + 1]);
+            apply_rows(rows, kRevoluteJointRows + kRevoluteJointLimitRows, body_a, body_b);
 
             // The motor drives the relative spin the pin leaves free. It runs
             // after the anchor rows so the spin is applied to the pose the pin
@@ -1026,7 +1033,8 @@ void Physics2DSystem::solve_joints(Scene& scene, f32 delta_time) {
                     note_joint_skipped(type, id_a, id_b, row.error());
                 }
             }
-            row_reactions(rows, kRevoluteJointRows, inv_dt, reaction_force, reaction_torque, peak_force);
+            row_reactions(rows, kRevoluteJointRows + kRevoluteJointLimitRows, inv_dt, reaction_force, reaction_torque,
+                          peak_force);
             f32 motor_peak = 0.0f;
             Vec2 motor_force{};
             f32 motor_torque = 0.0f;
