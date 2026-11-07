@@ -105,8 +105,9 @@ gamepad focus navigation (`ui-focus-navigation`). (`gamepad-input` landed under 
 
 The remaining work is the *un-ordered* backlog (the bullet list at the end of the
 shipping queue) plus the `[~]` rows above — mobile native surfaces, the Windows
-installer and macOS notarization, more graphics backends, and the two rows the
-3D slice deferred (a skinned character and a positional audio mix). Those are
+installer and macOS notarization, more graphics backends, and the row the 3D
+slice still defers (a skinned character; its positional audio mix has landed, and
+only the directivity/Doppler refinement of that row remains). Those are
 chosen fresh rather than queued, because each is a larger, less-coupled step than
 a queue item. **M11** landed as `examples/collect3d` (Gem Rush,
 [ADR-0147](adr/0147-second-vertical-slice-3d.md)).
@@ -274,7 +275,7 @@ queries, and the behaviour is tested headlessly. *Met for the first cut; the
 
 - [x] 2D sprite-sheet animation (frame playback; the first system) — see the M2 prerequisite
 - [x] Audio playback and mixing: `AudioDevice` with a real (miniaudio) and a null backend, `AudioClip` + `WavLoader`, `AudioSource`, and `AudioSystem` with a pure mixer — see [ADR-0016](adr/0016-audio-module.md)
-- [x] Audio refinements: 3D positional attenuation and audio buses / mixing groups — see [ADR-0034](adr/0034-audio-attenuation-buses.md). The listener these depend on is now driven: an `AudioListenerSystem` in `runtime` copies the active camera's world position to the audio system, so a positional source is attenuated against the player's ear rather than the world origin, and the player and play-in-editor both adopt it ([ADR-0097](adr/0097-audio-listener-from-camera.md)). Stereo panning landed on top: a positional source is now panned across the output channels by the listener's orientation, so a source to the player's right is louder in the right ear, under a constant-power pan law ([ADR-0099](adr/0099-stereo-panning-from-listener-orientation.md)). Directivity and Doppler landed too: a spatial source carries a cone (inner/outer half-angles and an outer gain, with the axis taken from the node's forward `-Z`, so it is aimed by rotating the node), and a source with `doppler` set is pitch-shifted by its motion relative to the listener, its velocity derived from how far its node moved since the previous frame, against a settable speed of sound ([ADR-0112](adr/0112-audio-directivity-and-doppler.md)). The front/back cue closed the set: a per-voice head-shadow low-pass, keyed on the listener-to-source direction's component along the listener's backward axis, darkens a source behind the ear so it is distinguishable from an identical one in front (which panning alone centres both) while a source level with the ear is bit-for-bit unchanged ([ADR-0125](adr/0125-audio-head-shadow-front-back.md)). Every refinement is opt-in, so a scene authored before it mixes byte for byte. Panning is opt-in too — a 2D camera has no ear direction, so a 2D scene's mix is unchanged.
+- [x] Audio refinements: 3D positional attenuation and audio buses / mixing groups — see [ADR-0034](adr/0034-audio-attenuation-buses.md). The listener these depend on is now driven: an `AudioListenerSystem` in `runtime` copies the active camera's world position to the audio system, so a positional source is attenuated against the player's ear rather than the world origin, and the player and play-in-editor both adopt it ([ADR-0097](adr/0097-audio-listener-from-camera.md)). Stereo panning landed on top: a positional source is now panned across the output channels by the listener's orientation, so a source to the player's right is louder in the right ear, under a constant-power pan law ([ADR-0099](adr/0099-stereo-panning-from-listener-orientation.md)). Directivity and Doppler landed too: a spatial source carries a cone (inner/outer half-angles and an outer gain, with the axis taken from the node's forward `-Z`, so it is aimed by rotating the node), and a source with `doppler` set is pitch-shifted by its motion relative to the listener, its velocity derived from how far its node moved since the previous frame, against a settable speed of sound ([ADR-0112](adr/0112-audio-directivity-and-doppler.md)) — and the listener's own velocity is now derived the same way from the camera's motion, so a moving camera shifts a still source's pitch with no authoring ([ADR-0158](adr/0158-listener-velocity-from-camera.md)). The front/back cue closed the set: a per-voice head-shadow low-pass, keyed on the listener-to-source direction's component along the listener's backward axis, darkens a source behind the ear so it is distinguishable from an identical one in front (which panning alone centres both) while a source level with the ear is bit-for-bit unchanged ([ADR-0125](adr/0125-audio-head-shadow-front-back.md)). Every refinement is opt-in, so a scene authored before it mixes byte for byte. Panning is opt-in too — a 2D camera has no ear direction, so a 2D scene's mix is unchanged.
 - [x] Streaming / large-file playback and compressed codecs: mu-law, A-law, and IMA ADPCM decoding in `WavLoader`, and a pull-based `AudioStream` / `WavStream` a source opts into with `AudioSource::stream` — see [ADR-0060](adr/0060-compressed-audio-and-streaming.md)
 - [x] Tilemaps — a `Tilemap` component holds a grid of tile indices over a tileset texture. Cell (0, 0) is the map's top-left and +Y goes down, the convention every tile editor uses; `kEmpty` draws nothing, so a sparse map is cheap. Extraction emits one `render::SpriteInstance` per non-empty cell into the *same* array the sprites fill, so a tile reuses the sprite draw path, the shared cull, and the `(layer, texture)` batcher — a 100×100 level is one component and one draw call per texture, not ten thousand nodes. The grid persists as the component's own compact JSON through the `grid` reflection property ([ADR-0062](adr/0062-tilemaps.md)). Tile collisions landed on top of the same grid: `Tilemap::is_solid` marks which cells are ground (a non-empty tile in the map's `solid_tiles` list, or any non-empty tile when that list is empty) and `physics2d::append_tilemap_colliders` turns each solid cell into a static box placed where the renderer draws it, which `Physics2DSystem` gathers so a body stands on the level's visible surface. The solid list rides in the same `grid` document. Mixed tile sizes and a dedicated tile editor remain.
 - [x] Animation state machines — a named-state graph over the sprite animator: states (a clip: first frame, frame count, fps, loop) and transitions (from, to, a require-finished gate, and trigger conditions) in an `AnimationStateMachine` component, advanced by `AnimationStateMachineSystem`, which drives the node's `SpriteAnimator` cell. Blend trees and continuous parameters build on this shape and remain; skeletal states landed as their own machine ([ADR-0123](adr/0123-skeletal-state-machines.md)) ([ADR-0059](adr/0059-animation-state-machines.md))
@@ -397,9 +398,14 @@ props to shove, with no goal or UI.
 - [ ] An animated character: a skinned mesh driven by an `AnimationBlendTree` and
       a `SkeletalStateMachine` (M6) — *deferred:* the character is a rigid body
       with a controller; a skinned character needs authored skeletal content
-- [ ] An audio mix that uses the 3D features: positional sources, directivity or
-      Doppler, and a bus layout (M6) — *deferred:* the pickup cue is
-      non-positional on the master bus, as in breakout
+- [~] An audio mix that uses the 3D features: positional sources, directivity or
+      Doppler, and a bus layout (M6). The positional sources and the bus layout
+      have landed: the pickup cue is `spatial`, placed on the collected gem before
+      it plays, and routed to a named `sfx` group bus, and the game installs an
+      `AudioListenerSystem` so the cue is attenuated against the camera rather than
+      the world origin — see [ADR-0157](adr/0157-positional-audio-in-the-3d-slice.md).
+      Directivity and Doppler remain: the cue is omnidirectional with no Doppler,
+      and the mixer supports both.
 - [x] Persistence and settings, reusing the slice's save path, so a best score
       and the player's settings survive a restart
 - [x] Make it the integration test: its rules and systems are compiled into
@@ -413,9 +419,10 @@ props to shove, with no goal or UI.
 
 **Done when** a 3D game with a goal, a score, a HUD, a character, and audio
 exports and runs on desktop and in a browser from one project, and its rules are
-compiled into the test suite. *Skeletal animation and positional audio are the
-two rows the slice does not exercise end to end; both are recorded as deferred
-rather than claimed.*
+compiled into the test suite. *Skeletal animation is the row the slice does not
+exercise end to end; the positional audio mix has landed (positional sources on
+an `sfx` bus, driven by an installed listener) and only its directivity/Doppler
+refinement remains, both recorded as deferred rather than claimed.*
 
 *Why here:* after the Phase 5 refinements, not before. The refinements are small
 and each closes a gap a first cut left open; a second slice is a larger,

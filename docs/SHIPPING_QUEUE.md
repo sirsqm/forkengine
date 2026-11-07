@@ -1261,10 +1261,12 @@ cannot hold, a scene servo holding a joint against gravity, and the round trip.
   [ADR-0147](adr/0147-second-vertical-slice-3d.md)) — the 3D counterpart of
   breakout, built from the 3D systems that had landed but never run together. It
   is an integration test like breakout: its rules and systems compile into
-  `fork_engine_tests` and it builds for desktop and web. Two rows it deliberately
-  left open (a skinned character and a positional audio mix) are noted in the
-  roadmap as deferred, not claimed. A third slice, if one is ever wanted, has a
-  template in the two that exist.
+  `fork_engine_tests` and it builds for desktop and web. One row it deliberately
+  left open (a skinned character) is noted in the roadmap as deferred, not
+  claimed; the audio row has since landed its positional sources and bus layout
+  ([ADR-0157](adr/0157-positional-audio-in-the-3d-slice.md)), leaving directivity
+  and Doppler. A third slice, if one is ever wanted, has a template in the two
+  that exist.
 
 ## Ongoing
 
