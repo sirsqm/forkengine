@@ -1090,6 +1090,67 @@ TEST_CASE("a slow body against a wall is resolved by the discrete pass, not the 
     CHECK_FALSE(any_sweep);
 }
 
+TEST_CASE("a spinning 3D body is stopped from sweeping a corner through a thin wall") {
+    Scene scene;
+    // A long thin bar lying along +x, and a thin ledge just inside the circle
+    // its tips trace (radius 2, at y = 1.99). Lying flat the bar is clear of the
+    // ledge, and a half-turn later it is clear again, so the discrete pass sees
+    // no overlap at either endpoint: the tips' arc is the only place the two
+    // meet, which the linear sweep (following the centre) cannot see either.
+    Node* bar_node = add_dynamic_box(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* bar_collider = bar_node->get_component<physics3d::Collider3D>();
+    bar_collider->half_extent = Vec3{2.0f, 0.05f, 0.05f};
+    auto* bar = bar_node->get_component<physics3d::RigidBody3D>();
+    bar->affected_by_gravity = false;
+    // A full half-turn in one step about z: the tips sweep right over the ledge
+    // between the two endpoint orientations.
+    bar->angular_velocity = Vec3{0.0f, 0.0f, 60.0f * 3.14159265f};
+    bar->wake();
+
+    Node* ledge = scene.create_node("Ledge");
+    auto* ledge_collider = ledge->add_component<physics3d::Collider3D>();
+    ledge_collider->shape = physics3d::ShapeType3D::Box;
+    ledge_collider->half_extent = Vec3{0.5f, 0.005f, 0.5f};
+    ledge->transform().position = Vec3{0.0f, 1.99f, 0.0f};
+
+    physics3d::Physics3DSystem physics;
+    physics.gravity = Vec3{0.0f, 0.0f, 0.0f};
+
+    physics.update(step(1.0f / 60.0f), scene);
+
+    // The turn was caught partway round, so the bar never completed the
+    // half-turn past the ledge. Without the rotational sweep the bar would spin
+    // on to about 2.0 rad (its flat endpoints miss the ledge, so the discrete
+    // pass would leave it there); the sweep clamps it near a quarter turn.
+    CHECK(physics.continuous_hit_count() > 0);
+    CHECK(bar_node->transform().rotation.z < 1.8f);
+}
+
+TEST_CASE("a spinning 3D sphere is not swept for rotation, which cannot tunnel one") {
+    Scene scene;
+    // A sphere's shape does not change as it turns, so rotation alone can never
+    // tunnel it and the rotational sweep must not fire. A fast spin with no
+    // linear motion leaves the pass with nothing to do.
+    Node* ball = add_dynamic_sphere(scene, Vec3{0.0f, 0.0f, 0.0f}, 0.5f, 1.0f);
+    auto* body = ball->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->angular_velocity = Vec3{0.0f, 0.0f, 60.0f * 3.14159265f};
+    body->wake();
+
+    Node* ledge = scene.create_node("Ledge");
+    auto* ledge_collider = ledge->add_component<physics3d::Collider3D>();
+    ledge_collider->shape = physics3d::ShapeType3D::Box;
+    ledge_collider->half_extent = Vec3{0.5f, 0.005f, 0.5f};
+    ledge->transform().position = Vec3{0.0f, 1.99f, 0.0f};
+
+    physics3d::Physics3DSystem physics;
+    physics.gravity = Vec3{0.0f, 0.0f, 0.0f};
+
+    physics.update(step(1.0f / 60.0f), scene);
+
+    CHECK(physics.continuous_hit_count() == 0);
+}
+
 // ---------------------------------------------------------------------------
 // Restitution threshold in 3D: a barely-approaching pair does not bounce, so a
 // bouncy body comes to rest instead of buzzing; a real impact still bounces.

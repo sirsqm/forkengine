@@ -89,8 +89,10 @@ Add a swept test `physics3d::sweep_shape` and a pass
 
 - A fast body swept against *another moving body* still tunnels. The pass only
   sweeps static geometry; relative-motion sweeping is the next refinement.
-- A fast-*rotating* body is not swept either -- the same gap 2D has
-  (`physics2d-rotational-ccd`). The sweep takes linear displacement only.
+- A fast-*rotating* body was not swept either -- the same gap 2D had
+  (`physics2d-rotational-ccd`), closed for 3D in
+  [ADR-0149](0149-physics3d-rotational-ccd.md): a spinning box's corner arc is
+  now swept and clamped, while a sphere is never swept for spin.
 - A rotated body is swept as its axis-aligned bounds, so a near-corner crossing
   can be reported a hair early. Conservative, never a miss; an oriented sweep is
   later work.

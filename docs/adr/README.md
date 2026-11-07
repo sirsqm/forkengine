@@ -154,6 +154,7 @@ rather than editing it.
 | [0146](0146-nested-blend-trees.md) | A blend tree feeding a blend tree | Accepted |
 | [0147](0147-second-vertical-slice-3d.md) | The second vertical slice, and the 3D integration test it is | Accepted |
 | [0148](0148-world-render-hook-and-camera-clear.md) | A world render hook, and the 3D camera's clear colour | Accepted |
+| [0149](0149-physics3d-rotational-ccd.md) | Continuous collision detection for a spinning 3D body | Accepted |
 
 ## Format
 

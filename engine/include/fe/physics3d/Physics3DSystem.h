@@ -330,6 +330,12 @@ private:
     // across frames like the other scratch.
     std::vector<Vec3> previous_positions_;
 
+    // The orientation each dynamic body had before this step's integration,
+    // indexed like `bodies_`. A spinning box can sweep a corner through a thin
+    // wall while its centre barely moves, so the continuous pass needs the start
+    // of the turn, not only its end, to bound the corner's arc.
+    std::vector<Quat> previous_orientations_;
+
     // Bodies the continuous pass clamped in the most recent update.
     usize continuous_hits_ = 0;
 

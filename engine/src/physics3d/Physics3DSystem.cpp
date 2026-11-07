@@ -95,6 +95,88 @@ void store_joint_body(Node& node, const JointBody3D& joint) noexcept {
     }
 }
 
+// The smallest axis-aligned box enclosing both `a` and `b`.
+[[nodiscard]] Aabb3D union_bounds(const Aabb3D& a, const Aabb3D& b) noexcept {
+    const Vec3 lo{std::min(a.center.x - a.half_extent.x, b.center.x - b.half_extent.x),
+                  std::min(a.center.y - a.half_extent.y, b.center.y - b.half_extent.y),
+                  std::min(a.center.z - a.half_extent.z, b.center.z - b.half_extent.z)};
+    const Vec3 hi{std::max(a.center.x + a.half_extent.x, b.center.x + b.half_extent.x),
+                  std::max(a.center.y + a.half_extent.y, b.center.y + b.half_extent.y),
+                  std::max(a.center.z + a.half_extent.z, b.center.z + b.half_extent.z)};
+    return Aabb3D{(lo + hi) * 0.5f, (hi - lo) * 0.5f};
+}
+
+// The angle between two orientations, in radians, always in [0, pi].
+[[nodiscard]] f32 quat_angle_between(const Quat& a, const Quat& b) noexcept {
+    // The relative rotation's scalar part is cos(half the angle); taking the
+    // magnitude folds q and -q (the same rotation) onto the same angle.
+    const f32 dot = std::clamp(std::abs(a.normalized().dot(b.normalized())), 0.0f, 1.0f);
+    return 2.0f * std::acos(dot);
+}
+
+// The axis-aligned box that contains a box collider at every orientation in the
+// turn from `start_orientation` to `end_orientation`.
+//
+// A rotating body's corners sweep an arc the two endpoint boxes alone do not
+// bound -- an intermediate orientation can reach past both -- so the arc is
+// sampled. The bound only has to be conservative (a superset of the true swept
+// region), which this is: it contains the shape at every sampled angle, and the
+// samples are dense enough that the unsampled sliver between them is far smaller
+// than any wall the pass is meant to catch.
+[[nodiscard]] Aabb3D arc_bounds(const Collider3D& collider, const Vec3& center, const Quat& start_orientation,
+                                const Quat& end_orientation) noexcept {
+    constexpr int kSamples = 4;
+    Aabb3D bound = collider.oriented_bounds(center, start_orientation);
+    for (int s = 1; s <= kSamples; ++s) {
+        const f32 t = static_cast<f32>(s) / static_cast<f32>(kSamples);
+        const Aabb3D cur = collider.oriented_bounds(center, Quat::slerp(start_orientation, end_orientation, t));
+        bound = union_bounds(bound, cur);
+    }
+    return bound;
+}
+
+// The earliest fraction of a body's turn at which its shape first reaches
+// `target`.
+//
+// A rotating body sweeps an arc the linear test cannot see: it can turn a corner
+// through a thin wall while its centre barely moves, so the discrete pass -- and
+// the linear sweep, which follows only the centre -- both miss it. The turn is
+// cut into a fixed number of substeps; within each, the arc the shape sweeps is
+// bounded and tested against the target. The first substep whose arc reaches the
+// target is the contact. A contact already present at the start of the turn is
+// left to the discrete solver, exactly as the linear sweep leaves a resting body.
+struct RotationSweep3D {
+    bool hit = false;
+    f32 time = 0.0f;
+};
+
+[[nodiscard]] RotationSweep3D sweep_rotation(const Collider3D& collider, const Vec3& center,
+                                             const Quat& start_orientation, const Quat& end_orientation,
+                                             const Collider3D& target, const Vec3& target_center,
+                                             const Quat& target_orientation) noexcept {
+    const Aabb3D target_bounds = target.oriented_bounds(target_center, target_orientation);
+    // A shape already touching the target at the start of the turn is a resting
+    // contact: the discrete solver owns it, and clamping the turn here would
+    // freeze a body spinning against the surface it rests on.
+    if (bounds_overlap(collider.oriented_bounds(center, start_orientation), target_bounds)) {
+        return {};
+    }
+    // Enough substeps that a corner's arc is covered without a full continuous
+    // solve; the caller's threshold guarantees the arc exceeds the body's own
+    // size, so a coarse cut still catches a wall the body could tunnel.
+    constexpr int kSubsteps = 16;
+    for (int s = 1; s <= kSubsteps; ++s) {
+        const f32 t = static_cast<f32>(s) / static_cast<f32>(kSubsteps);
+        const f32 prev_t = static_cast<f32>(s - 1) / static_cast<f32>(kSubsteps);
+        const Quat from = Quat::slerp(start_orientation, end_orientation, prev_t);
+        const Quat to = Quat::slerp(start_orientation, end_orientation, t);
+        if (bounds_overlap(arc_bounds(collider, center, from, to), target_bounds)) {
+            return RotationSweep3D{true, t};
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 const Uuid& Physics3DSystem::Joint::body_a() const noexcept {
@@ -334,15 +416,17 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     // velocity (the angular state is still carried so a later contact can read
     // it, but it never changes the transform).
     //
-    // The previous position is kept for the continuous pass below, which needs
-    // the start of the motion, not only its end.
+    // The previous position and orientation are kept for the continuous pass
+    // below, which needs the start of the motion, not only its end.
     previous_positions_.assign(bodies_.size(), Vec3{});
+    previous_orientations_.assign(bodies_.size(), Quat::identity());
     for (usize i = 0; i < bodies_.size(); ++i) {
         Body& entry = bodies_[i];
         if (entry.inv_mass <= 0.0f || asleep_[i]) {
             continue;
         }
         previous_positions_[i] = entry.position;
+        previous_orientations_[i] = entry.orientation;
         entry.position += entry.velocity * delta_time;
         if (!entry.fixed_rotation) {
             entry.orientation = entry.orientation.integrated(entry.angular_velocity, delta_time);
@@ -1000,6 +1084,8 @@ void Physics3DSystem::apply_continuous_collisions() {
         }
         const Vec3 start = previous_positions_[i];
         const Vec3 displacement = mover.position - start;
+        const Quat start_orientation = previous_orientations_[i];
+        const Quat end_orientation = mover.orientation;
 
         // Only a body moving a meaningful fraction of its own size in one step
         // can tunnel: the discrete pass sees both endpoints, so a slow body is
@@ -1011,14 +1097,26 @@ void Physics3DSystem::apply_continuous_collisions() {
                              ? mover.collider->radius
                              : std::min({mover.collider->half_extent.x, mover.collider->half_extent.y,
                                          mover.collider->half_extent.z});
-        if (displacement.length_squared() <= size * size) {
+        const bool linear_motion = displacement.length_squared() > size * size;
+
+        // A spinning box can sweep a corner through a wall while its centre
+        // barely moves, which the linear sweep cannot see. The corner's arc
+        // length is the turn times the shape's bounding radius, so only a turn
+        // whose arc exceeds the body's own size can tunnel. A sphere's shape does
+        // not change as it turns, so rotation alone can never tunnel one.
+        const f32 spin_radius = mover.collider->half_extent.length();
+        const f32 turn_angle = quat_angle_between(start_orientation, end_orientation);
+        const bool rotational_motion = mover.collider->shape == ShapeType3D::Box && turn_angle * spin_radius > size;
+        if (!linear_motion && !rotational_motion) {
             continue;
         }
 
-        f32 earliest = 1.0f;
-        Vec3 hit_normal{};
-        f32 hit_restitution = 0.0f;
-        bool hit = false;
+        f32 linear_earliest = 1.0f;
+        Vec3 linear_normal{};
+        f32 linear_restitution = 0.0f;
+        bool linear_hit = false;
+        f32 rotational_earliest = 1.0f;
+        bool rotational_hit = false;
         for (usize j = 0; j < bodies_.size(); ++j) {
             if (j == i) {
                 continue;
@@ -1040,27 +1138,38 @@ void Physics3DSystem::apply_continuous_collisions() {
                 continue; // a sensor does not stop motion
             }
 
-            // The shapes are taken as their bounds: exact for two axis-aligned
-            // boxes, conservative for a sphere or a rotated box, so the sweep
-            // never misses a contact. A rotated body is swept as the box that
-            // contains it, the same limit the discrete collider has.
-            const Aabb3D mover_bounds = mover.collider->bounds(start);
-            const Aabb3D target_bounds = target.collider->bounds(target.position);
-            const Sweep3D sweep = sweep_shape(mover_bounds, displacement, target_bounds);
-            // A sweep that starts already touching (time zero) is a resting
-            // contact, not a crossing: the discrete solver owns it, and clamping
-            // here would freeze a body sliding along the ground it rests on.
-            // Only a contact first reached partway through the motion is a
-            // tunnelling case the continuous pass must stop.
-            if (sweep.hit && sweep.time > 0.0f && sweep.time < earliest) {
-                earliest = sweep.time;
-                hit_normal = sweep.normal;
-                hit_restitution = std::max(mover.restitution, target.restitution);
-                hit = true;
+            if (linear_motion) {
+                // The shapes are taken as their bounds: exact for two axis-aligned
+                // boxes, conservative for a sphere or a rotated box, so the sweep
+                // never misses a contact. A rotated body is swept as the box that
+                // contains it, the same limit the discrete collider has.
+                const Aabb3D mover_bounds = mover.collider->bounds(start);
+                const Aabb3D target_bounds = target.collider->bounds(target.position);
+                const Sweep3D sweep = sweep_shape(mover_bounds, displacement, target_bounds);
+                // A sweep that starts already touching (time zero) is a resting
+                // contact, not a crossing: the discrete solver owns it, and
+                // clamping here would freeze a body sliding along the ground it
+                // rests on. Only a contact first reached partway through the
+                // motion is a tunnelling case the continuous pass must stop.
+                if (sweep.hit && sweep.time > 0.0f && sweep.time < linear_earliest) {
+                    linear_earliest = sweep.time;
+                    linear_normal = sweep.normal;
+                    linear_restitution = std::max(mover.restitution, target.restitution);
+                    linear_hit = true;
+                }
+            }
+
+            if (rotational_motion) {
+                const RotationSweep3D spin = sweep_rotation(*mover.collider, start, start_orientation, end_orientation,
+                                                            *target.collider, target.position, target.orientation);
+                if (spin.hit && spin.time < rotational_earliest) {
+                    rotational_earliest = spin.time;
+                    rotational_hit = true;
+                }
             }
         }
 
-        if (!hit) {
+        if (!linear_hit && !rotational_hit) {
             continue;
         }
 
@@ -1068,10 +1177,19 @@ void Physics3DSystem::apply_continuous_collisions() {
         // and apply the same restitution rule the discrete solver uses to the
         // velocity component into the surface. Without this the body would
         // accumulate speed through the wall and be even deeper next step.
-        mover.position = start + displacement * earliest;
-        const f32 into = mover.velocity.dot(hit_normal);
-        if (into < 0.0f) {
-            mover.velocity -= hit_normal * ((1.0f + hit_restitution) * into);
+        if (linear_hit) {
+            mover.position = start + displacement * linear_earliest;
+            const f32 into = mover.velocity.dot(linear_normal);
+            if (into < 0.0f) {
+                mover.velocity -= linear_normal * ((1.0f + linear_restitution) * into);
+            }
+        }
+        if (rotational_hit) {
+            // Clamp the turn to the first touch: the corner cannot sweep past
+            // the wall. The spin is shed -- a wall stops the rotation into it --
+            // while any linear motion is left to the discrete solver.
+            mover.orientation = Quat::slerp(start_orientation, end_orientation, rotational_earliest);
+            mover.angular_velocity = Vec3{};
         }
         ++continuous_hits_;
     }

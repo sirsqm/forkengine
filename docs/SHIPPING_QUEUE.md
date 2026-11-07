@@ -993,6 +993,31 @@ short of the half-turn (without the sweep it reaches `rotation pi`), and that th
 same bar with no spin is still stopped by the linear sweep. The ADR-0037
 consequence that said fast rotation still tunnels is corrected.
 
+### `physics3d-rotational-ccd`
+
+The 3D refinement row (ADR-0043, ADR-0130) leaves sweeping a *rotating* body
+open, the counterpart of the 2D row above: linear CCD is done, but a long thin
+box spinning fast enough to sweep its corners through a wall between steps still
+passes through, because its centre barely moves and neither the discrete pass nor
+the linear sweep looks at the arc a corner traces.
+
+**Done when** a test spins a long thin body fast enough that an end would cross a
+thin static wall in one step and proves the contact is found, while the same body
+without spin behaves as the linear sweep already does.
+
+Landed as an angular sweep in `Physics3DSystem::apply_continuous_collisions`,
+mirroring the 2D pass: the turn is cut into substeps, the orientation bounds at
+sampled intermediate orientations are unioned to bound the corner arc, and the
+first substep whose bound reaches a static target clamps the turn and sheds the
+spin. Only boxes are swept for spin (a sphere's shape is orientation-invariant
+and cannot tunnel by rotation alone), and a contact present at the start of the
+turn is left to the discrete solver, so a body resting on the surface it spins
+against is unaffected. The orientation each body had before integration is kept
+alongside its previous position. Tests spin a long thin bar a half-turn in one
+step past a ledge only its tips' arc reaches and prove the turn is clamped short
+of it (without the sweep it spins on past the ledge), and that a spinning sphere
+never fires the pass ([ADR-0149](adr/0149-physics3d-rotational-ccd.md)).
+
 ### `physics-more-joints`
 
 The physics refinement rows (ADR-0037, ADR-0043) leave the joint set minimal
