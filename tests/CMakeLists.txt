@@ -98,12 +98,14 @@ target_sources(fork_engine_tests PRIVATE
 )
 target_include_directories(fork_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/examples/breakout/src)
 
-# The collect3d vertical-slice rules tests (the M11 3D game) compile the game's
-# own rules straight from the example directory, for the same reason the breakout
-# tests do: the test proves the *shipped* game code, not a copy.
+# The collect3d vertical-slice tests (the M11 3D game) compile the game's own
+# rules and arena builder straight from the example directory, for the same
+# reason the breakout tests do: the test proves the *shipped* game code, not a
+# copy.
 target_sources(fork_engine_tests PRIVATE
     src/test_collect3d.cpp
     ${CMAKE_SOURCE_DIR}/examples/collect3d/src/slice_state.cpp
+    ${CMAKE_SOURCE_DIR}/examples/collect3d/src/slice_scene.cpp
 )
 target_include_directories(fork_engine_tests PRIVATE ${CMAKE_SOURCE_DIR}/examples/collect3d/src)
 

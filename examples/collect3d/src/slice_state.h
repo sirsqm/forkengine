@@ -113,6 +113,40 @@ inline constexpr fe::f32 kVolumeStep = 0.1f;
 
 } // namespace config
 
+// The node names the scene builder and the systems share. One place, so the two
+// cannot drift apart: the builder creates a node by a name and a system finds it
+// by the same name, and a rename that touched only one of them would break the
+// game silently.
+namespace names {
+inline constexpr std::string_view kPlayer = "Player";
+inline constexpr std::string_view kCollectible = "Collectible";
+inline constexpr std::string_view kAudio = "PickupAudio";
+inline constexpr std::string_view kHudCanvas = "HudCanvas";
+inline constexpr std::string_view kScoreLabel = "ScoreLabel";
+inline constexpr std::string_view kTimeLabel = "TimeLabel";
+inline constexpr std::string_view kCollectedLabel = "CollectedLabel";
+inline constexpr std::string_view kBestScoreLabel = "BestScoreLabel";
+// The menu canvases. Each is a screen-space canvas (ADR-0086) hidden by default
+// and shown by MenuSystem while its screen is current, so the whole flow is one
+// flag per canvas rather than a rebuild.
+inline constexpr std::string_view kTitleCanvas = "TitleCanvas";
+inline constexpr std::string_view kTitleLabel = "TitleLabel";
+inline constexpr std::string_view kPauseCanvas = "PauseCanvas";
+inline constexpr std::string_view kPauseLabel = "PauseLabel";
+inline constexpr std::string_view kGameOverCanvas = "GameOverCanvas";
+inline constexpr std::string_view kGameOverLabel = "GameOverLabel";
+// The settings screen: a canvas of labelled buttons that change the volume.
+// Every control is a hit-tested UiElement, so a tap and a click both work.
+inline constexpr std::string_view kSettingsCanvas = "SettingsCanvas";
+inline constexpr std::string_view kSettingsTitleLabel = "SettingsTitleLabel";
+inline constexpr std::string_view kSettingsVolumeDown = "SettingsVolumeDown";
+inline constexpr std::string_view kSettingsVolumeUp = "SettingsVolumeUp";
+inline constexpr std::string_view kSettingsVolumeValue = "SettingsVolumeValue";
+inline constexpr std::string_view kSettingsBack = "SettingsBack";
+inline constexpr std::string_view kSettingsButton = "SettingsButton";
+inline constexpr std::string_view kPauseSettingsButton = "PauseSettingsButton";
+} // namespace names
+
 // The player's settings: what they can change about how the game *feels*, as
 // opposed to how it plays. Today there is one knob -- the master volume -- and
 // the shape is a plain value so a second is one field.
