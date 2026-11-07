@@ -140,6 +140,7 @@ rather than editing it.
 | [0132](0132-ui-clipping-and-scrolling.md) | UI clipping: a scissor rect on the RHI, carried through extraction | Accepted |
 | [0133](0133-prefab-instancing.md) | Prefab instancing: a subtree captured once, instantiated many | Accepted |
 | [0134](0134-extended-joint-set.md) | The extended joint set: fixed and prismatic joints, and distance-joint length limits, in both worlds | Accepted |
+| [0135](0135-joint-reactions-and-breaking.md) | Joint reactions and breaking: a joint reports the force it carries and snaps past a threshold | Accepted |
 
 ## Format
 

@@ -135,13 +135,18 @@ void apply_row(ConstraintRow& row, JointBody& a, JointBody& b) noexcept {
     f32 impulse = -row.effective_mass * (row_velocity + row.bias);
 
     if (row.clamp_impulse) {
-        // A motor: accumulate the impulse and hold the total inside its bounds,
-        // then apply only the part that is new. A maximum-force motor is exactly
-        // this clamp -- once the accumulated impulse reaches the bound the row
-        // stops adding, so the joint gives way under a load it cannot hold.
+        // A motor or a limit: accumulate the impulse and hold the total inside its
+        // bounds, then apply only the part that is new. A maximum-force row is
+        // exactly this clamp -- once the accumulated impulse reaches the bound the
+        // row stops adding, so the joint gives way under a load it cannot hold.
         const f32 previous = row.accumulated_impulse;
         row.accumulated_impulse = std::clamp(previous + impulse, row.lower_impulse, row.upper_impulse);
         impulse = row.accumulated_impulse - previous;
+    } else {
+        // A rigid row has no bound, but its impulse is still accumulated so the
+        // joint's total reaction over the step can be read (for a breaking
+        // threshold or a debug overlay).
+        row.accumulated_impulse += impulse;
     }
 
     a.velocity += row.jacobian_a * (impulse * a.inv_mass);
@@ -164,6 +169,28 @@ void apply_row_position(const ConstraintRow& row, JointBody& a, JointBody& b) no
     a.rotation -= row.angular_a * correction * a.inv_inertia;
     b.position -= row.jacobian_b * (correction * b.inv_mass);
     b.rotation -= row.angular_b * correction * b.inv_inertia;
+}
+
+void row_reactions(const ConstraintRow rows[], usize count, f32 inv_dt, Vec2& out_linear, f32& out_angular,
+                   f32& out_peak) noexcept {
+    out_linear = Vec2{};
+    out_angular = 0.0f;
+    out_peak = 0.0f;
+
+    for (usize i = 0; i < count; ++i) {
+        const ConstraintRow& row = rows[i];
+        if (row.effective_mass <= 0.0f) {
+            continue; // never solved, so it applied nothing
+        }
+        // The impulse the row applied to B, as a force over the step. B is the
+        // end that is usually dynamic, so the reaction reads as the force the
+        // joint put on the moving body; it is zero when B is the immovable end.
+        out_linear += row.jacobian_b * (row.accumulated_impulse * inv_dt);
+        out_angular += row.angular_b * row.accumulated_impulse * inv_dt;
+        // The magnitude the row itself carried, independent of which end is
+        // movable. This is what a break threshold compares against.
+        out_peak = std::max(out_peak, std::abs(row.accumulated_impulse) * inv_dt);
+    }
 }
 
 Vec2 revolute_world_anchor(const JointBody& a, const RevoluteJointParams& params) noexcept {

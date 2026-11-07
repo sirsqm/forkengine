@@ -156,6 +156,12 @@ void register_distance_joint3d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
         "max_length", &physics3d::DistanceJoint3D::max_length, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
+        "break_force", &physics3d::DistanceJoint3D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
+        "break_torque", &physics3d::DistanceJoint3D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, bool>(
+        "broken", &physics3d::DistanceJoint3D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -179,6 +185,12 @@ void register_revolute_joint3d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
         "motor_max_torque", &physics3d::RevoluteJoint3D::motor_max_torque, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "break_force", &physics3d::RevoluteJoint3D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, f32>(
+        "break_torque", &physics3d::RevoluteJoint3D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::RevoluteJoint3D, bool>(
+        "broken", &physics3d::RevoluteJoint3D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -206,6 +218,12 @@ void register_fixed_joint3d(Registry& registry) {
         "anchor_b", &physics3d::FixedJoint3D::anchor_b, "Vec3", {"x", "y", "z"}));
     desc.properties.push_back(make_quat_group("reference_relative", &physics3d::FixedJoint3D::reference_relative));
 
+    desc.properties.push_back(make_scalar<physics3d::FixedJoint3D, f32>(
+        "break_force", &physics3d::FixedJoint3D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::FixedJoint3D, f32>(
+        "break_torque", &physics3d::FixedJoint3D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::FixedJoint3D, bool>("broken", &physics3d::FixedJoint3D::broken,
+                                                                         ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -236,6 +254,12 @@ void register_prismatic_joint3d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
         "motor_max_force", &physics3d::PrismaticJoint3D::motor_max_force, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "break_force", &physics3d::PrismaticJoint3D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, f32>(
+        "break_torque", &physics3d::PrismaticJoint3D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::PrismaticJoint3D, bool>(
+        "broken", &physics3d::PrismaticJoint3D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 

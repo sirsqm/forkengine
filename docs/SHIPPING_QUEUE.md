@@ -956,6 +956,26 @@ proves it swings down and comes to rest hanging below the pivot at the pinned
 radius (removing the joint lets the mass free-fall, which the test catches), with
 the existing distance-joint behaviour unchanged.
 
+Extended since with the rest of the set, in both worlds
+([ADR-0134](adr/0134-extended-joint-set.md)): a fixed (weld) joint holds a
+captured relative pose, a prismatic (slider) joint leaves one axis of sliding
+free, and the distance joint gained `min_length`/`max_length` bounds so it can be
+a rope, a leash, or a slack line. Each kind is one component with a parameter
+struct decoupled from the maths, registered with reflection, gathered in the same
+scene-walk, and linked into the islands.
+
+Motors, limits, and breaking then completed the joint model
+([ADR-0135](adr/0135-joint-reactions-and-breaking.md)). A revolute joint takes a
+motor (a target speed and a maximum torque), a prismatic joint takes a motor
+(a target speed and a maximum force), and both take translation limits that hold
+the slide between a lower and an upper bound. A joint also reports the reaction
+it carried -- the net force and torque on its second body and the largest
+single-row force, in force units, via `joint_reaction(body_a, body_b)` -- and
+snaps when that peak exceeds `break_force` or the torque exceeds `break_torque`,
+with `broken` clearing to re-arm. A joint with both thresholds at zero never
+breaks, so the frozen default is unchanged, and the tests pin a hanging 2 kg bob
+at ~19.6 N and a rod breaking under a 5 kg load.
+
 ### `audio-pack-streaming`
 
 The `fork_pack` polish row (ADR-0030) leaves streaming open: a large pack is

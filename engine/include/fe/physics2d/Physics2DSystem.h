@@ -169,6 +169,18 @@ public:
     };
     [[nodiscard]] const std::vector<JointDiagnostic>& joint_diagnostics() const noexcept { return joint_diagnostics_; }
 
+    // The reaction a joint applied in the most recent update: the net force and
+    // torque on its first body, and the largest single-row force. Forces and
+    // torques, not per-step impulses, so the numbers are comparable across step
+    // sizes. Zero for a joint that was skipped or broken before this step, and
+    // for an id pair that names no joint.
+    struct JointReaction {
+        Vec2 force{};
+        f32 torque = 0.0f;
+        f32 peak_force = 0.0f;
+    };
+    [[nodiscard]] JointReaction joint_reaction(const Uuid& body_a, const Uuid& body_b) const noexcept;
+
     // --- Sleeping ----------------------------------------------------------
 
     // Islands found in the most recent update: the connected components of the
@@ -276,6 +288,20 @@ private:
         [[nodiscard]] const Uuid& body_a() const noexcept;
         [[nodiscard]] const Uuid& body_b() const noexcept;
         [[nodiscard]] std::string_view type_name() const noexcept;
+
+        // The break thresholds and the snapped flag, read and written through the
+        // typed pointer so the solve pass does not re-branch on the kind.
+        [[nodiscard]] f32 break_force() const noexcept;
+        [[nodiscard]] f32 break_torque() const noexcept;
+        [[nodiscard]] bool is_broken() const noexcept;
+        void set_broken(bool value) noexcept;
+
+        // The reaction the last solve applied, for reporting and for the break
+        // test: the net force and torque on body A, and the largest single-row
+        // force. In force and torque units, not per-step impulses.
+        Vec2 reaction_force{};
+        f32 reaction_torque = 0.0f;
+        f32 peak_reaction_force = 0.0f;
     };
 
     // Solves every joint in the scene once. Runs after the contact pass has

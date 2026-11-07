@@ -57,6 +57,17 @@ public:
     f32 motor_speed = 0.0f;
     f32 motor_max_torque = 0.0f;
 
+    // Break thresholds. When `break_force` is positive the joint snaps (stops
+    // being enforced) once the force it must carry exceeds it; likewise
+    // `break_torque` for the torque. Zero (the default) means the joint never
+    // breaks, so a scene that does not set them is unchanged. A snapped joint
+    // sets `broken` and is skipped from then on; set `broken` back to false to
+    // re-arm it. This is how a rope under too much load, or a weld that gives
+    // way, is authored.
+    f32 break_force = 0.0f;
+    f32 break_torque = 0.0f;
+    bool broken = false;
+
     [[nodiscard]] bool is_valid() const noexcept { return !body_a.is_nil() && !body_b.is_nil() && body_a != body_b; }
 };
 

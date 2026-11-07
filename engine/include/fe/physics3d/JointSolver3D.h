@@ -341,6 +341,15 @@ void apply_row(ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 // no-op when the row has no position term (a spring) or is unsolvable.
 void apply_row_position(const ConstraintRow3D& row, JointBody3D& a, JointBody3D& b) noexcept;
 
+// The reaction a solved set of rows applied, derived from each row's accumulated
+// impulse. `inv_dt` is 1 / delta_time, so the outputs are forces and torques
+// rather than per-step impulses. `out_linear` is the net force on body A,
+// `out_angular` the net torque on A, and `out_peak` the largest single-row force,
+// which is what a breaking threshold tests. All three are zero for rows that were
+// never solved.
+void row_reactions(const ConstraintRow3D rows[], usize count, f32 inv_dt, Vec3& out_linear, Vec3& out_angular,
+                   f32& out_peak) noexcept;
+
 // Applies a solved row's *orientation* correction, the angular counterpart of
 // `apply_row_position`: `position_factor` of the row's rotation error is removed
 // about the row's angular Jacobian, split by inverse inertia. The linear

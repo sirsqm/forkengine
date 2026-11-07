@@ -139,6 +139,17 @@ public:
     // and the editor's debug overlay, mirroring Physics2DSystem::joint_count.
     [[nodiscard]] usize joint_count() const noexcept { return joints_solved_; }
 
+    // The reaction a joint applied in the most recent update: the net force and
+    // torque on its first body, and the largest single-row force, in force and
+    // torque units. Zero for a joint that was skipped or broken, and for an id
+    // pair that names no joint.
+    struct JointReaction {
+        Vec3 force{};
+        Vec3 torque{};
+        f32 peak_force = 0.0f;
+    };
+    [[nodiscard]] JointReaction joint_reaction(const Uuid& body_a, const Uuid& body_b) const noexcept;
+
     // Islands found in the most recent update: the connected components of the
     // contact-and-joint graph over the dynamic bodies (ADR-0111).
     [[nodiscard]] usize island_count() const noexcept { return islands_.island_count(); }
@@ -229,6 +240,18 @@ private:
         // solve and island passes read the ids without re-branching on the kind.
         [[nodiscard]] const Uuid& body_a() const noexcept;
         [[nodiscard]] const Uuid& body_b() const noexcept;
+
+        // The break thresholds and the snapped flag, read and written through the
+        // typed pointer so the solve pass does not re-branch on the kind.
+        [[nodiscard]] f32 break_force() const noexcept;
+        [[nodiscard]] f32 break_torque() const noexcept;
+        [[nodiscard]] bool is_broken() const noexcept;
+        void set_broken(bool value) noexcept;
+
+        // The reaction the last solve applied, for reporting and the break test.
+        Vec3 reaction_force{};
+        Vec3 reaction_torque{};
+        f32 peak_reaction_force = 0.0f;
     };
 
     // Solves every joint in the scene once, after the contact pass. Joints run

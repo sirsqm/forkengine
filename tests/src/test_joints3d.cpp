@@ -731,3 +731,105 @@ TEST_CASE("a distance joint's limits round-trip through the serializer") {
     CHECK(loaded_component->min_length == doctest::Approx(0.5f));
     CHECK(loaded_component->max_length == doctest::Approx(4.0f));
 }
+
+// ---------------------------------------------------------------------------
+// Joint reactions and breaking in 3D: a joint reports the force it carried and
+// snaps once that force exceeds its threshold. The load is gravity on a hanging
+// body, so the force is a real, sustained one.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D revolute joint reports the load of the body it hangs") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot");                              // static: no rigid body
+    Node* bob = add_bare_body(scene, Vec3{0.0f, -2.0f, 0.0f}, 2.0f, 0.0f); // 2 kg, 2 units below
+
+    Node* host = scene.create_node("Pin");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = bob->id();
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 1);
+
+    const auto reaction = system.joint_reaction(pivot->id(), bob->id());
+    // The pin holds a 2 kg bob against gravity (9.81), so it carries about 19.6 N.
+    CHECK(reaction.peak_force == doctest::Approx(2.0f * 9.81f).epsilon(0.15));
+    CHECK(reaction.force.y == doctest::Approx(2.0f * 9.81f).epsilon(0.15));
+}
+
+TEST_CASE("a 3D joint with no break threshold never snaps under a heavy load") {
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    Node* mass = add_bare_body(scene, Vec3{0.0f, -3.0f, 0.0f}, 5.0f, 0.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics3d::DistanceJoint3D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 120);
+
+    CHECK_FALSE(joint->broken);
+    CHECK(system.joint_count() == 1);
+}
+
+TEST_CASE("a 3D joint snaps when the load it carries exceeds its break force") {
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    Node* mass = add_bare_body(scene, Vec3{0.0f, -3.0f, 0.0f}, 5.0f, 0.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics3d::DistanceJoint3D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f; // the 5 kg bob pulls ~49 N, so this rod snaps
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 60);
+
+    CHECK(joint->broken);
+    CHECK(system.joint_count() == 0);
+}
+
+TEST_CASE("a broken 3D joint stops constraining its bodies") {
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    Node* mass = add_bare_body(scene, Vec3{0.0f, -3.0f, 0.0f}, 5.0f, 0.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics3d::DistanceJoint3D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 30);
+    REQUIRE(joint->broken);
+
+    const f32 before = mass->transform().position.y;
+    run(system, scene, 1.0f / 60.0f, 60);
+    CHECK(mass->transform().position.y < before - 3.0f);
+}
+
+TEST_CASE("a 3D fixed joint snaps under a torque it cannot hold") {
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    Node* arm = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    // Give it a spin the weld must stop: a strong torque appears on the first step.
+    arm->get_component<physics3d::RigidBody3D>()->angular_velocity = Vec3{0.0f, 0.0f, 20.0f};
+
+    Node* host = scene.create_node("Weld");
+    auto* joint = host->add_component<physics3d::FixedJoint3D>();
+    joint->body_a = anchor->id();
+    joint->body_b = arm->id();
+    joint->break_torque = 1.0f; // a weak weld
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 5);
+
+    CHECK(joint->broken);
+}

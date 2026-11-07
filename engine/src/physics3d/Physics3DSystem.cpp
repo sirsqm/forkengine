@@ -123,6 +123,57 @@ const Uuid& Physics3DSystem::Joint::body_b() const noexcept {
     return prismatic->body_b;
 }
 
+f32 Physics3DSystem::Joint::break_force() const noexcept {
+    if (distance != nullptr) {
+        return distance->break_force;
+    }
+    if (revolute != nullptr) {
+        return revolute->break_force;
+    }
+    if (fixed != nullptr) {
+        return fixed->break_force;
+    }
+    return prismatic->break_force;
+}
+
+f32 Physics3DSystem::Joint::break_torque() const noexcept {
+    if (distance != nullptr) {
+        return distance->break_torque;
+    }
+    if (revolute != nullptr) {
+        return revolute->break_torque;
+    }
+    if (fixed != nullptr) {
+        return fixed->break_torque;
+    }
+    return prismatic->break_torque;
+}
+
+bool Physics3DSystem::Joint::is_broken() const noexcept {
+    if (distance != nullptr) {
+        return distance->broken;
+    }
+    if (revolute != nullptr) {
+        return revolute->broken;
+    }
+    if (fixed != nullptr) {
+        return fixed->broken;
+    }
+    return prismatic->broken;
+}
+
+void Physics3DSystem::Joint::set_broken(bool value) noexcept {
+    if (distance != nullptr) {
+        distance->broken = value;
+    } else if (revolute != nullptr) {
+        revolute->broken = value;
+    } else if (fixed != nullptr) {
+        fixed->broken = value;
+    } else {
+        prismatic->broken = value;
+    }
+}
+
 void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     contacts_ = 0;
     events_.clear();
@@ -554,6 +605,12 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
     }
 
     for (Joint& joint : joints_) {
+        // A joint that has broken is skipped entirely: it applied its final
+        // correction the step it snapped, and from now on constrains nothing.
+        if (joint.is_broken()) {
+            continue;
+        }
+
         // Resolve the two ends. A nil, missing, or self-referential reference is
         // a broken joint: skip it rather than constraining nothing or a body
         // against itself.
@@ -592,6 +649,11 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             continue;
         }
 
+        const f32 inv_dt = 1.0f / delta_time;
+        Vec3 reaction_force{};
+        Vec3 reaction_torque{};
+        f32 peak_force = 0.0f;
+
         if (joint.distance != nullptr) {
             DistanceJoint3DParams params;
             // A positive rest length pins that length. Zero or negative means
@@ -612,6 +674,7 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             ConstraintRow3D distance_row = row.value();
             apply_row(distance_row, body_a, body_b);
             apply_row_position(distance_row, body_a, body_b);
+            row_reactions(&distance_row, 1, inv_dt, reaction_force, reaction_torque, peak_force);
         } else if (joint.revolute != nullptr) {
             RevoluteJoint3DParams params;
             params.anchor_a = joint.revolute->anchor_a;
@@ -631,12 +694,21 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             motor.axis = rotate_by_quat(joint.revolute->motor_axis, body_a.orientation);
             motor.target_speed = joint.revolute->motor_speed;
             motor.max_impulse = joint.revolute->motor_max_torque * delta_time;
+            ConstraintRow3D motor_row{};
             if (motor.is_enabled()) {
                 if (auto row = build_revolute_motor_row(body_a, body_b, motor); row) {
-                    ConstraintRow3D motor_row = row.value();
+                    motor_row = row.value();
                     apply_row(motor_row, body_a, body_b);
                 }
             }
+            row_reactions(rows, kRevoluteJoint3DRows, inv_dt, reaction_force, reaction_torque, peak_force);
+            Vec3 motor_force{};
+            Vec3 motor_torque{};
+            f32 motor_peak = 0.0f;
+            row_reactions(&motor_row, 1, inv_dt, motor_force, motor_torque, motor_peak);
+            reaction_force += motor_force;
+            reaction_torque += motor_torque;
+            peak_force = std::max(peak_force, motor_peak);
         } else if (joint.fixed != nullptr) {
             FixedJoint3DParams params;
             params.anchor_a = joint.fixed->anchor_a;
@@ -653,6 +725,7 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
                 apply_row(rows[i], body_a, body_b);
                 apply_row_orientation(rows[i], body_a, body_b);
             }
+            row_reactions(rows, kFixedJoint3DRows, inv_dt, reaction_force, reaction_torque, peak_force);
         } else {
             PrismaticJoint3DParams params;
             params.anchor_a = joint.prismatic->anchor_a;
@@ -684,18 +757,50 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
             JointMotor3D motor;
             motor.target_speed = joint.prismatic->motor_speed;
             motor.max_impulse = joint.prismatic->motor_max_force * delta_time;
+            ConstraintRow3D motor_row{};
             if (motor.is_enabled()) {
                 if (auto row = build_prismatic_motor_row(body_a, body_b, params, motor); row) {
-                    ConstraintRow3D motor_row = row.value();
+                    motor_row = row.value();
                     apply_row(motor_row, body_a, body_b);
                 }
             }
+            row_reactions(rows, kPrismaticJoint3DRows, inv_dt, reaction_force, reaction_torque, peak_force);
+            Vec3 motor_force{};
+            Vec3 motor_torque{};
+            f32 motor_peak = 0.0f;
+            row_reactions(&motor_row, 1, inv_dt, motor_force, motor_torque, motor_peak);
+            reaction_force += motor_force;
+            reaction_torque += motor_torque;
+            peak_force = std::max(peak_force, motor_peak);
+        }
+
+        joint.reaction_force = reaction_force;
+        joint.reaction_torque = reaction_torque;
+        joint.peak_reaction_force = peak_force;
+
+        // A break threshold snaps the joint: it stops being enforced from the
+        // next step on, so the bodies part under a load they could not carry. A
+        // joint with both thresholds at zero never breaks.
+        const f32 break_force = joint.break_force();
+        const f32 break_torque = joint.break_torque();
+        if ((break_force > 0.0f && peak_force > break_force) ||
+            (break_torque > 0.0f && reaction_torque.length() > break_torque)) {
+            joint.set_broken(true);
         }
 
         store_joint_body(*joint.a, body_a);
         store_joint_body(*joint.b, body_b);
         ++joints_solved_;
     }
+}
+
+Physics3DSystem::JointReaction Physics3DSystem::joint_reaction(const Uuid& body_a, const Uuid& body_b) const noexcept {
+    for (const Joint& joint : joints_) {
+        if (joint.body_a() == body_a && joint.body_b() == body_b) {
+            return JointReaction{joint.reaction_force, joint.reaction_torque, joint.peak_reaction_force};
+        }
+    }
+    return JointReaction{};
 }
 
 void Physics3DSystem::build_islands() {

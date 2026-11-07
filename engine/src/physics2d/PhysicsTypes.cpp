@@ -163,6 +163,12 @@ void register_distance_joint2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
         "max_length", &physics2d::DistanceJoint2D::max_length, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "break_force", &physics2d::DistanceJoint2D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "break_torque", &physics2d::DistanceJoint2D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, bool>(
+        "broken", &physics2d::DistanceJoint2D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -184,6 +190,12 @@ void register_revolute_joint2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
         "motor_max_torque", &physics2d::RevoluteJoint2D::motor_max_torque, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "break_force", &physics2d::RevoluteJoint2D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, f32>(
+        "break_torque", &physics2d::RevoluteJoint2D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::RevoluteJoint2D, bool>(
+        "broken", &physics2d::RevoluteJoint2D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -203,6 +215,12 @@ void register_fixed_joint2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::FixedJoint2D, f32>(
         "reference_angle", &physics2d::FixedJoint2D::reference_angle, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics2d::FixedJoint2D, f32>(
+        "break_force", &physics2d::FixedJoint2D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::FixedJoint2D, f32>(
+        "break_torque", &physics2d::FixedJoint2D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::FixedJoint2D, bool>("broken", &physics2d::FixedJoint2D::broken,
+                                                                         ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 
@@ -234,6 +252,12 @@ void register_prismatic_joint2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
         "motor_max_force", &physics2d::PrismaticJoint2D::motor_max_force, ValueKind::Float, &defaults));
 
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "break_force", &physics2d::PrismaticJoint2D::break_force, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, f32>(
+        "break_torque", &physics2d::PrismaticJoint2D::break_torque, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::PrismaticJoint2D, bool>(
+        "broken", &physics2d::PrismaticJoint2D::broken, ValueKind::Bool, &defaults));
     registry.register_type(std::move(desc));
 }
 

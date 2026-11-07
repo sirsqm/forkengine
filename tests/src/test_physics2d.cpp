@@ -2820,3 +2820,121 @@ TEST_CASE("a distance joint's maximum leash stops a body from flying off") {
     CHECK(flyer->transform().position.x < 3.5f);
     CHECK(flyer->transform().position.x > 2.0f);
 }
+
+// ---------------------------------------------------------------------------
+// Joint reactions and breaking: a joint reports the force it carried, and snaps
+// once that force exceeds its threshold. The load is gravity on a hanging body,
+// so the force is a real, sustained one and not a one-off placement correction.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a revolute joint reports the load of the body it hangs") {
+    Scene scene;
+    Node* pivot = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* bob = add_point_mass(scene, Vec2{0.0f, -2.0f}, 2.0f); // 2 kg, 2 units below
+
+    Node* host = scene.create_node("Pin");
+    auto* joint = host->add_component<physics2d::RevoluteJoint2D>();
+    joint->body_a = pivot->id();
+    joint->body_b = bob->id();
+
+    physics2d::Physics2DSystem system;
+    system.update(step(1.0f / 60.0f), scene);
+
+    const auto reaction = system.joint_reaction(pivot->id(), bob->id());
+    // The pin holds a 2 kg bob against gravity (9.81), so it carries about
+    // 19.6 N, reported on the moving body B as an upward force.
+    CHECK(reaction.peak_force == doctest::Approx(2.0f * 9.81f).epsilon(0.15));
+    CHECK(reaction.force.y == doctest::Approx(2.0f * 9.81f).epsilon(0.15));
+}
+
+TEST_CASE("a joint with no break threshold never snaps under a heavy load") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -3.0f}, 5.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 120; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK_FALSE(joint->broken);
+    CHECK(system.joint_count() == 1);
+}
+
+TEST_CASE("a joint snaps when the load it carries exceeds its break force") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -3.0f}, 5.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f; // the 5 kg bob pulls ~49 N, so this rod snaps
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(joint->broken);
+    // A broken joint is not counted as solved.
+    CHECK(system.joint_count() == 0);
+}
+
+TEST_CASE("a broken joint stops constraining its bodies") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -3.0f}, 5.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 30; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    REQUIRE(joint->broken);
+
+    // A broken rope holds nothing: the mass falls away under gravity.
+    const f32 before = mass->transform().position.y;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    CHECK(mass->transform().position.y < before - 3.0f);
+}
+
+TEST_CASE("a joint re-armed by clearing broken constrains again") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -3.0f}, 5.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 30; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    REQUIRE(joint->broken);
+
+    joint->broken = false; // re-arm, as a repair would
+    joint->break_force = 0.0f;
+    system.update(step(1.0f / 60.0f), scene);
+    CHECK(system.joint_count() == 1);
+}
