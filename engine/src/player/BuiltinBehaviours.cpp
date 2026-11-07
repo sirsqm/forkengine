@@ -7,6 +7,7 @@
 #include "fe/physics3d/Physics3DQueries.h"
 #include "fe/physics3d/RigidBody3D.h"
 #include "fe/platform/InputState.h"
+#include "fe/player/NavBehaviours.h"
 #include "fe/reflect/PropertyBuilders.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
@@ -274,6 +275,11 @@ void register_builtin_behaviours(ScriptRegistry& registry) {
                                                                             reflect::ValueKind::Float, &defaults));
         registry.register_desc(std::move(desc));
     }
+    // The AI behaviours that drive a navigation agent live in their own
+    // translation unit (fe/player/NavBehaviours.cpp), but a game registers them
+    // by calling this one function, so they are registered here rather than from
+    // a second entry point a caller would have to remember.
+    register_nav_behaviours(registry);
 }
 
 // --- FlyCamera3D -----------------------------------------------------------

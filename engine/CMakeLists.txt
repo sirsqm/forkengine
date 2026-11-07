@@ -232,6 +232,7 @@ set(FE_ENGINE_SOURCES
     src/script/ScriptDiagnostics.cpp
     src/player/ActionBindings.cpp
     src/player/BuiltinBehaviours.cpp
+    src/player/NavBehaviours.cpp
 )
 
 add_library(fork_engine STATIC ${FE_ENGINE_SOURCES})

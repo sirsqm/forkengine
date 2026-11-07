@@ -94,6 +94,10 @@ void declare_builtin_actions(ActionMap& map);
 // binds by name resolve to live instances. The player calls it for every target,
 // which is what gives a web build its gameplay; the editor calls it so a
 // designer can attach these in the inspector.
+//
+// The AI behaviours that drive a navigation agent ("PatrolRoute3D",
+// "ChaseTarget3D") are registered here too, from fe/player/NavBehaviours.h, so
+// one call registers everything a game ships.
 void register_builtin_behaviours(ScriptRegistry& registry);
 
 // --- The behaviours --------------------------------------------------------
