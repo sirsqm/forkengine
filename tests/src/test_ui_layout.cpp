@@ -626,3 +626,304 @@ TEST_CASE("pointer_over_ui answers whether a point is on any element") {
     CHECK(ui::pointer_over_ui(result, Vec2{50.0f, 30.0f}));
     CHECK_FALSE(ui::pointer_over_ui(result, Vec2{500.0f, 500.0f}));
 }
+
+// ---------------------------------------------------------------------------
+// Clipping and scrolling
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Rect::intersect and overlaps agree with each other") {
+    const ui::Rect a{Vec2{0.0f, 0.0f}, Vec2{100.0f, 100.0f}};
+    const ui::Rect b{Vec2{50.0f, 50.0f}, Vec2{100.0f, 100.0f}};
+    const ui::Rect apart{Vec2{200.0f, 200.0f}, Vec2{10.0f, 10.0f}};
+
+    CHECK(ui::Rect::overlaps(a, b));
+    CHECK(ui::Rect::overlaps(b, a));
+    CHECK_FALSE(ui::Rect::overlaps(a, apart));
+
+    const ui::Rect overlap = ui::Rect::intersect(a, b);
+    CHECK(overlap.position.x == doctest::Approx(50.0f));
+    CHECK(overlap.position.y == doctest::Approx(50.0f));
+    CHECK(overlap.size.x == doctest::Approx(50.0f));
+    CHECK(overlap.size.y == doctest::Approx(50.0f));
+
+    // A pair that does not overlap yields an empty rectangle rather than a
+    // negative size, so `empty()` is the "did it intersect" test.
+    CHECK(ui::Rect::intersect(a, apart).empty());
+}
+
+TEST_CASE("a clipped panel culls a child outside its box and keeps one inside") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    // A 200x200 panel at the canvas origin that clips its contents.
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    // Inside: at (0, 100), wholly within the panel.
+    Node* inside_node = add_element(panel_node, "Inside", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                    ui::UiAnchor::TopLeft, Vec2{0.0f, 100.0f});
+    const auto* inside = inside_node->get_component<ui::UiElement>();
+
+    // Outside: at (0, 300), wholly past the panel's bottom edge.
+    Node* outside_node = add_element(panel_node, "Outside", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                     ui::UiAnchor::TopLeft, Vec2{0.0f, 300.0f});
+    const auto* outside = outside_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    REQUIRE(find_resolved(result, inside) != nullptr);
+    CHECK(find_resolved(result, outside) == nullptr);
+}
+
+TEST_CASE("a culled child takes its whole subtree with it") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    panel_node->get_component<ui::UiElement>()->clip = true;
+
+    // A group placed past the panel's bottom edge, with a child of its own.
+    Node* group_node = add_element(panel_node, "Group", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{0.0f, 400.0f});
+    Node* leaf_node = add_element(group_node, "Leaf", ui::UiSize::fixed(10.0f), ui::UiSize::fixed(10.0f));
+    const auto* leaf = leaf_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+    CHECK(find_resolved(result, leaf) == nullptr);
+}
+
+TEST_CASE("a clipped element records the clip rectangle it draws inside") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(150.0f));
+    panel_node->get_component<ui::UiElement>()->clip = true;
+
+    // A child that is partly outside the panel: kept whole, with the panel's box
+    // recorded as its clip, so the draw step can scissor it.
+    Node* child_node = add_element(panel_node, "Child", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{0.0f, 130.0f});
+    const auto* child = child_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    const ui::UiResolved* resolved = find_resolved(result, child);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->has_clip);
+    CHECK(resolved->clip.position.x == doctest::Approx(0.0f));
+    CHECK(resolved->clip.position.y == doctest::Approx(0.0f));
+    CHECK(resolved->clip.size.x == doctest::Approx(200.0f));
+    CHECK(resolved->clip.size.y == doctest::Approx(150.0f));
+
+    // The panel's own entry is not clipped by its own `clip`: the clip applies to
+    // what is inside the panel, not to the panel itself.
+    const ui::UiResolved* panel_resolved = find_resolved(result, panel_node->get_component<ui::UiElement>());
+    REQUIRE(panel_resolved != nullptr);
+    CHECK_FALSE(panel_resolved->has_clip);
+}
+
+TEST_CASE("an unclipped container neither culls nor records a clip") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    // Same panel as above, but not clipping: a child past its edge is kept and
+    // carries no clip.
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    Node* child_node = add_element(panel_node, "Child", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{0.0f, 300.0f});
+    const auto* child = child_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    const ui::UiResolved* resolved = find_resolved(result, child);
+    REQUIRE(resolved != nullptr);
+    CHECK_FALSE(resolved->has_clip);
+}
+
+TEST_CASE("a scroll offsets a clipping container's children but not the container") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+    panel->scroll = Vec2{0.0f, 40.0f};
+
+    Node* child_node = add_element(panel_node, "Row", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(30.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{0.0f, 60.0f});
+    const auto* child = child_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    // The child moves up by the scroll amount: it was at y=60, now at y=20.
+    const ui::UiResolved* resolved = find_resolved(result, child);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->design_rect.position.y == doctest::Approx(20.0f));
+
+    // The panel itself does not move: a scroll moves content inside a window, not
+    // the window.
+    const ui::UiResolved* panel_resolved = find_resolved(result, panel);
+    REQUIRE(panel_resolved != nullptr);
+    CHECK(panel_resolved->design_rect.position.y == doctest::Approx(0.0f));
+    CHECK(panel_resolved->design_rect.size.y == doctest::Approx(100.0f));
+}
+
+TEST_CASE("scrolling a child into view keeps it and scrolling it out culls it") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    // A row below the panel's bottom edge: culled at scroll 0, revealed at scroll
+    // 100, culled again past the top at scroll 200.
+    Node* row_node = add_element(panel_node, "Row", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(30.0f),
+                                 ui::UiAnchor::TopLeft, Vec2{0.0f, 150.0f});
+    const auto* row = row_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+    CHECK(find_resolved(result, row) == nullptr);
+
+    panel->scroll = Vec2{0.0f, 100.0f};
+    ui::layout(scene, 1280, 720, result);
+    const ui::UiResolved* revealed = find_resolved(result, row);
+    REQUIRE(revealed != nullptr);
+    CHECK(revealed->design_rect.position.y == doctest::Approx(50.0f));
+
+    panel->scroll = Vec2{0.0f, 200.0f};
+    ui::layout(scene, 1280, 720, result);
+    CHECK(find_resolved(result, row) == nullptr);
+}
+
+TEST_CASE("a scroll is ignored by a container that does not clip") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = false;
+    panel->scroll = Vec2{0.0f, 40.0f};
+
+    Node* child_node = add_element(panel_node, "Row", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(30.0f));
+    const auto* child = child_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    // Nothing to reveal, so the child stays where it was authored.
+    const ui::UiResolved* resolved = find_resolved(result, child);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->design_rect.position.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a nested clip narrows to the overlap of the two boxes") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* outer_node = add_element(canvas_node, "Outer", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    outer_node->get_component<ui::UiElement>()->clip = true;
+
+    // An inner clipping panel inside the outer one, at (50, 50) with size 100x100.
+    Node* inner_node = add_element(outer_node, "Inner", ui::UiSize::fixed(100.0f), ui::UiSize::fixed(100.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{50.0f, 50.0f});
+    inner_node->get_component<ui::UiElement>()->clip = true;
+
+    // A leaf inside the inner panel: its clip is the inner box, the intersection
+    // of the two.
+    Node* leaf_node = add_element(inner_node, "Leaf", ui::UiSize::fixed(20.0f), ui::UiSize::fixed(20.0f));
+    const auto* leaf = leaf_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    const ui::UiResolved* resolved = find_resolved(result, leaf);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->has_clip);
+    CHECK(resolved->clip.position.x == doctest::Approx(50.0f));
+    CHECK(resolved->clip.position.y == doctest::Approx(50.0f));
+    CHECK(resolved->clip.size.x == doctest::Approx(100.0f));
+    CHECK(resolved->clip.size.y == doctest::Approx(100.0f));
+}
+
+TEST_CASE("a nested clip culls a child inside the outer box but outside the inner one") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* outer_node = add_element(canvas_node, "Outer", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    outer_node->get_component<ui::UiElement>()->clip = true;
+
+    Node* inner_node = add_element(outer_node, "Inner", ui::UiSize::fixed(100.0f), ui::UiSize::fixed(100.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{50.0f, 50.0f});
+    inner_node->get_component<ui::UiElement>()->clip = true;
+
+    // A leaf at the inner panel's origin, nudged down past the inner box's bottom
+    // edge but still inside the outer box.
+    Node* leaf_node = add_element(inner_node, "Leaf", ui::UiSize::fixed(20.0f), ui::UiSize::fixed(20.0f),
+                                  ui::UiAnchor::TopLeft, Vec2{0.0f, 150.0f});
+    const auto* leaf = leaf_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    // The inner box is [50, 150] x [50, 150]; the leaf is at y = 200, below it, so
+    // the inner clip culls it even though the outer box would have kept it.
+    CHECK(find_resolved(result, leaf) == nullptr);
+}
+
+TEST_CASE("a clipped child is not hit tested when it is scrolled out of view") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    Node* button_node = add_element(panel_node, "Button", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(30.0f),
+                                    ui::UiAnchor::TopLeft, Vec2{0.0f, 150.0f});
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+    // The button is below the panel, so a click where it *would* be hits nothing.
+    CHECK(ui::hit_test(result, Vec2{10.0f, 160.0f}) == nullptr);
+
+    // Scrolling it into view makes it hittable again, at its new position.
+    panel->scroll = Vec2{0.0f, 100.0f};
+    ui::layout(scene, 1280, 720, result);
+    const ui::UiResolved* hit = ui::hit_test(result, Vec2{10.0f, 60.0f});
+    REQUIRE(hit != nullptr);
+    CHECK(hit->node == button_node);
+}
+
+TEST_CASE("a partly clipped element is hittable only inside its clip") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    panel_node->get_component<ui::UiElement>()->clip = true;
+
+    // A 50x50 button straddling the panel's bottom edge: its top half is inside the
+    // panel, its bottom half is scissored away.
+    Node* button_node = add_element(panel_node, "Button", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                    ui::UiAnchor::TopLeft, Vec2{0.0f, 80.0f});
+    const auto* button = button_node->get_component<ui::UiElement>();
+
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    // The button is kept (it overlaps the panel) ...
+    REQUIRE(find_resolved(result, button) != nullptr);
+    // ... the visible part (y in [80, 100]) is hittable ...
+    const ui::UiResolved* hit = ui::hit_test(result, Vec2{10.0f, 90.0f});
+    REQUIRE(hit != nullptr);
+    CHECK(hit->element == button);
+    // ... and the scissored part (y in [100, 130]) is not.
+    CHECK(ui::hit_test(result, Vec2{10.0f, 110.0f}) == nullptr);
+}

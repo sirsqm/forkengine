@@ -49,6 +49,22 @@ struct Rect {
     // extraction, so this is the "nothing to draw or hit" test.
     [[nodiscard]] constexpr bool empty() const noexcept { return size.x <= 0.0f || size.y <= 0.0f; }
 
+    // The overlap of two rectangles. A pair that does not overlap yields an empty
+    // rectangle, so a caller can test the result with `empty()` rather than
+    // tracking a separate "did it intersect" flag.
+    [[nodiscard]] static constexpr Rect intersect(const Rect& a, const Rect& b) noexcept {
+        const f32 x0 = a.left() > b.left() ? a.left() : b.left();
+        const f32 y0 = a.top() > b.top() ? a.top() : b.top();
+        const f32 x1 = a.right() < b.right() ? a.right() : b.right();
+        const f32 y1 = a.bottom() < b.bottom() ? a.bottom() : b.bottom();
+        return Rect{Vec2{x0, y0}, Vec2{x1 > x0 ? x1 - x0 : 0.0f, y1 > y0 ? y1 - y0 : 0.0f}};
+    }
+
+    // Whether two rectangles share any area.
+    [[nodiscard]] static constexpr bool overlaps(const Rect& a, const Rect& b) noexcept {
+        return a.left() < b.right() && b.left() < a.right() && a.top() < b.bottom() && b.top() < a.bottom();
+    }
+
     [[nodiscard]] constexpr bool operator==(const Rect&) const noexcept = default;
 };
 

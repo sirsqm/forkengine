@@ -83,6 +83,27 @@ public:
     // Main-axis distribution of this element's children.
     UiJustify justify = UiJustify::Start;
 
+    // --- Scrolling and clipping (used when this element is a container) ----
+    // When true, the children of this element are clipped to its box: a child (or
+    // a descendant of one) that falls outside the box is culled from layout, so it
+    // neither draws nor responds to a hit test. This is what stops a list from
+    // overflowing its panel and a menu from drawing past its frame. The clip is
+    // applied in design space and is inherited: a clipped child that is itself a
+    // clipping container clips to the overlap of the two boxes, so nesting works
+    // without a special case. A clip does not apply to this element's own fill,
+    // texture, or text -- only to what is inside it.
+    bool clip = false;
+
+    // The scroll offset applied to this element's children, in design pixels. A
+    // positive `y` moves the children up (as a list scrolled down does); the
+    // children are shifted by `-scroll` inside the content box. Ignored unless
+    // `clip` is set, because an unclipped scroll has nothing to reveal and would
+    // move content that was never going to be cut off. The offset is not clamped
+    // to the content extent here: a caller that wants rubber-band bounds clamps it
+    // against the content size it computed, which keeps the solver a pure function
+    // of the numbers an author typed.
+    Vec2 scroll{};
+
     // --- Appearance: fill --------------------------------------------------
     // A solid colour quad behind everything else. Alpha 0 (the default) draws
     // nothing, so an element that only carries text or a texture is the norm.

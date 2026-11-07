@@ -51,6 +51,20 @@ struct UiResolved {
     // The element's depth in the tree, from the canvas root. Part of the sort
     // key so a nested element is never reordered behind its parent.
     u32 depth = 0;
+
+    // The clip rectangle this element is drawn inside, in viewport pixels, when an
+    // ancestor element set `clip`. It is the intersection of every clipping
+    // ancestor's box (translated to the viewport), or the whole viewport when no
+    // ancestor clips. An element whose box lies wholly outside it is culled before
+    // it reaches this array, so every entry here overlaps its own clip rect; a
+    // partially-visible element is kept whole and the draw step scissors it to
+    // `clip`. The field is always meaningful (`has_clip` false means "the
+    // viewport"), so a caller need not track the clipping stack itself.
+    Rect clip{};
+    // Whether an ancestor set `clip`. When false, `clip` is the whole viewport and
+    // the draw step need not scissor at all, which keeps the common unclipped case
+    // free of a scissor call.
+    bool has_clip = false;
 };
 
 // The design-space-to-viewport mapping a canvas produces. One uniform scale and

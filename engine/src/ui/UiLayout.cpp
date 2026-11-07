@@ -245,6 +245,28 @@ namespace {
     return content_start;
 }
 
+// The clipping state carried down the layout walk: the region (in design space)
+// that the element being placed must be visible inside.
+//
+// `active` false means no ancestor clips, and the region is the whole design box;
+// a caller then skips both the cull test and the recorded scissor, so the common
+// unclipped case pays nothing. A clipping container narrows the region to its own
+// box, and the intersection is what makes nesting work: a clipped child inside a
+// clipped parent is visible only where both boxes overlap.
+struct ClipContext {
+    Rect rect{};
+    bool active = false;
+};
+
+// Narrows `context` by the box of an element that clips. `element_box` is the
+// clipping element's own design-space rectangle.
+[[nodiscard]] ClipContext narrow_clip(const ClipContext& context, const Rect& element_box) noexcept {
+    if (!context.active) {
+        return ClipContext{element_box, true};
+    }
+    return ClipContext{Rect::intersect(context.rect, element_box), true};
+}
+
 // Writes one resolved element and lays out its children.
 //
 // The parent calls this with the element's final design-space rectangle, so
@@ -252,14 +274,36 @@ namespace {
 // function only has to place the children. Emitting the parent before recursing
 // is what makes the result array's order a valid draw order: a parent is always
 // behind its children, and siblings keep tree order.
+//
+// `clip` is the region this element must be visible inside, in design space. A
+// child wholly outside it is culled (not emitted, subtree included), and a child
+// that partly overlaps is kept whole with the region recorded so the draw step
+// scissors it. The element's own box narrows the region for its children when it
+// sets `clip`, which is what a scroll panel does.
 void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, const UiCanvasTransform& transform,
-          const Rect& design_rect, i32 canvas_layer, u32 depth, UiLayoutResult& out) {
+          const Rect& design_rect, i32 canvas_layer, u32 depth, const ClipContext& clip, UiLayoutResult& out) {
     out.push_back(UiResolved{&element, &canvas, &node, transform.to_viewport(design_rect), design_rect,
-                             canvas_layer + element.layer, depth});
+                             canvas_layer + element.layer, depth, transform.to_viewport(clip.rect), clip.active});
 
     // The children are laid out inside the padding, so a panel's border is never
-    // covered by its contents.
-    const Rect content_box = element.padding.inset(design_rect);
+    // covered by its contents. A clipping container additionally shifts its
+    // children by the scroll offset (content moves, the window does not) and
+    // narrows the clip region to its own box.
+    Rect content_box = element.padding.inset(design_rect);
+    ClipContext child_clip = clip;
+    if (element.clip) {
+        child_clip = narrow_clip(clip, design_rect);
+        content_box.position.x -= element.scroll.x;
+        content_box.position.y -= element.scroll.y;
+    }
+
+    // Whether `child_rect` is visible inside `child_clip`: always true when
+    // nothing clips, else only when the two overlap. A wholly-outside child is
+    // culled with its subtree; a partly-visible one is kept and scissored at draw.
+    const auto visible = [&child_clip](const Rect& child_rect) noexcept {
+        return !child_clip.active || Rect::overlaps(child_rect, child_clip.rect);
+    };
+
     const UiDirection direction = element.direction;
 
     if (direction == UiDirection::None) {
@@ -270,8 +314,11 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             }
             const auto* child_element = child.get_component<UiElement>();
             const Vec2 size = element_size(child, *child_element, canvas, content_box.size);
-            emit(child, *child_element, canvas, transform, anchored_rect(*child_element, size, content_box),
-                 canvas_layer, depth + 1, out);
+            const Rect child_rect = anchored_rect(*child_element, size, content_box);
+            if (!visible(child_rect)) {
+                continue;
+            }
+            emit(child, *child_element, canvas, transform, child_rect, canvas_layer, depth + 1, child_clip, out);
         }
         return;
     }
@@ -318,6 +365,7 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
         const UiElement& child_element = *entry.element;
         const EdgeInsets& margin = child_element.margin;
 
+        Rect child_rect{};
         if (is_row) {
             // A stretch resizes the child across the row's height; every other
             // alignment leaves the size alone and only moves it.
@@ -326,8 +374,7 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             }
             const f32 x = cursor + margin.left;
             const f32 y = cross_position(element.align, content_box.position.y, content_box.size.y, entry.size.y);
-            emit(*entry.node, child_element, canvas, transform, Rect{Vec2{x, y}, entry.size}, canvas_layer, depth + 1,
-                 out);
+            child_rect = Rect{Vec2{x, y}, entry.size};
             cursor += entry.size.x + margin.horizontal() + element.gap + extra_gap;
         } else {
             if (element.align == UiAlign::Stretch) {
@@ -335,10 +382,14 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             }
             const f32 y = cursor + margin.top;
             const f32 x = cross_position(element.align, content_box.position.x, content_box.size.x, entry.size.x);
-            emit(*entry.node, child_element, canvas, transform, Rect{Vec2{x, y}, entry.size}, canvas_layer, depth + 1,
-                 out);
+            child_rect = Rect{Vec2{x, y}, entry.size};
             cursor += entry.size.y + margin.vertical() + element.gap + extra_gap;
         }
+
+        if (!visible(child_rect)) {
+            continue;
+        }
+        emit(*entry.node, child_element, canvas, transform, child_rect, canvas_layer, depth + 1, child_clip, out);
     }
 }
 
@@ -352,13 +403,18 @@ void layout_canvas(const Node& canvas_node, const UiCanvas& canvas, const UiCanv
                    UiLayoutResult& out) {
     const Rect design_box{Vec2{}, Vec2{canvas.design_width, canvas.design_height}};
 
+    // Nothing clips until an element asks to: the initial region is the design
+    // box, which every element is inside by construction, and `active` false tells
+    // the walk to skip the cull test and the recorded scissor.
+    const ClipContext root_clip{design_box, false};
+
     // A canvas node that carries its own `UiElement` lays that element over the
     // whole design box: a canvas is the frame, so its authored size is ignored
     // and a full-screen background or a title needs no wrapper node. Its children
     // then lay out inside its padding, exactly as any other element's would.
     const auto* canvas_element = canvas_node.get_component<UiElement>();
     if (canvas_element != nullptr && canvas_element->visible) {
-        emit(canvas_node, *canvas_element, canvas, transform, design_box, canvas.layer, 0, out);
+        emit(canvas_node, *canvas_element, canvas, transform, design_box, canvas.layer, 0, root_clip, out);
         return;
     }
 
@@ -371,7 +427,7 @@ void layout_canvas(const Node& canvas_node, const UiCanvas& canvas, const UiCanv
         const auto* child_element = child.get_component<UiElement>();
         const Vec2 size = element_size(child, *child_element, canvas, content_box.size);
         emit(child, *child_element, canvas, transform, anchored_rect(*child_element, size, content_box), canvas.layer,
-             0, out);
+             0, root_clip, out);
     }
 }
 
@@ -452,9 +508,17 @@ const UiResolved* hit_test(const UiLayoutResult& result, const Vec2& viewport_po
         if (it->element == nullptr || !it->element->interactable) {
             continue;
         }
-        if (it->rect.contains(viewport_point)) {
-            return &*it;
+        if (!it->rect.contains(viewport_point)) {
+            continue;
         }
+        // A clipped element is only hittable inside its clip: a button half
+        // scrolled out of its panel must not take a click on the part the scissor
+        // cut away. This is the same region the draw step scissors to, so what a
+        // user can click is exactly what a user can see.
+        if (it->has_clip && !it->clip.contains(viewport_point)) {
+            continue;
+        }
+        return &*it;
     }
     return nullptr;
 }

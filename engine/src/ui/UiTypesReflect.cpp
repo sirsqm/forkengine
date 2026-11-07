@@ -166,6 +166,10 @@ void register_ui_element(Registry& registry) {
     desc.properties.push_back(make_enum_property<UiElement, UiAlign>("align", &UiElement::align, 0, 4));
     desc.properties.push_back(make_enum_property<UiElement, UiJustify>("justify", &UiElement::justify, 0, 4));
 
+    // --- Scrolling and clipping ---
+    desc.properties.push_back(make_scalar<UiElement, bool>("clip", &UiElement::clip, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_vector_group<UiElement, Vec2>("scroll", &UiElement::scroll, "Vec2", {"x", "y"}));
+
     // --- Appearance ---
     desc.properties.push_back(
         with_color(make_vector_group<UiElement, Vec4>("fill", &UiElement::fill, "Vec4", {"r", "g", "b", "a"})));
