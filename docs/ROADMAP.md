@@ -95,15 +95,17 @@ The intent: finish the small things. The engines that last are the ones whose
 authors ruthlessly complete them.
 
 **The queue is in its refinement tail.** Every Phase 1–4 item is done, and
-Phase 5 is down to three open items: the physics refinements
-(`physics2d-rotational-ccd`, `physics-more-joints`) and the asset/content
-refinement `scene-prefab-instancing`. Each closes a gap a first cut left open,
-each is small enough for one run, and the render graph's own rows, 3D continuous
-collision, the pack streaming row (`audio-pack-streaming`), and the in-game UI's
-scrolling and clipping (`ui-scroll-and-masks`) have landed, so the remaining
-physics and content rows are next. (`gamepad-input` landed under a `platform:`
-subject, so the slug check does not see it — treat it as finished and start at
-the next item.)
+Phase 5 is down to two open items: the physics refinement `physics-more-joints`
+(its commit landed the joint type and the row-level tests; the end-to-end
+pendulum swing test the row's "done when" asks for is still missing) and the
+asset/content refinement `scene-prefab-instancing`. Each closes a gap a first
+cut left open, each is small enough for one run, and the render graph's own rows,
+3D continuous collision, the rotational-CCD row (`physics2d-rotational-ccd`),
+the pack streaming row (`audio-pack-streaming`), and the in-game UI's scrolling
+and clipping (`ui-scroll-and-masks`) have landed, so the remaining physics and
+content rows are next. (`gamepad-input` landed under a `platform:` subject, so
+the slug check does not see it — treat it as finished and start at the next
+item.)
 
 Once those land the ordered queue is empty and the remaining work is the
 *un-ordered* backlog (the bullet list at the end of the shipping queue) plus the

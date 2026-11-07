@@ -919,6 +919,19 @@ between steps still passes through.
 thin static wall in one step and proves the contact is found, while the same body
 without spin behaves as the linear sweep already does.
 
+Landed as an angular sweep in `Physics2DSystem::apply_continuous_collisions`: the
+turn is cut into substeps, the shape bounds at sampled orientations are unioned
+to bound the corner arc, and the first substep whose bound reaches a static
+target clamps the turn there and sheds the spin. Only boxes are swept for spin
+(a circle cannot tunnel by rotation alone), and a contact present at the start of
+the turn is left to the discrete solver, so a body resting on the surface it
+spins against is unaffected. The rotation each body had before integration is
+kept alongside its previous position. Tests spin a long thin bar a half-turn in
+one step past a ledge only its tips' arc reaches and prove the turn is clamped
+short of the half-turn (without the sweep it reaches `rotation pi`), and that the
+same bar with no spin is still stopped by the linear sweep. The ADR-0037
+consequence that said fast rotation still tunnels is corrected.
+
 ### `physics-more-joints`
 
 The physics refinement rows (ADR-0037, ADR-0043) leave the joint set minimal
@@ -928,6 +941,18 @@ The physics refinement rows (ADR-0037, ADR-0043) leave the joint set minimal
 axis) is solved and a test proves a body hanging from a static anchor swings
 about the axis and comes to rest hanging below it, while the existing joint types
 are unchanged.
+
+Partly landed: `RevoluteJoint3D` exists (two bodies share an anchor, relative
+translation removed, relative rotation free), it names its bodies by node id like
+`DistanceJoint3D` and serializes as a stable reference, and the system gathers
+both joint types in one scene-walk and links their ends into the same islands
+([ADR-0043](adr/0043-physics3d-angular-dynamics.md)). The row builder already
+carried angular terms, so a local anchor off a body centre couples the constraint
+to rotation with no new solver machinery, and the reflection type is registered
+so the joint round-trips. What is left is the **done-when** test itself: the
+row-level pin and free-rotation tests are in place, but the integrated pendulum
+test (a body hanging from a static anchor that swings about the axis and comes to
+rest below it) is not.
 
 ### `audio-pack-streaming`
 

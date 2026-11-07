@@ -133,8 +133,9 @@ origin while its surface is where the offset puts it.
 - **A rotated box is not swept.** The continuous pass (added after this record;
   see below) sweeps the axis-aligned *bounds* of the moving shape, so it is
   exact for a translating axis-aligned box and conservative for a rotated one or
-  a circle. Fast *rotation* on its own still tunnels; sweeping the angular
-  motion is a further refinement.
+  a circle. Fast *rotation* on its own was a further refinement and has since
+  landed: the linear pass alone still tunnels a spinning box, but the angular
+  sweep (see below) catches the corner arc it turns through.
 - **A circle's shape does not depend on rotation**, so a rotated circle only
   moves by its offset. There is no oriented ellipse or capsule; those are not
   requested and are not added speculatively.
@@ -173,4 +174,12 @@ origin while its surface is where the offset puts it.
   It sweeps a fast body's motion against static geometry and clamps it to the
   first touch, so a bullet cannot cross a thin wall in one step; a contact that
   already exists at the start of the step is left to the discrete solver, so a
-  resting or sliding body is unaffected.
+  resting or sliding body is unaffected. The angular half landed later still:
+  the linear pass follows the centre, and a half-turn leaves a body looking as it
+  started, so a spinning box could sweep a corner through a thin wall unseen. The
+  turn is now cut into substeps and each substep's shape bounds are unioned to
+  bound the corner arc; the first substep whose bound reaches a static target
+  clamps the turn there and sheds the spin. A contact present at the start of the
+  turn stays with the discrete solver, so a body resting on the surface it spins
+  against is unchanged. Only boxes are swept for spin, since a circle cannot
+  tunnel by rotation alone.
