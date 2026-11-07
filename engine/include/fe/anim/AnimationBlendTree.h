@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/anim/AdditiveLayer.h"
 #include "fe/anim/AnimationClip.h"
 #include "fe/anim/JointMask.h"
 #include "fe/core/Types.h"
@@ -121,6 +122,13 @@ public:
     // reaction move the arms without swinging the legs. Resolved against the
     // animator's skeleton by the system before the delta is composed.
     JointMask additive_mask;
+
+    // A stack of further additive layers, applied in order after the single one
+    // above, each over the pose the previous produced. A character that leans and
+    // breathes and takes a hit needs several layers with their own clips, clocks,
+    // and joint sets; this is where they go. The single layer above stays as the
+    // common case so an existing scene is unchanged.
+    std::vector<AdditiveLayer> additive_layers;
 
     // The additive clip's own playback clock, in seconds. Kept separate from the
     // base clock so a one-shot reaction plays at its own rate over a locomotion

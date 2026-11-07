@@ -1101,8 +1101,11 @@ a pixel the unclipped control paints.
   [ADR-0123](adr/0123-skeletal-state-machines.md),
   [ADR-0124](adr/0124-animation-blend-trees.md),
   [ADR-0141](adr/0141-two-axis-blend-space.md),
-  [ADR-0142](adr/0142-per-layer-joint-mask.md)). What remains is the wider shape:
-  a tree feeding a tree and additive-on-additive.
+  [ADR-0142](adr/0142-per-layer-joint-mask.md),
+  [ADR-0143](adr/0143-stacked-additive-layers.md)). Additive-on-additive has
+  landed too: a component carries an ordered stack of additive layers, each with
+  its own clip, weight, clock, and joint mask, composed in order. What remains is
+  the wider shape of a tree feeding a tree.
 - More example games beyond the breakout slice, once the first one ships. The
   next one is planned as a **finished 3D game** — the roadmap's
   [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from

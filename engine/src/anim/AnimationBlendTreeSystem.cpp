@@ -91,6 +91,25 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
             wrote_pose = true;
         }
 
+        // --- 2b. The additive stack ------------------------------------------
+        // Further layers compose in order, each over the pose the previous one
+        // produced, so a lean and a breath and a hit all stack. A layer with no
+        // clip or no weight is skipped.
+        for (AdditiveLayer& layer : tree->additive_layers) {
+            if (layer.clip == nullptr || layer.weight <= 0.0f) {
+                continue;
+            }
+            if (animator->playing) {
+                layer.time += context.delta_time * layer.speed;
+            }
+            sample_additive_pose(*skeleton, *layer.clip, layer.time, mode, additive_scratch_);
+            if (!layer.mask.empty()) {
+                layer.mask.resolve(*skeleton);
+            }
+            compose_additive_masked(animator->mutable_pose(), additive_scratch_, layer.weight, layer.mask);
+            wrote_pose = true;
+        }
+
         // --- 3. Palette -------------------------------------------------------
         // Recompute from the blended pose, so the renderer and a CPU skin read
         // the blend rather than the base clip the animation system sampled. Only

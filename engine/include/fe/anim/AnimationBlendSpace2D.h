@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/anim/AdditiveLayer.h"
 #include "fe/anim/AnimationClip.h"
 #include "fe/anim/JointMask.h"
 #include "fe/anim/Skeleton.h"
@@ -105,6 +106,10 @@ public:
     // The joints the additive layer may write; see `AnimationBlendTree`. An
     // empty mask applies the delta to every joint.
     JointMask additive_mask;
+
+    // A stack of further additive layers applied in order; see
+    // `AnimationBlendTree::additive_layers`.
+    std::vector<AdditiveLayer> additive_layers;
 
     // --- Queried state -----------------------------------------------------
 

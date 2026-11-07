@@ -257,6 +257,9 @@ usize AnimationBlendSpace2D::resolve_clips(ResourceManager& manager) {
         resolve(sample.clip, sample.clip_key);
     }
     resolve(additive_clip, additive_clip_key);
+    for (AdditiveLayer& layer : additive_layers) {
+        resolve(layer.clip, layer.clip_key);
+    }
     return resolved;
 }
 
@@ -268,6 +271,22 @@ std::string AnimationBlendSpace2D::to_json() const {
     document["additive_time"] = additive_time;
     document["additive_speed"] = additive_speed;
     document["additive_mask"] = additive_mask.names();
+
+    nlohmann::json layers_json = nlohmann::json::array();
+    for (const AdditiveLayer& layer : additive_layers) {
+        std::string key = layer.clip_key;
+        if (key.empty() && layer.clip != nullptr) {
+            key = layer.clip->path();
+        }
+        layers_json.push_back(nlohmann::json{
+            {"clip", key},
+            {"weight", layer.weight},
+            {"time", layer.time},
+            {"speed", layer.speed},
+            {"mask", layer.mask.names()},
+        });
+    }
+    document["additive_layers"] = std::move(layers_json);
 
     nlohmann::json samples_json = nlohmann::json::array();
     for (const BlendPoint& sample : samples) {
@@ -342,6 +361,27 @@ bool AnimationBlendSpace2D::from_json(std::string_view text) {
         }
     }
 
+    additive_layers.clear();
+    if (document.contains("additive_layers") && document.at("additive_layers").is_array()) {
+        for (const auto& entry : document.at("additive_layers")) {
+            if (!entry.is_object()) {
+                continue;
+            }
+            AdditiveLayer layer;
+            layer.clip_key = entry.value("clip", std::string{});
+            layer.weight = entry.value("weight", 0.0f);
+            layer.time = entry.value("time", 0.0f);
+            layer.speed = entry.value("speed", 1.0f);
+            if (entry.contains("mask") && entry.at("mask").is_array()) {
+                for (const auto& name : entry.at("mask")) {
+                    if (name.is_string()) {
+                        layer.mask.add(name.get<std::string>());
+                    }
+                }
+            }
+            additive_layers.push_back(std::move(layer));
+        }
+    }
     // The clips are resolved by the system from their keys; a document load is
     // pure and has no ResourceManager.
     additive_clip = nullptr;

@@ -99,6 +99,22 @@ void AnimationBlendSpaceSystem::update(const FrameContext& context, Scene& scene
             wrote_pose = true;
         }
 
+        // --- 2b. The additive stack ------------------------------------------
+        for (AdditiveLayer& layer : space->additive_layers) {
+            if (layer.clip == nullptr || layer.weight <= 0.0f) {
+                continue;
+            }
+            if (animator->playing) {
+                layer.time += context.delta_time * layer.speed;
+            }
+            sample_additive_pose(*skeleton, *layer.clip, layer.time, mode, additive_scratch_);
+            if (!layer.mask.empty()) {
+                layer.mask.resolve(*skeleton);
+            }
+            compose_additive_masked(animator->mutable_pose(), additive_scratch_, layer.weight, layer.mask);
+            wrote_pose = true;
+        }
+
         // --- 3. Palette -------------------------------------------------------
         if (wrote_pose) {
             animator->mutable_pose().skinning_matrices(*skeleton, animator->mutable_palette());
