@@ -15,8 +15,11 @@
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
+#include "fe/scene3d/Camera3D.h"
 #include "fe/systems/System.h"
 
+#include <array>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -128,4 +131,64 @@ TEST_CASE("an application with profiling disabled commits no frames") {
     REQUIRE(code == 0);
     CHECK(app.profiler().frame_count() == 0);
     CHECK_FALSE(app.report); // last_frame_report() reports that profiling is off
+}
+
+namespace {
+
+// A 3D-only application (no Camera2D) with an empty scene, so the whole frame is
+// the clear colour. It samples the centre pixel in on_render -- after every pass,
+// while the frame is still the bound target -- which is where the clear colour
+// actually lands.
+class ClearColorApp final : public Application {
+public:
+    explicit ClearColorApp(Engine::Config config) : Application(config) {}
+
+    std::array<u8, 4> centre{};
+    bool started = false;
+
+protected:
+    Error on_start() override {
+        started = true;
+        auto* camera = scene().create_node("Camera")->add_component<Camera3D>();
+        // A colour no default would produce, so a black or default clear is
+        // distinguishable from the camera's own.
+        camera->clear_r = 0.25f;
+        camera->clear_g = 0.50f;
+        camera->clear_b = 0.75f;
+        return Error::none();
+    }
+
+    void on_render(f32) override {
+        const u32 w = engine().window().framebuffer_width();
+        const u32 h = engine().window().framebuffer_height();
+        engine().device().read_pixels(w / 2, h / 2, 1, 1, std::span<u8>(centre.data(), centre.size()));
+    }
+};
+
+} // namespace
+
+TEST_CASE("a 3D-only scene clears the frame to its camera's colour") {
+    Engine::Config config;
+    config.window.title = "fork engine 3d clear colour test";
+    config.window.width = 64;
+    config.window.height = 64;
+    config.window.visible = false;
+    config.window.vsync = false;
+
+    ClearColorApp app(config);
+    app.set_headless(1);
+    const int code = app.run();
+    if (!app.started) {
+        MESSAGE("graphics context unavailable; 3D clear colour test skipped");
+        return;
+    }
+    REQUIRE(code == 0);
+
+    // The frame's centre is the camera's clear colour, not black: 0.25/0.50/0.75
+    // in [0,1] is 64/128/191 in 8-bit, with a tolerance for the exact rounding
+    // the driver applies.
+    CHECK(app.centre[0] == doctest::Approx(64).epsilon(0.02));
+    CHECK(app.centre[1] == doctest::Approx(128).epsilon(0.02));
+    CHECK(app.centre[2] == doctest::Approx(191).epsilon(0.02));
+    CHECK(app.centre[3] == 255);
 }

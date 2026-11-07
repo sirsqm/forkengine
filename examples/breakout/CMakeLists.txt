@@ -37,8 +37,11 @@ set_target_properties(fork_breakout PROPERTIES
 #   * a page to host it. `--shell-file` supplies one that provides the #canvas
 #     the backend renders into.
 #
-# The output is renamed to `index.html`/`index.js` so the build directory is
-# directly servable and the entry point is the conventional one.
+# The output is renamed to `breakout.html`/`breakout.js` so the build directory
+# is directly servable, and named after the game rather than a generic `index`:
+# the build directory holds more than one web game, so a shared `index` name
+# would have them overwrite each other's entry point and wasm module in `bin/`,
+# and a full build would leave only the last one linked.
 fe_platform_is_web(FE_BREAKOUT_WEB)
 if(FE_BREAKOUT_WEB)
   target_link_options(
@@ -62,6 +65,7 @@ if(FE_BREAKOUT_WEB)
   # The toolchain sets CMAKE_EXECUTABLE_SUFFIX to ".js" so the engine's other
   # web targets emit a JS/HTML pair. Emscripten only honours --shell-file when
   # it is generating HTML, so this target overrides the suffix: it emits
-  # index.html plus index.js and index.wasm, and the shell page is used.
-  set_target_properties(fork_breakout PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
+  # breakout.html plus breakout.js and breakout.wasm, the shell page is used, and
+  # the name cannot collide with the other web game in `bin/`.
+  set_target_properties(fork_breakout PROPERTIES OUTPUT_NAME "breakout" SUFFIX ".html")
 endif()

@@ -39,8 +39,11 @@ set_target_properties(fork_collect3d PROPERTIES
 #   * a page to host it. `--shell-file` supplies one that provides the #canvas
 #     the backend renders into.
 #
-# The output is renamed to `index.html`/`index.js` so the build directory is
-# directly servable and the entry point is the conventional one.
+# The output keeps the target's name (`collect3d.html`/`collect3d.js`) rather
+# than the generic `index`: the build directory holds more than one web game, so
+# a shared `index` name would have the games overwrite each other's entry point
+# and wasm module in `bin/`, and a full build would leave only the last one
+# linked.
 fe_platform_is_web(FE_COLLECT3D_WEB)
 if(FE_COLLECT3D_WEB)
   target_link_options(
@@ -61,6 +64,8 @@ if(FE_COLLECT3D_WEB)
       "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
   )
   # The toolchain sets CMAKE_EXECUTABLE_SUFFIX to ".js"; this target overrides it
-  # so the shell page is used and the output is index.html plus index.js/wasm.
-  set_target_properties(fork_collect3d PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
+  # so the shell page is used and the output is a `.html` entry point with a
+  # matching `.js`/`.wasm` module, named after the target so the two web games in
+  # `bin/` cannot collide.
+  set_target_properties(fork_collect3d PROPERTIES OUTPUT_NAME "collect3d" SUFFIX ".html")
 endif()

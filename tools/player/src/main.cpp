@@ -354,10 +354,26 @@ protected:
 #endif
     }
 
-    void on_render(fe::f32) override {
+    void on_render_world(fe::f32) override {
         if (!engine().has_graphics() && !engine().headless_render()) {
             return;
         }
+        // Application's frame draws the world through this hook, before the 2D
+        // and UI passes, so a HUD layers over the 3D scene. render() itself is the
+        // single decision point for whether a 3D pass happens: it looks up the
+        // scene's active camera and returns 0 immediately when there is none, so a
+        // 2D game does no 3D work and a 3D game gets its pass without the player
+        // having to be told which it is. Asking here as well would walk the scene a
+        // second time every frame to answer a question render() answers again; the
+        // two would also be free to disagree. One walk, one answer.
+        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                                   engine().window().framebuffer_height());
+        if (!drawn) {
+            FE_LOG_ERROR("fork_player: 3D render failed: %s", drawn.error().message().c_str());
+        }
+    }
+
+    void on_render(fe::f32) override {
 #if defined(FE_PLATFORM_WEB)
         // Sampled after the systems have run (on_render follows the schedule in
         // Application::step_frame), and every frame rather than only the last: a
@@ -368,18 +384,6 @@ protected:
             sample_probe_height();
         }
 #endif
-        // Application's frame draws 2D; 3D is the app's own step. render() itself
-        // is the single decision point for whether a 3D pass happens: it looks up
-        // the scene's active camera and returns 0 immediately when there is none,
-        // so a 2D game does no 3D work and a 3D game gets its pass without the
-        // player having to be told which it is. Asking here as well would walk the
-        // scene a second time every frame to answer a question render() answers
-        // again; the two would also be free to disagree. One walk, one answer.
-        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
-                                                   engine().window().framebuffer_height());
-        if (!drawn) {
-            FE_LOG_ERROR("fork_player: 3D render failed: %s", drawn.error().message().c_str());
-        }
         // Read the frame back while it is still the current framebuffer. A web
         // canvas is presented implicitly and, with preserveDrawingBuffer off (the
         // default this window asks for), its contents are undefined after the

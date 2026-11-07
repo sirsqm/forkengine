@@ -42,6 +42,7 @@
 #include "fe/audio/AudioSystem.h"
 #include "fe/core/Log.h"
 #include "fe/player/BuiltinBehaviours.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/resources/Resource.h"
 #include "fe/runtime/Application.h"
 #include "fe/scene/Node.h"
@@ -52,7 +53,6 @@
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/SceneSchedule.h"
 
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -202,6 +202,23 @@ protected:
         // The line a headless run greps for its outcome.
         FE_LOG_INFO("collect3d: score=%d collected=%d/%d result=%s", state_.score(), state_.collected(),
                     state_.collectibles_total(), state_.result_name());
+    }
+
+    // The engine's frame draws the world first (this hook), then 2D and the UI
+    // over it. render() is the single decision point: it looks up the scene's
+    // primary camera and returns 0 immediately when there is none, so the game
+    // does no 3D work on a screen that has no camera and needs no separate "am I
+    // a 3D game" question. Drawing here rather than in on_render() is what puts
+    // the HUD on top of the arena instead of under it.
+    void on_render_world(fe::f32) override {
+        if (!engine().has_graphics() && !engine().headless_render()) {
+            return;
+        }
+        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                                   engine().window().framebuffer_height());
+        if (!drawn) {
+            FE_LOG_ERROR("collect3d: 3D render failed: %s", drawn.error().message().c_str());
+        }
     }
 
 private:

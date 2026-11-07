@@ -139,10 +139,11 @@ protected:
 
     void on_update(fe::f32) override { ++frame_count_; }
 
-    void on_render(fe::f32) override {
-        // Application's frame draws 2D; 3D is the app's own step. With no device
-        // there is nothing to draw into, so guard on the same question the frame
-        // loop asks rather than assuming a surface.
+    void on_render_world(fe::f32) override {
+        // Application's frame draws the world through this hook, before the 2D
+        // and UI passes. With no device there is nothing to draw into, so guard
+        // on the same question the frame loop asks rather than assuming a
+        // surface.
         if (render_ && engine().headless_render()) {
             auto drawn =
                 engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),

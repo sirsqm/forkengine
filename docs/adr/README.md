@@ -153,6 +153,7 @@ rather than editing it.
 | [0145](0145-ui-focus-navigation.md) | Keyboard and gamepad focus navigation for UI | Accepted |
 | [0146](0146-nested-blend-trees.md) | A blend tree feeding a blend tree | Accepted |
 | [0147](0147-second-vertical-slice-3d.md) | The second vertical slice, and the 3D integration test it is | Accepted |
+| [0148](0148-world-render-hook-and-camera-clear.md) | A world render hook, and the 3D camera's clear colour | Accepted |
 
 ## Format
 

@@ -189,6 +189,14 @@ public:
     // surface of its own (the editor's viewport, for instance).
     void set_action_viewport(Vec2 viewport) noexcept { action_viewport_ = viewport; }
 
+    // The clear colour for a scene, taken from its active camera: a 2D camera's
+    // colour when one exists (a 2D game with a 3D backdrop keeps its 2D
+    // background), otherwise the active 3D camera's colour, otherwise black. A
+    // 3D-only scene therefore clears to its camera rather than to black, which
+    // is what an app that draws its world through renderer_3d() expects. Static
+    // and pure so a test can check the selection with no graphics context.
+    [[nodiscard]] static rhi::ClearColor scene_clear_color(const Scene& scene);
+
 protected:
     // --- Hooks -------------------------------------------------------------
     // Called once, after the engine is up and before the first frame. Return an
@@ -198,7 +206,15 @@ protected:
     // Called once per frame before rendering. `delta_time` is in seconds.
     virtual void on_update(f32 delta_time) { (void)delta_time; }
 
-    // Called once per frame after the 2D pass, inside the frame.
+    // Called once per frame inside the render phase, before the 2D and UI passes.
+    // This is where a 3D game draws its world with renderer_3d(): the frame then
+    // layers the 2D pass and the UI over it, so a HUD lands on top of the 3D
+    // scene rather than under it. A 2D-only game leaves it empty and pays
+    // nothing.
+    virtual void on_render_world(f32 delta_time) { (void)delta_time; }
+
+    // Called once per frame after the 2D and UI passes, inside the frame. A
+    // debug overlay the game draws itself lands on top of the UI.
     virtual void on_render(f32 delta_time) { (void)delta_time; }
 
     // Called once, after the loop ends and before the engine shuts down.

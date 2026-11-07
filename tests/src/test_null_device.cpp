@@ -483,6 +483,124 @@ TEST_CASE("the render path submits draws headless through the frame loop") {
     CHECK(app.had_headless_render == true);
 }
 
+// The world hook draws before the 2D and UI passes, so a 3D game's HUD lands on
+// top of its scene rather than under it. This drives a real frame loop and reads
+// the counters the passes publish, so the ordering is observed rather than
+// assumed: `on_render_world` sees the previous frame's 2D count (zero on the
+// first frame, before any pass has run), and `on_render` sees this frame's --
+// which is only true if the 2D pass ran between them.
+class RenderOrderApp final : public Application {
+public:
+    explicit RenderOrderApp(Engine::Config config) : Application(config) {}
+
+    usize sprites_at_world = 999;
+    usize sprites_at_hook = 999;
+    u32 draws_3d = 0;
+    bool world_ok = false;
+
+protected:
+    Error on_start() override {
+        Node* camera = scene().create_node("Camera");
+        camera->add_component<Camera2D>();
+
+        // A textured sprite, so the 2D pass has a real instance to batch: an
+        // untextured sprite is an authoring state the extractor skips.
+        const u8 pixel[4] = {255, 255, 255, 255};
+        rhi::TextureDesc desc;
+        desc.name = "order_sprite";
+        desc.width = 1;
+        desc.height = 1;
+        desc.pixels = pixel;
+        auto texture = engine().device().create_texture(desc);
+        if (!texture) {
+            return texture.error();
+        }
+        Node* sprite = scene().create_node("Sprite");
+        auto* component = sprite->add_component<Sprite2D>();
+        component->size = Vec2{8.0f, 8.0f};
+        component->texture = std::make_shared<Texture2D>("tex:order.png", texture.value());
+
+        // A 3D camera and cube too, so the world hook has a real pass to run.
+        Node* camera3d = scene().create_node("Camera3D");
+        camera3d->add_component<Camera3D>();
+        Node* sun = scene().create_node("Sun");
+        sun->add_component<DirectionalLight3D>();
+        Node* cube = scene().create_node("Cube");
+        cube->add_component<MeshRenderer3D>()->mesh = Mesh::make_cube();
+        return Error::none();
+    }
+
+    void on_render_world(f32) override {
+        // The 3D pass is the game's own step, run from this hook.
+        auto drawn = engine().renderer_3d().render(engine().device(), scene(), engine().window().framebuffer_width(),
+                                                   engine().window().framebuffer_height());
+        world_ok = drawn.ok();
+        draws_3d = engine().renderer_3d().last_draw_calls();
+        // No 2D pass has run yet this frame, so this is the previous frame's
+        // count: zero on the first frame.
+        sprites_at_world = last_sprite_count();
+    }
+
+    void on_render(f32) override {
+        // The 2D pass has run by now, so this frame's count is visible.
+        sprites_at_hook = last_sprite_count();
+    }
+};
+
+TEST_CASE("the world hook draws before the 2D and UI passes") {
+    Engine::Config config = null_render_config();
+    RenderOrderApp app(config);
+    app.set_headless(1);
+
+    CHECK(app.run() == 0);
+
+    // The 3D pass ran from the world hook and submitted its cube.
+    CHECK(app.world_ok);
+    CHECK(app.draws_3d == 1);
+    // The 2D pass had not run when the world hook ran, but had by the time the
+    // after-UI hook ran -- the ordering the hook exists to provide.
+    CHECK(app.sprites_at_world == 0);
+    CHECK(app.sprites_at_hook == 1);
+}
+
+// A 3D-only scene must clear to its camera's colour, not to black. The selection
+// is a pure function of the scene, so it is checked here with no graphics
+// context; the GL suite covers what the clear colour reaches the framebuffer as.
+TEST_CASE("the frame clear colour follows the active camera") {
+    SUBCASE("a 3D-only scene clears to its 3D camera") {
+        Scene scene;
+        auto* camera = scene.create_node("Camera")->add_component<Camera3D>();
+        camera->clear_r = 0.05f;
+        camera->clear_g = 0.06f;
+        camera->clear_b = 0.10f;
+
+        const rhi::ClearColor clear = Application::scene_clear_color(scene);
+        CHECK(clear.r == doctest::Approx(0.05f));
+        CHECK(clear.g == doctest::Approx(0.06f));
+        CHECK(clear.b == doctest::Approx(0.10f));
+        CHECK(clear.a == doctest::Approx(1.0f));
+    }
+
+    SUBCASE("a 2D camera wins when both exist") {
+        Scene scene;
+        auto* camera3d = scene.create_node("Camera3D")->add_component<Camera3D>();
+        camera3d->clear_r = 0.05f;
+        auto* camera2d = scene.create_node("Camera2D")->add_component<Camera2D>();
+        camera2d->clear_r = 0.9f;
+
+        const rhi::ClearColor clear = Application::scene_clear_color(scene);
+        CHECK(clear.r == doctest::Approx(0.9f));
+    }
+
+    SUBCASE("a scene with no camera clears to black") {
+        Scene scene;
+        const rhi::ClearColor clear = Application::scene_clear_color(scene);
+        CHECK(clear.r == doctest::Approx(0.0f));
+        CHECK(clear.g == doctest::Approx(0.0f));
+        CHECK(clear.b == doctest::Approx(0.0f));
+    }
+}
+
 TEST_CASE("a null device has no error queue to report") {
     auto created = rhi::create_null_device();
     REQUIRE(created.ok());

@@ -5,7 +5,9 @@
 #include "fe/core/Log.h"
 #include "fe/platform/InputActions.h"
 #include "fe/renderer2d/Renderer2D.h"
+#include "fe/renderer3d/Renderer3D.h"
 #include "fe/scene/Camera2D.h"
+#include "fe/scene3d/Camera3D.h"
 
 namespace fe {
 
@@ -256,14 +258,13 @@ void Application::render_frame() {
     const u32 height = engine_.window().framebuffer_height();
 
     // Determine the clear colour from the active camera, so the engine does not
-    // impose a background on the scene. Uses the renderer's own camera
-    // selection so the clear colour and the projection always agree.
-    rhi::ClearColor clear{};
-    if (const Camera2D* camera = renderer2d::Renderer2D::find_active_camera(scene_); camera != nullptr) {
-        clear = rhi::ClearColor{camera->clear_r, camera->clear_g, camera->clear_b, camera->clear_a};
-    }
+    // impose a background on the scene (see scene_clear_color()).
+    engine_.device().begin_frame(width, height, scene_clear_color(scene_));
 
-    engine_.device().begin_frame(width, height, clear);
+    // The world pass runs first, into the frame the device just began: a 3D game
+    // draws its scene here so the 2D pass and the UI layer over it. The hook is
+    // empty for a 2D game, which then pays nothing.
+    on_render_world(engine_.delta_time());
 
     // Prefer the arena-backed path when the frame has an arena: the 2D pass then
     // builds its extraction and cull scratch with no heap traffic. With the arena
@@ -286,8 +287,9 @@ void Application::render_frame() {
     // use different matrices. A scene with no canvas draws nothing here and pays
     // only the extraction walk.
     //
-    // Ordering: the world first, then the UI, then the subclass's on_render()
-    // hook, so a debug overlay the game draws itself lands on top of the UI.
+    // Ordering: the world (on_render_world) first, then the 2D and UI passes,
+    // then the subclass's on_render() hook, so a debug overlay the game draws
+    // itself lands on top of the UI.
     Result<usize> ui_result =
         frame_arena_ != nullptr
             ? engine_.renderer_2d().render_ui(engine_.device(), scene_, width, height, *frame_arena_, jobs_.get())
@@ -299,6 +301,16 @@ void Application::render_frame() {
     }
 
     on_render(engine_.delta_time());
+}
+
+rhi::ClearColor Application::scene_clear_color(const Scene& scene) {
+    if (const Camera2D* camera = renderer2d::Renderer2D::find_active_camera(scene); camera != nullptr) {
+        return rhi::ClearColor{camera->clear_r, camera->clear_g, camera->clear_b, camera->clear_a};
+    }
+    if (const Camera3D* camera = renderer3d::Renderer3D::find_active_camera(scene); camera != nullptr) {
+        return rhi::ClearColor{camera->clear_r, camera->clear_g, camera->clear_b, camera->clear_a};
+    }
+    return rhi::ClearColor{};
 }
 
 } // namespace fe

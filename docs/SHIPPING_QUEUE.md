@@ -167,6 +167,26 @@ behaviours with a keyboard and a touchscreen.
 **Done when** the project exports for the web, runs in headless Chromium, and the
 input probe observes the player node move in response to a synthetic key.
 
+### `world-hook-and-camera-clear`
+
+A 3D host had to draw its world from `on_render()`, which the frame calls *after*
+the UI pass, so a 3D game painted its scene over its own HUD; and the frame took
+its clear colour from a `Camera2D` only, so a 3D-only scene cleared to black and
+`Camera3D`'s `clear_*` fields were dead. Both defects survived the web game check
+because the geometry still drew.
+
+**Done when** `Application` runs a world hook before the 2D and UI passes, the
+clear colour follows the active 3D camera when there is no 2D one, and a test
+proves a 3D-only frame clears to the camera's colour rather than to black. See
+[ADR-0148](adr/0148-world-render-hook-and-camera-clear.md).
+
+Landed as `Application::on_render_world()` (called before the 2D and UI passes,
+empty for a 2D game) and `Application::scene_clear_color()` (a 2D camera's colour
+when one exists, else the active 3D camera's, else black); `examples/collect3d`,
+`tools/player`, and `examples/headless` moved their 3D draw into the hook. A
+headless test checks the ordering and the clear-colour selection, and a graphics
+test proves the colour reaches the framebuffer.
+
 ### `fixed-simulation-step`
 
 The browser input probe measured wall-clock distance, so the same run reported
