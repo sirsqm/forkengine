@@ -109,7 +109,9 @@ What a user can click is exactly what a user can see.
 
 - **A new RHI call.** Every backend must implement `set_scissor`. The null device
   makes it a no-op; the OpenGL device flips the origin against the current
-  framebuffer's height and clamps a below-the-edge rectangle to an empty box.
+  framebuffer's height and clamps the rectangle to the framebuffer's right and
+  bottom edges, so a panel taller or wider than the frame paints its visible part
+  rather than nothing.
 - **A batch split per clip change.** Two elements under different clips no longer
   batch together even when they share a texture. This is the correct trade: the
   alternative is a wrong scissor on one of them.

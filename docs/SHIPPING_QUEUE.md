@@ -982,9 +982,13 @@ children by `-scroll`, and records the region on each resolved element. `hit_tes
 consults that region, so a partly-scrolled element is hittable only where it is
 visible. `rhi::ScissorRect` and `Device::set_scissor` are new, `SpriteInstance`
 carries the clip per instance, and `Renderer2D` splits a batch when the clip
-changes and scissors each. Tests prove the cull, the exact scroll offset, the
-nested-clip intersection, the batch split, and — under a real GL context — that
-the scissor actually cuts a pixel the unclipped control paints.
+changes and scissors each. The backend clamps a scissor to the framebuffer's
+edges, so a panel taller than the frame paints its visible part instead of
+nothing. Both fields are registered for reflection and round-trip through a
+scene file, so a saved panel reopens clipped and scrolled. Tests prove the cull,
+the exact scroll offset, the nested-clip intersection, the batch split, the
+scene round trip, and — under a real GL context — that the scissor actually cuts
+a pixel the unclipped control paints.
 
 ---
 ## Backlog — not yet ordered
