@@ -162,6 +162,8 @@ rather than editing it.
 | [0154](0154-revolute-angular-limits.md) | Revolute joint angular limits | Accepted |
 | [0155](0155-joint-position-motors.md) | Joint position (servo) motors | Accepted |
 | [0156](0156-navigation-and-ai.md) | Navigation and AI | Accepted |
+| [0157](0157-positional-audio-in-the-3d-slice.md) | Positional audio in the shipped 3D slice | Accepted |
+| [0158](0158-listener-velocity-from-camera.md) | The listener's Doppler velocity is derived, not authored | Accepted |
 
 ## Format
 

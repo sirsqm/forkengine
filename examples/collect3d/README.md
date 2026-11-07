@@ -60,7 +60,10 @@ The systems, in order (ADR-0008):
 7. `CollectibleSystem` — turns a player-vs-gem contact into a score and a cue.
 8. `GoalSystem` — runs the clock and ends the round.
 9. `HudSystem` — paints the score, the gems, and the time.
-10. `AudioSystem` — added last by `main.cpp` (the engine owns it and the
+10. `AudioListenerSystem` — added by `main.cpp` before the audio system, so the
+    mix this frame attenuates the positional pickup cue against the camera's
+    position this frame rather than one frame behind.
+11. `AudioSystem` — added last by `main.cpp` (the engine owns it and the
     application adopts it), so a cue fired this frame is mixed this frame.
 
 ## Running it
@@ -125,7 +128,10 @@ game does not pretend to use them:
 
 - **Skeletal animation.** The character is a rigid body with a controller, not a
   skinned mesh driven by a blend tree; that is a larger art-and-content step.
-- **Positional audio.** The pickup cue is non-positional; wiring attenuation to
-  the world transform is separate work.
-- **Streaming / compressed codecs / audio buses.** As in breakout, the cue is
-  fully decoded PCM on the master bus.
+- **Directivity and Doppler.** The pickup cue is positional (spatial, on the
+  `sfx` bus, placed at the gem before it plays), but it is omnidirectional and
+  has no Doppler; the mixer supports both, and this slice does not opt in.
+- **Streaming / compressed codecs.** As in breakout, the cue is fully decoded
+  PCM. It now routes through a named bus rather than the master alone, so the
+  effects layout is a real one, but a compressed, streamed clip is still later
+  work.
