@@ -2470,3 +2470,106 @@ TEST_CASE("the fixed and prismatic 2D joints are registered with reflection") {
     CHECK(reflect::Registry::instance().contains("FixedJoint2D"));
     CHECK(reflect::Registry::instance().contains("PrismaticJoint2D"));
 }
+
+// ---------------------------------------------------------------------------
+// Distance-joint length limits: a maximum makes a leash, a minimum makes a rope
+// that pushes back. Pure rows first, then the solver through the system.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a distance joint with no limits is a plain rod") {
+    CHECK_FALSE(physics2d::has_length_limits(physics2d::DistanceJointParams{}));
+
+    bool active = false;
+    physics2d::DistanceJointParams params;
+    params.rest_length = 2.0f;
+    // No limits: the target is always `rest_length`, whatever the separation.
+    CHECK(physics2d::distance_limit_target(5.0f, params, active) == doctest::Approx(2.0f));
+    CHECK(active);
+    CHECK(physics2d::distance_limit_target(0.1f, params, active) == doctest::Approx(2.0f));
+    CHECK(active);
+}
+
+TEST_CASE("a distance joint's maximum bound holds the nearer length when stretched") {
+    physics2d::DistanceJointParams params;
+    params.max_length = 3.0f;
+    CHECK(physics2d::has_length_limits(params));
+
+    // Stretched past the leash: the target snaps back to the bound.
+    bool active = false;
+    CHECK(physics2d::distance_limit_target(4.5f, params, active) == doctest::Approx(3.0f));
+    CHECK(active);
+    // Inside the leash: the rod is slack, so no constraint is applied.
+    (void)physics2d::distance_limit_target(2.0f, params, active);
+    CHECK_FALSE(active);
+}
+
+TEST_CASE("a distance joint's minimum bound holds the nearer length when compressed") {
+    physics2d::DistanceJointParams params;
+    params.min_length = 1.5f;
+
+    bool active = false;
+    // Compressed below the minimum: the target is the bound, pushing back out.
+    CHECK(physics2d::distance_limit_target(0.5f, params, active) == doctest::Approx(1.5f));
+    CHECK(active);
+    // Above the minimum: slack.
+    CHECK_FALSE(physics2d::distance_limit_target(3.0f, params, active));
+    CHECK_FALSE(active);
+}
+
+TEST_CASE("a limited distance row reports the stretch past the bound as its error") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{5.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.max_length = 3.0f;
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    // The separation is 5, the bound 3, so the rod pulls in by 2.
+    CHECK(row.value().position_error == doctest::Approx(2.0f));
+    CHECK(row.value().effective_mass == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a slack distance joint exerts nothing") {
+    physics2d::JointBody a = dynamic_body(1.0f);
+    physics2d::JointBody b = dynamic_body(1.0f);
+    a.position = Vec2{0.0f, 0.0f};
+    b.position = Vec2{2.0f, 0.0f};
+
+    physics2d::DistanceJointParams params;
+    params.max_length = 4.0f; // 2 is inside the leash, so the rope is limp
+
+    auto row = physics2d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    CHECK(row.value().effective_mass == doctest::Approx(0.0f));
+    CHECK(row.value().position_error == doctest::Approx(0.0f));
+    CHECK(row.value().bias == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a distance joint's maximum leash stops a body from flying off") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* flyer = add_point_mass(scene, Vec2{0.0f, 0.0f}, 1.0f);
+    auto* body = flyer->get_component<physics2d::RigidBody2D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec2{10.0f, 0.0f}; // shove it straight away from the anchor
+
+    Node* host = scene.create_node("Leash");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = flyer->id();
+    joint->rest_length = 0.0f;
+    joint->max_length = 3.0f; // a 3-unit leash
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    CHECK(system.joint_count() == 1);
+    // The leash held: the body never got much past 3 units from the anchor.
+    CHECK(flyer->transform().position.x < 3.5f);
+    CHECK(flyer->transform().position.x > 2.0f);
+}

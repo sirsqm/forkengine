@@ -4,6 +4,7 @@
 
 #include "fe/core/Math.h"
 #include "fe/physics3d/Collider3D.h"
+#include "fe/physics3d/DistanceJoint3D.h"
 #include "fe/physics3d/FixedJoint3D.h"
 #include "fe/physics3d/Geometry3D.h"
 #include "fe/physics3d/JointSolver3D.h"
@@ -439,4 +440,95 @@ TEST_CASE("the fixed and prismatic 3D joints are registered with reflection") {
     reflect::register_physics3d_types();
     CHECK(reflect::Registry::instance().contains("FixedJoint3D"));
     CHECK(reflect::Registry::instance().contains("PrismaticJoint3D"));
+}
+
+// ---------------------------------------------------------------------------
+// Distance-joint length limits in 3D: the pure target rule, then a leash
+// through the system (ADR-0134).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D distance joint with no limits is a plain rod") {
+    CHECK_FALSE(physics3d::has_length_limits(physics3d::DistanceJoint3DParams{}));
+
+    bool active = false;
+    physics3d::DistanceJoint3DParams params;
+    params.rest_length = 2.0f;
+    CHECK(physics3d::distance_limit_target(5.0f, params, active) == doctest::Approx(2.0f));
+    CHECK(active);
+}
+
+TEST_CASE("a 3D distance joint's maximum is a leash and its inside is slack") {
+    physics3d::DistanceJoint3DParams params;
+    params.max_length = 3.0f;
+
+    bool active = false;
+    CHECK(physics3d::distance_limit_target(4.5f, params, active) == doctest::Approx(3.0f));
+    CHECK(active);
+    // Inside the leash the target falls back to rest_length (0 here) and the
+    // joint is slack.
+    (void)physics3d::distance_limit_target(2.0f, params, active);
+    CHECK_FALSE(active);
+}
+
+TEST_CASE("a 3D limited distance row reports the stretch past the bound") {
+    physics3d::JointBody3D a = joint_body(Vec3{0.0f, 0.0f, 0.0f}, 1.0f);
+    physics3d::JointBody3D b = joint_body(Vec3{5.0f, 0.0f, 0.0f}, 1.0f);
+
+    physics3d::DistanceJoint3DParams params;
+    params.max_length = 3.0f;
+
+    auto row = physics3d::build_distance_row(a, b, params, 1.0f / 60.0f);
+    REQUIRE(row);
+    CHECK(row.value().position_error == doctest::Approx(2.0f));
+}
+
+TEST_CASE("a 3D distance joint's maximum leash stops a body from flying off") {
+    Scene scene;
+    Node* anchor = scene.create_node("Anchor");
+    Node* flyer_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = flyer_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = false;
+    body->velocity = Vec3{10.0f, 0.0f, 0.0f};
+
+    Node* host = scene.create_node("Leash");
+    auto* joint = host->add_component<physics3d::DistanceJoint3D>();
+    joint->body_a = anchor->id();
+    joint->body_b = flyer_node->id();
+    joint->rest_length = 0.0f;
+    joint->max_length = 3.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    CHECK(flyer_node->transform().position.x < 3.5f);
+    CHECK(flyer_node->transform().position.x > 2.0f);
+}
+
+TEST_CASE("a distance joint's limits round-trip through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+    Node* joint_node = scene.create_node("Rod");
+    auto* joint = joint_node->add_component<physics3d::DistanceJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->min_length = 0.5f;
+    joint->max_length = 4.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_joint = loaded.find_node_by_name("Rod");
+    REQUIRE(loaded_joint != nullptr);
+    const auto* loaded_component = loaded_joint->get_component<physics3d::DistanceJoint3D>();
+    REQUIRE(loaded_component != nullptr);
+    CHECK(loaded_component->min_length == doctest::Approx(0.5f));
+    CHECK(loaded_component->max_length == doctest::Approx(4.0f));
 }

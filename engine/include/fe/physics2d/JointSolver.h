@@ -105,11 +105,44 @@ inline constexpr usize kPrismaticJointRows = 2;
 // centres. `stiffness` is a frequency in Hz (0 gives a rigid rod) and `damping`
 // is a fraction in [0, 1] of the current relative velocity the joint opposes,
 // which lets a spring lose energy instead of ringing forever.
+//
+// `min_length` and `max_length` turn the rod into a limited one: a value above
+// zero is an enabled bound, and zero (the default) leaves that side unbounded.
+// Between the two bounds the joint exerts no force, so a rope can go slack;
+// out of range it pulls the separation back to the nearer bound. When both are
+// zero the joint is a plain rod that holds `rest_length` exactly, as before.
 struct DistanceJointParams {
     f32 rest_length = 0.0f;
     f32 stiffness = 0.0f;
     f32 damping = 0.0f;
+    f32 min_length = 0.0f;
+    f32 max_length = 0.0f;
 };
+
+// Whether the joint has a length limit enabled at all: either bound above zero.
+[[nodiscard]] inline bool has_length_limits(const DistanceJointParams& params) noexcept {
+    return params.min_length > 0.0f || params.max_length > 0.0f;
+}
+
+// The length the two bodies are currently held to: `rest_length` when the
+// separation is within the limits, otherwise the nearer bound. Returns the value
+// and, through `out_active`, whether the joint constrains at all this step (a
+// separation strictly inside the limits, with no spring, is left free).
+[[nodiscard]] inline f32 distance_limit_target(f32 separation, const DistanceJointParams& params,
+                                               bool& out_active) noexcept {
+    out_active = true;
+    if (params.max_length > 0.0f && separation > params.max_length) {
+        return params.max_length;
+    }
+    if (params.min_length > 0.0f && separation < params.min_length) {
+        return params.min_length;
+    }
+    if (has_length_limits(params) && params.stiffness <= 0.0f) {
+        // Inside the limits with no spring: the rod is slack and exerts nothing.
+        out_active = false;
+    }
+    return params.rest_length;
+}
 
 // The revolute-joint parameters. `anchor_a` and `anchor_b` are the shared point
 // expressed in each body's local frame, so a pin offset from a body's centre

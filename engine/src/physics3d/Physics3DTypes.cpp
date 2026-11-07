@@ -151,6 +151,10 @@ void register_distance_joint3d(Registry& registry) {
         "stiffness", &physics3d::DistanceJoint3D::stiffness, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
         "damping", &physics3d::DistanceJoint3D::damping, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
+        "min_length", &physics3d::DistanceJoint3D::min_length, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::DistanceJoint3D, f32>(
+        "max_length", &physics3d::DistanceJoint3D::max_length, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }

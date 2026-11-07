@@ -602,6 +602,8 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
                                                                     : (body_b.position - body_a.position).length();
             params.stiffness = joint.distance->stiffness;
             params.damping = std::clamp(joint.distance->damping, 0.0f, 1.0f);
+            params.min_length = joint.distance->min_length;
+            params.max_length = joint.distance->max_length;
 
             auto row = build_distance_row(body_a, body_b, params, delta_time);
             if (!row) {

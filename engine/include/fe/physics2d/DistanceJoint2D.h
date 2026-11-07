@@ -50,6 +50,19 @@ public:
     // without overshoot.
     f32 damping = 0.0f;
 
+    // The shortest separation the joint allows, in world units. Zero (the
+    // default) leaves the minimum unbounded. A positive value lets the joint go
+    // slack when the bodies are closer than this and pulls them back to it when
+    // they are nearer, which is how a rope couples two bodies without pushing
+    // them apart.
+    f32 min_length = 0.0f;
+
+    // The greatest separation the joint allows, in world units. Zero (the
+    // default) leaves the maximum unbounded. A positive value turns the rod into
+    // a leash: the bodies may come as close as they like but cannot stretch past
+    // this length.
+    f32 max_length = 0.0f;
+
     [[nodiscard]] bool is_valid() const noexcept { return !body_a.is_nil() && !body_b.is_nil() && body_a != body_b; }
 };
 

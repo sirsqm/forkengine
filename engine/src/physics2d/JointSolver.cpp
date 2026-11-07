@@ -47,11 +47,23 @@ Result<ConstraintRow> build_distance_row(const JointBody& a, const JointBody& b,
     row.jacobian_a = direction * -1.0f;
     row.jacobian_b = direction;
     row.effective_mass = row_effective_mass(row, a, b);
+
+    // With length limits the joint holds the nearer bound when the separation is
+    // out of range and is slack inside it, so a rope can go limp instead of
+    // pulling both ways. `distance_limit_target` returns the length to hold and
+    // whether the joint constrains at all this step.
+    bool active = true;
+    const f32 target = distance_limit_target(length, params, active);
+    if (!active) {
+        // Slack: an all-zero row the apply functions treat as a no-op. The joint
+        // is still gathered and counted, it just exerts nothing this step.
+        return ConstraintRow{};
+    }
     if (row.effective_mass <= 0.0f) {
         return Error("distance joint: neither body can move, so the constraint is unsolvable");
     }
 
-    const f32 error = length - params.rest_length;
+    const f32 error = length - target;
     if (params.stiffness > 0.0f) {
         // A spring: the bias is a restoring velocity proportional to the
         // stretch, and `damping` is a derivative gain that opposes the current

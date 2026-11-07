@@ -158,6 +158,10 @@ void register_distance_joint2d(Registry& registry) {
         "stiffness", &physics2d::DistanceJoint2D::stiffness, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
         "damping", &physics2d::DistanceJoint2D::damping, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "min_length", &physics2d::DistanceJoint2D::min_length, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<physics2d::DistanceJoint2D, f32>(
+        "max_length", &physics2d::DistanceJoint2D::max_length, ValueKind::Float, &defaults));
 
     registry.register_type(std::move(desc));
 }

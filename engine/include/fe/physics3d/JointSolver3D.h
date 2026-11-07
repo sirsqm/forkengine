@@ -144,7 +144,34 @@ struct DistanceJoint3DParams {
     f32 rest_length = 0.0f;
     f32 stiffness = 0.0f;
     f32 damping = 0.0f;
+    f32 min_length = 0.0f;
+    f32 max_length = 0.0f;
 };
+
+// Whether the joint has a length limit enabled at all: either bound above zero.
+[[nodiscard]] inline bool has_length_limits(const DistanceJoint3DParams& params) noexcept {
+    return params.min_length > 0.0f || params.max_length > 0.0f;
+}
+
+// The length the two bodies are currently held to: `rest_length` when the
+// separation is within the limits, otherwise the nearer bound. Returns the value
+// and, through `out_active`, whether the joint constrains at all this step (a
+// separation strictly inside the limits, with no spring, is left free).
+[[nodiscard]] inline f32 distance_limit_target(f32 separation, const DistanceJoint3DParams& params,
+                                               bool& out_active) noexcept {
+    out_active = true;
+    if (params.max_length > 0.0f && separation > params.max_length) {
+        return params.max_length;
+    }
+    if (params.min_length > 0.0f && separation < params.min_length) {
+        return params.min_length;
+    }
+    if (has_length_limits(params) && params.stiffness <= 0.0f) {
+        // Inside the limits with no spring: the rod is slack and exerts nothing.
+        out_active = false;
+    }
+    return params.rest_length;
+}
 
 // The revolute-joint parameters. `anchor_a` and `anchor_b` are the shared point
 // expressed in each body's local frame, so a pin offset from a body's centre
