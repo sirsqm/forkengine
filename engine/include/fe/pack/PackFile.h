@@ -70,6 +70,13 @@ struct PackEntry {
     // default, and what every entry of a version-1 pack is). The writer records
     // it; the reader honours it and leaves `data` decompressed.
     PackCodec codec = PackCodec::None;
+    // The on-disk payload span within the container bytes: where this entry's
+    // bytes live and how many there are. Set by both parse() and parse_index();
+    // together with `codec` and `uncompressed_size` this is everything
+    // `read_payload` needs to materialise the bytes on demand, so a streaming
+    // reader can skip the payload region entirely (see parse_index).
+    u64 payload_offset = 0;
+    u64 payload_length = 0;
     // The payload's original length. Equals `data.size()` for a stored entry and
     // the decoded length for a compressed one; carried so the reader can size
     // its output buffer exactly and reject a stream that decodes to a different
@@ -125,6 +132,23 @@ public:
     // payload lies outside the buffer, or a compressed entry that does not
     // decode. Never returns a partial pack.
     [[nodiscard]] static Result<PackFile> parse(const u8* data, usize size);
+
+    // Parses only the index of the container bytes: every entry's key, scheme,
+    // guid, codec, on-disk location and original length, but not its payload
+    // bytes. `data` is left empty on each entry and `read_payload` materialises
+    // one on demand, so a large pack can be opened without reading the payload
+    // region (ADR-0030's streaming refinement). The validation is exactly
+    // parse()'s, so a malformed pack is rejected here too; the only difference is
+    // that a compressed payload is not decoded until it is asked for.
+    [[nodiscard]] static Result<PackFile> parse_index(const u8* data, usize size);
+
+    // Materialises one entry's payload from the container bytes `data`/`size`
+    // (the same bytes the index was parsed from), decompressing transparently
+    // when the entry is compressed. This is what parse() calls per entry, exposed
+    // so a streaming reader can read a single payload without the others. The
+    // entry must come from parse_index()/parse() of these bytes; a span that does
+    // not fit is an Error, not a read of garbage.
+    [[nodiscard]] Result<std::vector<u8>> read_payload(const u8* data, usize size, const PackEntry& entry) const;
 
 private:
     std::vector<PackEntry> entries_;

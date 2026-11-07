@@ -406,6 +406,78 @@ TEST_CASE("a pack mounts on a ResourceManager and serves loads with no loose fil
     CHECK_FALSE(missing);
 }
 
+TEST_CASE("a pack index parses without reading payload bytes and reads one entry on demand") {
+    // The streaming seam: parse_index() reads only the table of contents, so a
+    // large pack can be opened without touching its payload region, and
+    // read_payload() materialises a single entry on demand. The entry must read
+    // back byte-identical to the fully-loaded parse().
+    PackFile pack;
+    const std::vector<u8> a(3000, u8{0x11});
+    const std::vector<u8> b = bytes_of("the quick brown fox");
+    const std::vector<u8> c(2048, u8{0x7E});
+    pack.add_file("assets/a.bin", "", Uuid::generate(), a);
+    pack.add_file("assets/b.txt", "tex", Uuid::generate(), b);
+    pack.add_file("assets/c.bin", "", Uuid{}, c);
+
+    // A compressed pack exercises the codec path too: the index must carry the
+    // codec and original length without decoding anything.
+    auto bytes = pack.write(pack::PackCompression::Fast);
+    REQUIRE(bytes);
+    const std::vector<u8>& container = bytes.value();
+
+    auto indexed = PackFile::parse_index(container.data(), container.size());
+    REQUIRE(indexed);
+    CHECK(indexed.value().entry_count() == 3);
+
+    // Opening touched no payload: every entry's bytes are still empty, yet its
+    // on-disk location and original length are known from the index alone.
+    for (const PackEntry& entry : indexed.value().entries()) {
+        CHECK(entry.data.empty());
+        CHECK(entry.payload_length > 0);
+        CHECK(entry.uncompressed_size > 0);
+    }
+
+    // The fully-loaded parse is the reference. Both must agree byte for byte.
+    auto loaded = PackFile::parse(container.data(), container.size());
+    REQUIRE(loaded);
+
+    for (const std::string_view key : {"assets/a.bin", "assets/b.txt", "assets/c.bin"}) {
+        const PackEntry* streamed = indexed.value().find_path(key);
+        REQUIRE(streamed != nullptr);
+        const PackEntry* reference = loaded.value().find_path(key);
+        REQUIRE(reference != nullptr);
+
+        auto on_demand = indexed.value().read_payload(container.data(), container.size(), *streamed);
+        REQUIRE(on_demand);
+        CHECK(on_demand.value() == reference->data);
+        CHECK(streamed->scheme == reference->scheme);
+        CHECK(streamed->codec == reference->codec);
+        CHECK(streamed->uncompressed_size == reference->uncompressed_size);
+    }
+
+    // A streaming read of one entry leaves the others untouched: reading 'b'
+    // did not materialise 'a' or 'c'.
+    const PackEntry* a_entry = indexed.value().find_path("assets/a.bin");
+    REQUIRE(a_entry != nullptr);
+    CHECK(a_entry->data.empty());
+}
+
+TEST_CASE("a streaming pack read rejects a malformed container like the full parse") {
+    PackFile pack;
+    pack.add_file("assets/a.txt", "", Uuid{}, bytes_of("hello"));
+    auto bytes = pack.write();
+    REQUIRE(bytes);
+    const std::vector<u8>& valid = bytes.value();
+
+    // A wrong magic is rejected by the index parse, before any payload is read.
+    std::vector<u8> corrupt = valid;
+    corrupt[0] = 'X';
+    CHECK_FALSE(PackFile::parse_index(corrupt.data(), corrupt.size()));
+
+    // A truncated buffer (index itself cut short) is rejected too.
+    CHECK_FALSE(PackFile::parse_index(valid.data(), valid.size() / 2));
+}
+
 TEST_CASE("DEFLATE compresses and decompresses a payload losslessly") {
     // A highly compressible input: the same byte repeated. DEFLATE must shrink
     // it, and the round trip must return the exact bytes.

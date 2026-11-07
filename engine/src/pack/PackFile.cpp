@@ -246,7 +246,7 @@ Result<std::vector<u8>> PackFile::write(PackCompression compression) const {
     return out;
 }
 
-Result<PackFile> PackFile::parse(const u8* data, usize size) {
+Result<PackFile> PackFile::parse_index(const u8* data, usize size) {
     if (data == nullptr || size < kHeaderSize) {
         return Error("pack: buffer is smaller than the header");
     }
@@ -346,21 +346,50 @@ Result<PackFile> PackFile::parse(const u8* data, usize size) {
 
         entry.codec = codec;
         entry.uncompressed_size = uncompressed_size;
-        if (codec == PackCodec::None) {
-            entry.data.assign(data + offset, data + offset + length);
-        } else {
-            // Decompress transparently, so a caller reads `data` the same way for
-            // a stored and a compressed entry. The reader rejects a stream that
-            // does not decode to the length the index promised.
-            auto decoded = decompress(data + offset, static_cast<usize>(length), static_cast<usize>(uncompressed_size));
-            if (!decoded) {
-                return Error("pack: entry '" + entry.key + "': " + decoded.error().message());
-            }
-            entry.data = std::move(decoded.value());
-        }
+        entry.payload_offset = offset;
+        entry.payload_length = length;
         pack.entries_.push_back(std::move(entry));
     }
 
+    return pack;
+}
+
+Result<std::vector<u8>> PackFile::read_payload(const u8* data, usize size, const PackEntry& entry) const {
+    if (data == nullptr || entry.payload_length > size || entry.payload_offset > size ||
+        entry.payload_length > size - static_cast<usize>(entry.payload_offset)) {
+        return Error("pack: entry '" + entry.key + "' has an out-of-range payload");
+    }
+    const u8* payload = data + entry.payload_offset;
+    if (entry.codec == PackCodec::None) {
+        return std::vector<u8>(payload, payload + entry.payload_length);
+    }
+    // Decompress transparently, so a caller reads the bytes the same way for a
+    // stored and a compressed entry. The reader rejects a stream that does not
+    // decode to the length the index promised.
+    auto decoded =
+        decompress(payload, static_cast<usize>(entry.payload_length), static_cast<usize>(entry.uncompressed_size));
+    if (!decoded) {
+        return Error("pack: entry '" + entry.key + "': " + decoded.error().message());
+    }
+    return decoded.value();
+}
+
+Result<PackFile> PackFile::parse(const u8* data, usize size) {
+    // Parse the index, then materialise every payload. A caller that wants to
+    // avoid reading the payload region uses parse_index() and read_payload()
+    // itself; this is the whole-file read the format always offered.
+    auto indexed = parse_index(data, size);
+    if (!indexed) {
+        return indexed.error();
+    }
+    PackFile pack = std::move(indexed.value());
+    for (PackEntry& entry : pack.entries_) {
+        auto payload = pack.read_payload(data, size, entry);
+        if (!payload) {
+            return payload.error();
+        }
+        entry.data = std::move(payload.value());
+    }
     return pack;
 }
 
