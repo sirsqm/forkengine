@@ -6,6 +6,9 @@
 #include "slice_state.h"
 #include "slice_systems.h"
 
+#include "fe/audio/AudioClip.h"
+#include "fe/audio/AudioDevice.h"
+#include "fe/audio/AudioSource.h"
 #include "fe/audio/AudioSystem.h"
 #include "fe/physics3d/Collider3D.h"
 #include "fe/physics3d/Physics3DSystem.h"
@@ -15,6 +18,7 @@
 #include "fe/platform/UserData.h"
 #include "fe/player/BuiltinBehaviours.h"
 #include "fe/resources/Font.h"
+#include "fe/runtime/ComponentRegistration.h"
 #include "fe/scene/Node.h"
 #include "fe/scene/Scene.h"
 #include "fe/scene3d/Camera3D.h"
@@ -31,7 +35,9 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -405,6 +411,176 @@ TEST_CASE("the pickup system collects nothing when the game is not playing") {
 
     CHECK(state.collected() == 0);
     CHECK(count_collectibles(scene) == collect3d::config::kCollectibleCount);
+}
+
+// ---------------------------------------------------------------------------
+// The audio: the pickup cue is positional and on the game's effects bus, and the
+// listener is wired so a cue is heard from the player's ear, not the world origin.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A short fully-loaded clip the AudioSystem can mix, so a test can read a peak.
+std::shared_ptr<audio::AudioClip> cue_clip(u32 sample_rate) {
+    return std::make_shared<audio::AudioClip>("pickup.wav", audio::AudioFormat{sample_rate, 1},
+                                              std::vector<f32>(sample_rate, 1.0f));
+}
+
+} // namespace
+
+TEST_CASE("the shipped pickup cue is positional and routed to the sfx bus") {
+    // The scene the player exports, not a copy: the cue must be spatial (so the
+    // mixer attenuates and pans it) and on the game's effects bus, which is the
+    // M11 audio row's "positional sources and a bus layout".
+    Scene scene;
+    collect3d::build_collect3d_scene(scene);
+    Node* audio_node = scene.find_node_by_name(collect3d::names::kAudio);
+    REQUIRE(audio_node != nullptr);
+    auto* source = audio_node->get_component<audio::AudioSource>();
+    REQUIRE(source != nullptr);
+    CHECK(source->spatial);
+    CHECK(source->min_distance == doctest::Approx(collect3d::config::kPickupMinDistance));
+    CHECK(source->max_distance == doctest::Approx(collect3d::config::kPickupMaxDistance));
+    CHECK(source->bus_name == collect3d::config::kSfxBusName);
+}
+
+TEST_CASE("the authored scene file carries the same positional pickup cue as the code") {
+    // The arena is built in code and also shipped as a document (see the
+    // round-trip test above), and the code fallback and the file must agree or the
+    // game sounds different depending on which path loaded. The file is hand-edited
+    // (a regeneration reshuffles node ids), so guard the audio fields against a
+    // future regeneration that drops them.
+    const std::filesystem::path path =
+        std::filesystem::path(FE_SOURCE_DIR) / "examples" / "collect3d" / "scenes" / "collect3d.fescene";
+    runtime::register_all_component_types();
+    std::ifstream file(path);
+    REQUIRE(file.good());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+
+    Scene scene;
+    REQUIRE_FALSE(serialization::scene::from_json(buffer.str(), scene));
+    Node* audio_node = scene.find_node_by_name(collect3d::names::kAudio);
+    REQUIRE(audio_node != nullptr);
+    auto* source = audio_node->get_component<audio::AudioSource>();
+    REQUIRE(source != nullptr);
+    CHECK(source->spatial);
+    CHECK(source->min_distance == doctest::Approx(collect3d::config::kPickupMinDistance));
+    CHECK(source->max_distance == doctest::Approx(collect3d::config::kPickupMaxDistance));
+    CHECK(source->bus_name == collect3d::config::kSfxBusName);
+}
+
+TEST_CASE("collecting a gem moves the cue to the gem before it plays") {
+    // The audio node is a single reusable one-shot: moving it is how each pickup
+    // is heard from its own spot.
+    Scene scene;
+    collect3d::build_collect3d_scene(scene);
+    SceneSchedule schedule;
+    collect3d::CollectState state;
+    static_cast<void>(collect3d::install_collect3d_systems(schedule, state, /*autoplay=*/false));
+
+    Node* player = scene.find_node_by_name(collect3d::names::kPlayer);
+    Node* gem = first_collectible(scene);
+    Node* audio_node = scene.find_node_by_name(collect3d::names::kAudio);
+    REQUIRE(player != nullptr);
+    REQUIRE(gem != nullptr);
+    REQUIRE(audio_node != nullptr);
+
+    const Vec3 gem_position = gem->transform().position;
+    player->transform().position = gem_position;
+    schedule.update(step(1.0f / 60.0f), scene);
+
+    CHECK(state.collected() == 1);
+    CHECK(audio_node->transform().position.x == doctest::Approx(gem_position.x));
+    CHECK(audio_node->transform().position.y == doctest::Approx(gem_position.y));
+    CHECK(audio_node->transform().position.z == doctest::Approx(gem_position.z));
+    // And the cue was actually triggered, so the placement is not inert.
+    auto* source = audio_node->get_component<audio::AudioSource>();
+    REQUIRE(source != nullptr);
+    CHECK(source->play_requested);
+}
+
+TEST_CASE("the audio wiring adds a listener and the sfx bus") {
+    // The wiring itself, not just the pieces: install_collect3d_audio must add an
+    // AudioListenerSystem (so a positional cue is heard from the camera) and
+    // create the effects bus.
+    Scene scene;
+    collect3d::build_collect3d_scene(scene);
+    SceneSchedule schedule;
+    collect3d::CollectState state;
+    static_cast<void>(collect3d::install_collect3d_systems(schedule, state, /*autoplay=*/false));
+
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 2));
+    REQUIRE_FALSE(device.start());
+    audio::AudioSystem audio(&device);
+    collect3d::install_collect3d_audio(schedule, audio);
+
+    CHECK(schedule.find("AudioListenerSystem") != nullptr);
+    CHECK(audio.bus_gain(collect3d::config::kSfxBusName) == doctest::Approx(collect3d::config::kSfxBusGain));
+}
+
+TEST_CASE("a collected gem is heard from the camera, not the world origin") {
+    // The end-to-end audio behaviour: the shipped scene, the shipped pickup, the
+    // shipped wiring. The listener the wiring added follows the camera, and the
+    // mixer attenuates the cue against that listener, so the same cue is louder
+    // when the camera is at the gem than when it is across the arena. The listener
+    // is what makes it read the camera rather than the origin.
+    Scene scene;
+    collect3d::build_collect3d_scene(scene);
+    SceneSchedule schedule;
+    collect3d::CollectState state;
+    static_cast<void>(collect3d::install_collect3d_systems(schedule, state, /*autoplay=*/false));
+
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 2));
+    REQUIRE_FALSE(device.start());
+    audio::AudioSystem audio(&device);
+    collect3d::install_collect3d_audio(schedule, audio);
+
+    // A real clip, so the mixer produces a measurable peak, and a real trigger.
+    Node* audio_node = scene.find_node_by_name(collect3d::names::kAudio);
+    REQUIRE(audio_node != nullptr);
+    auto* source = audio_node->get_component<audio::AudioSource>();
+    REQUIRE(source != nullptr);
+    source->clip = cue_clip(8000);
+    source->loop = true;
+
+    Node* camera_node = scene.find_node_by_name("Camera");
+    Node* player = scene.find_node_by_name(collect3d::names::kPlayer);
+    Node* gem = first_collectible(scene);
+    REQUIRE(camera_node != nullptr);
+    REQUIRE(player != nullptr);
+    REQUIRE(gem != nullptr);
+
+    // The gem far to the +X side, the player standing on it (so the pickup fires
+    // and moves the cue onto the gem), and the camera back at the origin, across
+    // the arena from the cue.
+    gem->transform().position = Vec3{8.0f, 0.0f, 0.0f};
+    player->transform().position = Vec3{8.0f, 0.0f, 0.0f};
+    camera_node->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    // The schedule runs the listener, which reads this camera and moves the ear;
+    // the pickup collects the gem and places the cue on it.
+    schedule.update(step(0.01f), scene);
+    REQUIRE(state.collected() == 1);
+    CHECK(audio_node->transform().position.x == doctest::Approx(8.0f));
+
+    // The listener followed the camera, which is the whole point of the wiring.
+    CHECK(audio.listener_position().x == doctest::Approx(0.0f));
+
+    // Mix and read the peak: the cue is 8 units from the ear, so it is attenuated.
+    audio.update(step(0.01f), scene);
+    const f32 peak_far = audio.last_peak();
+    CHECK(peak_far > 0.0f);
+
+    // Move the camera onto the gem: the same cue is now much louder, which can
+    // only happen if the attenuation tracks the camera rather than the origin.
+    camera_node->transform().position = Vec3{8.0f, 0.0f, 0.0f};
+    schedule.update(step(0.01f), scene);
+    CHECK(audio.listener_position().x == doctest::Approx(8.0f));
+    audio.update(step(0.01f), scene);
+    CHECK(audio.last_peak() > peak_far);
 }
 
 TEST_CASE("the goal system runs the clock and ends the round on expiry") {
