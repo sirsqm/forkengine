@@ -426,6 +426,118 @@ TEST_CASE("a 3D prismatic joint's linear motor drives the slide at its target sp
     CHECK(body->velocity.z == doctest::Approx(2.0f).epsilon(0.05));
 }
 
+TEST_CASE("a 3D prismatic joint's position motor row drives the slide towards its target") {
+    physics3d::JointBody3D a;
+    a.inv_mass = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_mass = 1.0f;
+
+    physics3d::PrismaticJoint3DParams params;
+    params.axis_a = Vec3{0.0f, 0.0f, 1.0f};
+
+    physics3d::JointMotor3D motor;
+    motor.max_impulse = 1000.0f;
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The slide is at 2.0 and the target 1.0, so the error (current minus target)
+    // is +1 and the bias +2. The row's impulse is negative, so B is driven back
+    // down the axis: the relative velocity becomes -2.
+    auto built = physics3d::build_prismatic_position_motor_row(a, b, params, motor, 2.0f);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    CHECK(b.velocity.z - a.velocity.z == doctest::Approx(-2.0f).epsilon(1e-3));
+}
+
+TEST_CASE("a 3D prismatic joint's position motor gives way under a load it cannot hold") {
+    physics3d::JointBody3D a;
+    a.inv_mass = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_mass = 1.0f;
+
+    physics3d::PrismaticJoint3DParams params;
+    params.axis_a = Vec3{0.0f, 0.0f, 1.0f};
+
+    physics3d::JointMotor3D motor;
+    motor.max_impulse = 0.25f; // a weak servo
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The unclamped impulse would drive +2; the clamp holds it to 0.25 on each
+    // unit-mass body, so the relative velocity changes by only 0.5.
+    auto built = physics3d::build_prismatic_position_motor_row(a, b, params, motor, 0.0f);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    CHECK(b.velocity.z - a.velocity.z == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a 3D prismatic joint's position motor holds the slide at its target") {
+    Scene scene;
+    Node* rail = scene.create_node("Rail");
+    Node* slider_node = add_bare_body(scene, Vec3{0.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = slider_node->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Lift");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = rail->id();
+    joint->body_b = slider_node->id();
+    joint->axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->motor_use_target = true;
+    joint->motor_target_translation = 1.0f; // hold the slider one unit up
+    joint->motor_stiffness = 50.0f;
+    joint->motor_damping = 0.5f;
+    joint->motor_max_force = 1000.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    // The servo holds the slider against gravity at its target translation. The
+    // slide axis is +z and gravity pulls -y, so the perpendicular rows hold y.
+    CHECK(slider_node->transform().position.z == doctest::Approx(1.0f).epsilon(0.02));
+}
+
+TEST_CASE("a 3D prismatic joint's position motor round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Lift");
+    auto* joint = host->add_component<physics3d::PrismaticJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_use_target = true;
+    joint->motor_target_translation = 2.5f;
+    joint->motor_stiffness = 40.0f;
+    joint->motor_damping = 0.8f;
+    joint->motor_max_force = 25.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Lift");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics3d::PrismaticJoint3D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_use_target);
+    CHECK(loaded_joint->motor_target_translation == doctest::Approx(2.5f));
+    CHECK(loaded_joint->motor_stiffness == doctest::Approx(40.0f));
+    CHECK(loaded_joint->motor_damping == doctest::Approx(0.8f));
+}
+
 TEST_CASE("a 3D prismatic joint's limits and motor round-trip through the serializer") {
     reflect::register_builtin_types();
     reflect::register_physics3d_types();
@@ -542,6 +654,130 @@ TEST_CASE("a motor on a 3D revolute joint spins a body about its pivot") {
     // The pin still holds the axle: the arm's centre stays one unit from the
     // pivot, wherever the spin has carried it around the circle.
     CHECK(arm->transform().position.length() == doctest::Approx(1.0f).epsilon(0.05));
+}
+
+TEST_CASE("a 3D revolute position motor row drives the swing towards its target") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 1.0f, 0.0f};
+    motor.max_impulse = 1000.0f;
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The swing is 2.0 and the target 1.0, so the error (current minus target) is
+    // +1 and the bias is +2. The row's impulse is negative about the axis, so the
+    // relative spin about y is driven to -2 -- the swing falls back.
+    auto built = physics3d::build_revolute_position_motor_row(a, b, motor, 2.0f);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    CHECK(b.angular_velocity.y - a.angular_velocity.y == doctest::Approx(-2.0f).epsilon(1e-3));
+    CHECK(b.angular_velocity.x - a.angular_velocity.x == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 3D revolute position motor's maximum torque caps the impulse it applies") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 1.0f, 0.0f};
+    motor.max_impulse = 0.25f;
+    motor.use_target = true;
+    motor.target_position = 1.0f;
+    motor.stiffness = 2.0f;
+
+    // The unclamped impulse would drive +2; the clamp holds it to 0.25 on each
+    // unit-inertia body, so the relative spin changes by only 0.5.
+    auto built = physics3d::build_revolute_position_motor_row(a, b, motor, 0.0f);
+    REQUIRE(built);
+    physics3d::ConstraintRow3D row = built.value();
+    physics3d::apply_row(row, a, b);
+
+    CHECK(b.angular_velocity.y - a.angular_velocity.y == doctest::Approx(0.5f).epsilon(1e-3));
+}
+
+TEST_CASE("a 3D revolute position motor with a degenerate axis is unsolvable") {
+    physics3d::JointBody3D a;
+    a.inv_inertia = 1.0f;
+    physics3d::JointBody3D b;
+    b.inv_inertia = 1.0f;
+    physics3d::JointMotor3D motor;
+    motor.axis = Vec3{0.0f, 0.0f, 0.0f};
+    motor.max_impulse = 10.0f;
+    motor.use_target = true;
+    motor.stiffness = 2.0f;
+    CHECK_FALSE(physics3d::build_revolute_position_motor_row(a, b, motor, 0.0f));
+}
+
+TEST_CASE("a 3D revolute position motor holds an arm at its target angle") {
+    Scene scene;
+    Node* pivot = scene.create_node("Pivot"); // a bare, immovable anchor
+    Node* arm = add_bare_body(scene, Vec3{1.0f, 0.0f, 0.0f}, 1.0f, 1.0f);
+    auto* body = arm->get_component<physics3d::RigidBody3D>();
+    body->affected_by_gravity = true;
+
+    Node* host = scene.create_node("Servo");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = pivot->id();
+    joint->body_b = arm->id();
+    joint->anchor_b = Vec3{-1.0f, 0.0f, 0.0f}; // the pivot end of the arm
+    joint->motor_axis = Vec3{0.0f, 0.0f, 1.0f};
+    joint->motor_use_target = true;
+    joint->motor_target_angle = 0.5f; // hold the arm 0.5 rad above horizontal
+    joint->motor_stiffness = 30.0f;
+    joint->motor_damping = 0.9f;
+    joint->motor_max_torque = 1000.0f;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 240);
+
+    CHECK(system.joint_count() == 1);
+    // The servo holds the arm against gravity at the target swing about +z: the
+    // arm's own orientation is the relative rotation, since the pivot is fixed.
+    const f32 swing = physics3d::rotation_vector(Quat::from_euler(arm->transform().rotation)).z;
+    CHECK(swing == doctest::Approx(0.5f).epsilon(0.05));
+}
+
+TEST_CASE("a 3D revolute position motor's target round-trips through the serializer") {
+    reflect::register_builtin_types();
+    reflect::register_physics3d_types();
+
+    Scene scene;
+    Node* a = scene.create_node("A");
+    Node* b = scene.create_node("B");
+
+    Node* host = scene.create_node("Servo");
+    auto* joint = host->add_component<physics3d::RevoluteJoint3D>();
+    joint->body_a = a->id();
+    joint->body_b = b->id();
+    joint->motor_use_target = true;
+    joint->motor_target_angle = 0.75f;
+    joint->motor_stiffness = 40.0f;
+    joint->motor_damping = 0.8f;
+    joint->motor_max_torque = 25.0f;
+
+    auto json = serialization::scene::to_json(scene);
+    REQUIRE(json);
+
+    Scene loaded;
+    REQUIRE_FALSE(serialization::scene::from_json(json.value(), loaded));
+
+    Node* loaded_host = loaded.find_node_by_name("Servo");
+    REQUIRE(loaded_host != nullptr);
+    const auto* loaded_joint = loaded_host->get_component<physics3d::RevoluteJoint3D>();
+    REQUIRE(loaded_joint != nullptr);
+    CHECK(loaded_joint->motor_use_target);
+    CHECK(loaded_joint->motor_target_angle == doctest::Approx(0.75f));
+    CHECK(loaded_joint->motor_stiffness == doctest::Approx(40.0f));
+    CHECK(loaded_joint->motor_damping == doctest::Approx(0.8f));
 }
 
 TEST_CASE("a 3D revolute joint's angular limits build a one-sided row at the bound it is past") {
