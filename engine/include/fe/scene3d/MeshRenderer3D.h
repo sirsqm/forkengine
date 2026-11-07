@@ -50,6 +50,14 @@ public:
     // base-colour texture when one is set).
     std::shared_ptr<Resource> texture;
 
+    // Whether this mesh casts a shadow. True by default, so every scene authored
+    // before the flag behaves exactly as it did. Clearing it drops the mesh from
+    // the shadow pass while it still draws: the case the flag exists for is a
+    // large ground plane, which fills the shadow map with a caster whose own
+    // shadow nobody sees (it only ever shadows itself, and the light comes from
+    // above it). A node that receives shadows keeps them -- only casting changes.
+    bool casts_shadow = true;
+
     // When true, `material` is the material the draw uses and `base_color` /
     // `specular` are ignored. When false, the imported mesh's material is used
     // if it has one, and `base_color` / `specular` otherwise.

@@ -1001,18 +1001,19 @@ void Renderer3D::build_batches(const std::vector<render::MeshInstance>& instance
 
         const BatchState state{surface.material.base_color, surface.specular, surface.shininess,
                                surface.material.emissive};
+        const bool casts_shadow = instance.renderer->casts_shadow;
 
         // Extend the open batch when this instance matches it in every per-batch
         // field and is contiguous in the instance stream, so the run is one draw.
         if (!frame_batches_.empty()) {
             Batch& open = frame_batches_.back();
             if (open.mesh == instance.mesh && open.base_texture == base_texture &&
-                open.emissive_texture == emissive_texture && open.state == state) {
+                open.emissive_texture == emissive_texture && open.state == state && open.casts_shadow == casts_shadow) {
                 open.instance_count += 1;
                 continue;
             }
         }
-        frame_batches_.push_back(Batch{instance.mesh, base_texture, emissive_texture, state,
+        frame_batches_.push_back(Batch{instance.mesh, base_texture, emissive_texture, state, casts_shadow,
                                        static_cast<u32>(frame_instance_data_.size() - 1), 1});
     }
 }
@@ -1226,7 +1227,13 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
         Vec3 scene_min{};
         Vec3 scene_max{};
         bool bounds_valid = false;
+        // Only casters shape the fit. A large non-casting ground plane would
+        // otherwise stretch the map over the whole world and starve the objects
+        // whose shadows are actually seen, which is the reason the flag exists.
         for (const render::MeshInstance& instance : instances) {
+            if (instance.renderer == nullptr || !instance.renderer->casts_shadow) {
+                continue;
+            }
             // The world AABB was computed once at extraction; the shadow fit
             // reads it rather than re-expanding the mesh's local bounds.
             const Vec3& world_min = instance.world_min;
@@ -1247,6 +1254,9 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
         // A skinned caster contributes its *posed* bounds, so a character whose
         // arm swings outside the static geometry still fits the shadow box.
         for (const render::SkinnedInstance& instance : frame_skinned_instances_) {
+            if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
+                continue;
+            }
             const Vec3& world_min = instance.world_min;
             const Vec3& world_max = instance.world_max;
             if (!bounds_valid) {
@@ -1275,6 +1285,9 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
             shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
 
             for (const Batch& batch : frame_batches_) {
+                if (!batch.casts_shadow) {
+                    continue; // Draws in the main pass, casts nothing.
+                }
                 auto gpu = acquire_mesh(device, *batch.mesh);
                 if (!gpu) {
                     continue;
@@ -1303,6 +1316,9 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
                     skinned_shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
                     for (usize i = 0; i < frame_skinned_instances_.size(); ++i) {
                         const render::SkinnedInstance& instance = frame_skinned_instances_[i];
+                        if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
+                            continue; // Draws in the main pass, casts nothing.
+                        }
                         auto gpu = acquire_skinned_mesh(device, *instance.mesh);
                         if (!gpu) {
                             continue;

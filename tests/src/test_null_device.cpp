@@ -264,6 +264,79 @@ TEST_CASE("the 3D renderer runs its shadow pass against a null device") {
     device.end_frame();
 }
 
+// `casts_shadow` (ADR-0014's deferred per-object flag) drops a mesh from the
+// shadow pass while it still draws. The case it exists for is a large ground
+// plane: a caster whose shadow nobody sees, which otherwise stretches the one
+// shadow map over the whole world.
+TEST_CASE("a non-casting mesh draws but does not cast a shadow") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE(renderer.initialize(device).ok() == true);
+
+    Scene scene;
+    Node* camera = scene.create_node("Camera");
+    camera->add_component<Camera3D>();
+
+    Node* light = scene.create_node("Sun");
+    light->add_component<DirectionalLight3D>();
+
+    // A ground plane that receives shadows but casts none.
+    Node* ground = scene.create_node("Ground");
+    auto* ground_renderer = ground->add_component<MeshRenderer3D>();
+    ground_renderer->mesh = Mesh::make_cube();
+    ground_renderer->casts_shadow = false;
+
+    // A prop that casts and draws as before.
+    Node* prop = scene.create_node("Prop");
+    auto* prop_renderer = prop->add_component<MeshRenderer3D>();
+    prop_renderer->mesh = Mesh::make_cube();
+
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto drawn = renderer.render(device, scene, 320, 200);
+    REQUIRE(drawn.ok());
+
+    // Both meshes are visible, so both draw. Only the prop casts: the ground is
+    // skipped in the shadow pass, and the two never merge into one batch because
+    // they disagree on the flag.
+    CHECK(drawn.value() == 2);
+    CHECK(renderer.last_draw_calls() == 2);
+    CHECK(renderer.last_shadow_casters() == 1);
+    device.end_frame();
+}
+
+TEST_CASE("a scene whose only mesh does not cast runs no shadow caster") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+
+    renderer3d::Renderer3D renderer;
+    REQUIRE(renderer.initialize(device).ok() == true);
+
+    Scene scene;
+    Node* camera = scene.create_node("Camera");
+    camera->add_component<Camera3D>();
+
+    Node* light = scene.create_node("Sun");
+    light->add_component<DirectionalLight3D>();
+
+    Node* ground = scene.create_node("Ground");
+    auto* mesh_renderer = ground->add_component<MeshRenderer3D>();
+    mesh_renderer->mesh = Mesh::make_cube();
+    mesh_renderer->casts_shadow = false;
+
+    device.begin_frame(320, 200, rhi::ClearColor{});
+    auto drawn = renderer.render(device, scene, 320, 200);
+    REQUIRE(drawn.ok());
+
+    CHECK(drawn.value() == 1);
+    CHECK(renderer.last_draw_calls() == 1);
+    CHECK(renderer.last_shadow_casters() == 0);
+    device.end_frame();
+}
+
 // `render_frame` drives the 3D frame through a `render::RenderGraph` (ADR-0100,
 // docs/SHIPPING_QUEUE.md `renderer3d-graph-passes`). The graph runs each pass
 // inside a profiler scope named `pass/<name>`, so a profiler frame's samples

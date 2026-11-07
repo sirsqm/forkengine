@@ -60,6 +60,8 @@ void register_mesh_renderer3d(Registry& registry) {
                                                                       {"r", "g", "b", "a"}));
     desc.properties.push_back(
         make_scalar<MeshRenderer3D, f32>("specular", &MeshRenderer3D::specular, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_scalar<MeshRenderer3D, bool>("casts_shadow", &MeshRenderer3D::casts_shadow, ValueKind::Bool, &defaults));
     desc.properties.push_back(make_resource_ref<MeshRenderer3D, std::shared_ptr<Resource>>(
         "mesh", &MeshRenderer3D::mesh, "Mesh",
         [](const std::shared_ptr<Resource>& mesh) -> std::string {

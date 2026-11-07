@@ -47,6 +47,12 @@ public:
     // `MeshRenderer3D::mesh`.
     std::shared_ptr<Resource> mesh;
 
+    // Whether this character casts a shadow. True by default, matching
+    // `MeshRenderer3D::casts_shadow`; clearing it drops the posed depth from the
+    // shadow pass while the character still draws. Kept beside `surface` rather
+    // than inside it so the flag reads the same on both renderer components.
+    bool casts_shadow = true;
+
     // The authored surface. Held in a `MeshRenderer3D` so the precedence rule
     // (component material when overridden, else the imported mesh's, else the
     // authored fields) and the Blinn-Phong parameters live in one place and are

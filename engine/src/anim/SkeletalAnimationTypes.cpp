@@ -355,6 +355,11 @@ void register_skinned_mesh_renderer(Registry& registry) {
         },
         [](std::shared_ptr<Resource>& slot, std::shared_ptr<Resource> loaded) { slot = std::move(loaded); }));
 
+    // Whether the character casts a shadow, exposed like `MeshRenderer3D`'s flag
+    // so the inspector and serializer treat the two renderer components alike.
+    desc.properties.push_back(make_scalar<anim::SkinnedMeshRenderer3D, bool>(
+        "casts_shadow", &anim::SkinnedMeshRenderer3D::casts_shadow, ValueKind::Bool, &defaults));
+
     // The surface, exposed exactly as MeshRenderer3D exposes its own: the
     // override flag, the authored fields, and the material group. The accessors
     // reach through `surface`, so the wire form is the same and the inspector

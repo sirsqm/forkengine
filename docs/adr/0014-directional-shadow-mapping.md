@@ -107,10 +107,13 @@ with a 3×3 PCF filter in the main pass.**
   Rejected: it needs the frustum corners and a stable fit, and it makes the map
   contents depend on where the camera looks, which causes shimmering as the
   camera moves. The scene AABB is stable and simpler.
-- **A per-object `casts_shadow` / `receives_shadow` flag.** Deferred: it is the
-  first thing a user will want for a large ground plane, but it adds component
-  surface and serialization for a knob that has no second use yet. The renderer
-  treats every mesh uniformly until a concrete need appears.
+- **A per-object `casts_shadow` / `receives_shadow` flag.** The `casts_shadow`
+  half landed in [ADR-0150](0150-per-object-shadow-casting.md): a `MeshRenderer3D`
+  (and a `SkinnedMeshRenderer3D`) can stop casting while it still draws, and a
+  non-caster is left out of the shadow fit so a large ground plane no longer
+  stretches the one map. A `receives_shadow` flag is still deferred: the flag
+  has no use without a second material path, and receiving is already correct
+  for every mesh that is lit.
 - **Point and spot shadow cubes/cones in the same change.** Rejected: each needs
   its own map layout (a cube map, a single frustum) and its own fitting. Doing
   directional shadows first, well, is worth more than three partial shadow types.

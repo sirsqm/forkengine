@@ -635,6 +635,32 @@ TEST_CASE("a 3D mesh renderer's material survives a round trip") {
     CHECK(loaded->material.double_sided);
 }
 
+TEST_CASE("a mesh renderer's casts_shadow flag survives a round trip") {
+    // The flag is a plain bool on the component, so this is the ordinary scalar
+    // path; it is asserted because a false default written by a hand-edited
+    // scene must reach the renderer, and because an old document with no key
+    // must keep the true default rather than silently stop casting.
+    reflect::register_scene3d_types();
+
+    Scene original;
+    Node* casting = original.create_node("Caster");
+    casting->add_component<MeshRenderer3D>()->casts_shadow = true;
+    Node* plane = original.create_node("Ground");
+    plane->add_component<MeshRenderer3D>()->casts_shadow = false;
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+    const auto* loaded_caster = restored.find_node_by_name("Caster")->get_component<MeshRenderer3D>();
+    const auto* loaded_plane = restored.find_node_by_name("Ground")->get_component<MeshRenderer3D>();
+    REQUIRE(loaded_caster != nullptr);
+    REQUIRE(loaded_plane != nullptr);
+    CHECK(loaded_caster->casts_shadow);
+    CHECK_FALSE(loaded_plane->casts_shadow);
+}
+
 TEST_CASE("a scene without a material keeps the override flag off") {
     // An older document has no `material` key. The reader must leave the
     // component's defaults in place rather than zeroing the material, so a scene

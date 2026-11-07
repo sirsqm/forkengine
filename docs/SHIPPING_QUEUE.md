@@ -902,6 +902,34 @@ benefit from pass ordering or culling.
 `run()`, with a test proving the observed order is shadow, main, post and that
 the draw counts are unchanged from the hand-ordered path.
 
+### `per-object-shadow-casting`
+
+The shadow-map row (ADR-0014) leaves a per-object shadow flag open, recorded
+there as "the first thing a user will want for a large ground plane": the
+single-cascade map covers the whole scene, so a large floor plane stretches it
+over the world and starves the objects whose shadows are actually seen, and the
+floor's own shadow is never visible because the sun is above it.
+
+**Done when** a mesh can stop casting while it still draws, a non-caster is left
+out of the shadow-map fit as well as the draw, the flag defaults to casting so
+every existing scene is unchanged, and a test proves a non-casting mesh draws
+without becoming a shadow caster.
+
+Landed as a `casts_shadow` bool on `MeshRenderer3D` and
+`SkinnedMeshRenderer3D`, default true, reflected and serialized beside
+`specular` ([ADR-0150](adr/0150-per-object-shadow-casting.md)). A non-caster is
+skipped when the shadow pass builds the light's orthographic fit, so a large
+ground plane no longer widens the map, and it is skipped in both shadow draws
+(the static batch loop and the per-instance skinned loop). The flag is part of
+the batch merge key, so a caster and a non-caster of one mesh never share a
+batch and the pass can drop a whole batch; the main pass draws every batch, and
+receiving is unchanged, so a non-casting floor still receives the shadows the
+props cast onto it. Tests prove a non-casting mesh draws but adds no caster, a
+scene whose only mesh does not cast runs zero casters, and the flag round-trips
+through serialization (a false reaches the renderer; an old document with no key
+keeps the true default). A `receives_shadow` flag stays deferred, as it has
+nothing to switch off until a second material path exists.
+
 ### `render-graph-target-resize`
 
 The render-target ownership row (ADR-0100) leaves resizing open: an owned target
