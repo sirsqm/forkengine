@@ -29,6 +29,9 @@
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
 #include "fe/scene/TextLabel.h"
+#include "fe/ui/UiElement.h"
+#include "fe/ui/UiLayout.h"
+#include "fe/ui/UiTypes.h"
 
 #include <array>
 #include <cmath>
@@ -590,4 +593,101 @@ TEST_CASE("a texture loaded through a warm decode cache renders identically to a
     CHECK(warm.g == cold.g);
     CHECK(warm.b == cold.b);
     CHECK(warm.r == priming.r);
+}
+
+// ---------------------------------------------------------------------------
+// UI clipping: pixels, not just submitted state
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Renders the UI pass into a `width`x`height` framebuffer and reads one pixel
+// back, addressed in top-left coordinates (the space the UI layout uses). The
+// device's read_pixels is bottom-left, so the flip happens here, once, and the
+// test can talk about the same coordinate the layout does.
+[[nodiscard]] Pixel render_ui_and_sample(GraphicsContext& context, const Scene& scene, u32 width, u32 height, u32 x,
+                                         u32 y) {
+    context.window->poll_events();
+    context.window->swap_buffers();
+
+    context.device->begin_frame(width, height, rhi::ClearColor{0.0f, 0.0f, 0.0f, 1.0f});
+    renderer2d::Renderer2D renderer;
+    REQUIRE_FALSE(renderer.initialize(*context.device));
+    auto result = renderer.render_ui(*context.device, scene, width, height);
+    REQUIRE(result);
+
+    std::vector<u8> pixels(4, 0);
+    const u32 gl_y = height - 1U - y;
+    context.device->read_pixels(x, gl_y, 1, 1, std::span<u8>(pixels.data(), pixels.size()));
+    context.device->end_frame();
+    return Pixel{pixels[0], pixels[1], pixels[2], pixels[3]};
+}
+
+// A canvas sized to the viewport (so one design pixel is one viewport pixel) with
+// one child fill that spans the whole 64x64 frame, anchored so that it starts
+// below the clipping panel's top edge.
+void build_overflow_ui(Scene& scene, bool clip) {
+    Node* canvas_node = scene.create_node("Canvas");
+    auto* canvas = canvas_node->add_component<ui::UiCanvas>();
+    canvas->design_width = 64.0f;
+    canvas->design_height = 64.0f;
+
+    Node* panel_node = canvas_node->create_child<Node>("Panel");
+    auto* panel = panel_node->add_component<ui::UiElement>();
+    panel->width = ui::UiSize::fixed(64.0f);
+    panel->height = ui::UiSize::fixed(32.0f);
+    panel->anchor = ui::UiAnchor::TopLeft;
+    panel->clip = clip;
+
+    // The child starts 16px down and runs past the bottom of the frame, so it is
+    // partly inside the 32px-tall panel and partly outside it.
+    Node* child_node = panel_node->create_child<Node>("Child");
+    auto* child = child_node->add_component<ui::UiElement>();
+    child->width = ui::UiSize::fixed(64.0f);
+    child->height = ui::UiSize::fixed(64.0f);
+    child->anchor = ui::UiAnchor::TopLeft;
+    child->offset = Vec2{0.0f, 16.0f};
+    child->fill = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // Red.
+}
+
+} // namespace
+
+TEST_CASE("a clipping panel scissor-cuts a child that overflows it") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    build_overflow_ui(scene, /*clip=*/true);
+
+    // Inside the panel: the child paints red.
+    const Pixel inside = render_ui_and_sample(context, scene, 64, 64, 32, 16);
+    CHECK(inside.r > 200);
+    CHECK(inside.g < 60);
+
+    // Below the panel but still inside the child's own box: the scissor cut it, so
+    // the pixel is the clear colour, not red.
+    const Pixel below = render_ui_and_sample(context, scene, 64, 64, 32, 48);
+    CHECK(below.r < 60);
+    CHECK(below.g < 60);
+}
+
+TEST_CASE("without clipping the same overflowing child paints the whole frame") {
+    GraphicsContext context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // The control for the scissor test: the identical tree with `clip` off paints
+    // red where the clipped version was cut, so the earlier check is measuring the
+    // clip and not something else about the draw.
+    Scene scene;
+    build_overflow_ui(scene, /*clip=*/false);
+
+    const Pixel below = render_ui_and_sample(context, scene, 64, 64, 32, 48);
+    CHECK(below.r > 200);
+    CHECK(below.g < 60);
 }

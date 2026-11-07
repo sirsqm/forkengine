@@ -5,6 +5,7 @@
 #include "fe/core/Frustum.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
+#include "fe/ui/UiTypes.h"
 
 #include <span>
 #include <vector>
@@ -103,6 +104,16 @@ struct SpriteInstance {
     Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
     // Render order within the 2D pass. Higher values draw on top.
     i32 layer = 0;
+
+    // The clip rectangle this instance draws inside, in viewport pixels
+    // (top-left origin, +Y down), when a UI ancestor clipped it. Meaningful only
+    // when `has_clip` is set; a world instance always leaves both at their
+    // defaults, so the world pass never scissors. Carried per instance rather
+    // than as a pass parameter because a clipped panel and an unclipped element
+    // are in the same draw order, so the scissor changes between instances and
+    // the batching walk has to see it to split there.
+    ui::Rect clip{};
+    bool has_clip = false;
 
     // Exact field equality. Extraction is a pure function of the scene, so a
     // parallel extraction must reproduce a serial one bit for bit; a test

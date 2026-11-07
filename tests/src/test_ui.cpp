@@ -617,3 +617,118 @@ TEST_CASE("the UI components are registered for serialization") {
     CHECK(anchor->setter(&instance, static_cast<i64>(ui::UiAnchor::BottomRight)) == true);
     CHECK(instance.anchor == ui::UiAnchor::BottomRight);
 }
+
+// ---------------------------------------------------------------------------
+// Clipping through extraction and the renderer pass
+// ---------------------------------------------------------------------------
+
+TEST_CASE("extraction stamps a clipped element's instances with its clip rectangle") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+    panel->fill = Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+
+    // A child that straddles the panel's bottom edge: kept whole, with the panel's
+    // box as its clip.
+    Node* child_node = add_element(panel_node, "Child", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{0.0f, 80.0f});
+    child_node->get_component<ui::UiElement>()->fill = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_ui(scene, 1280, 720, instances);
+    REQUIRE(instances.size() == 2);
+
+    // The panel's own fill is unclipped.
+    CHECK_FALSE(instances[0].has_clip);
+    // The child's fill carries the panel's box.
+    CHECK(instances[1].has_clip);
+    CHECK(instances[1].clip.position.x == doctest::Approx(0.0f));
+    CHECK(instances[1].clip.position.y == doctest::Approx(0.0f));
+    CHECK(instances[1].clip.size.x == doctest::Approx(200.0f));
+    CHECK(instances[1].clip.size.y == doctest::Approx(100.0f));
+}
+
+TEST_CASE("a world sprite instance is never clipped") {
+    rhi::Device& device = null_device();
+    Scene scene;
+    Node* node = scene.create_node("Sprite");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->size = Vec2{10.0f, 10.0f};
+    sprite->texture = make_texture(device);
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_sprites(scene, instances);
+    REQUIRE(instances.size() == 1);
+    CHECK_FALSE(instances[0].has_clip);
+}
+
+TEST_CASE("a clip change splits a batch even when the texture does not") {
+    rhi::Device& device = null_device();
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+
+    // An unclipped fill.
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f));
+    panel_node->get_component<ui::UiElement>()->fill = Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+
+    // A fill inside a clipping panel. Both fills use the same (null -> white)
+    // texture, so without the clip in the batch key they would merge into one draw
+    // and the second would inherit the first's scissor state.
+    Node* clip_node = add_element(canvas_node, "Clip", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(200.0f),
+                                  ui::UiAnchor::TopLeft, Vec2{300.0f, 0.0f});
+    clip_node->get_component<ui::UiElement>()->clip = true;
+    Node* inner_node = add_element(clip_node, "Inner", ui::UiSize::fixed(100.0f), ui::UiSize::fixed(100.0f));
+    inner_node->get_component<ui::UiElement>()->fill = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    const auto drawn = renderer.render_ui(device, scene, 1280, 720);
+    REQUIRE(drawn.ok());
+    CHECK(drawn.value() == 2);
+    CHECK(renderer.last_draw_calls() == 2);
+}
+
+TEST_CASE("two clipped elements sharing a clip batch together") {
+    rhi::Device& device = null_device();
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(300.0f), ui::UiSize::fixed(300.0f));
+    panel_node->get_component<ui::UiElement>()->clip = true;
+
+    // Two children of the same clipping panel share its clip rectangle, so their
+    // fills batch into one draw.
+    Node* a_node = add_element(panel_node, "A", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f));
+    a_node->get_component<ui::UiElement>()->fill = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
+    Node* b_node = add_element(panel_node, "B", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(50.0f),
+                               ui::UiAnchor::TopLeft, Vec2{100.0f, 0.0f});
+    b_node->get_component<ui::UiElement>()->fill = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+
+    const auto drawn = renderer.render_ui(device, scene, 1280, 720);
+    REQUIRE(drawn.ok());
+    CHECK(drawn.value() == 2);
+    CHECK(renderer.last_draw_calls() == 1);
+}
+
+TEST_CASE("the UI pass leaves no scissor enabled after it draws") {
+    rhi::Device& device = null_device();
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+    panel->fill = Vec4{1.0f, 1.0f, 1.0f, 1.0f};
+
+    const auto drawn = renderer.render_ui(device, scene, 1280, 720);
+    REQUIRE(drawn.ok());
+    CHECK(drawn.value() == 1);
+}

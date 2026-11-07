@@ -713,6 +713,12 @@ void append_ui_element(const ui::UiResolved& resolved, Sink&& sink) noexcept {
     const ui::UiCanvas& canvas = *resolved.canvas;
     const ui::Rect& box = resolved.rect;
 
+    // The clip every instance of this element carries. The layout culled the
+    // wholly-outside ones, so a partially-visible element keeps its whole box here
+    // and the draw step scissors it to `resolved.clip`.
+    const ui::Rect clip = resolved.clip;
+    const bool has_clip = resolved.has_clip;
+
     // The box's centre and size, in viewport pixels, as the world walks express
     // them. The UI pass draws with a top-left-origin, +Y-down projection, so a
     // world matrix here is a plain pixel translation and the instance's `size` is
@@ -729,6 +735,8 @@ void append_ui_element(const ui::UiResolved& resolved, Sink&& sink) noexcept {
         instance.uv = Vec4{0.0f, 0.0f, 1.0f, 1.0f};
         instance.color = element.fill;
         instance.layer = resolved.layer;
+        instance.clip = clip;
+        instance.has_clip = has_clip;
         sink(instance);
     }
 
@@ -743,6 +751,8 @@ void append_ui_element(const ui::UiResolved& resolved, Sink&& sink) noexcept {
             instance.uv = element.texture_uv;
             instance.color = element.texture_color;
             instance.layer = resolved.layer;
+            instance.clip = clip;
+            instance.has_clip = has_clip;
             sink(instance);
         }
     }
@@ -811,6 +821,8 @@ void append_ui_element(const ui::UiResolved& resolved, Sink&& sink) noexcept {
             instance.uv = glyph->uv;
             instance.color = color;
             instance.layer = layer;
+            instance.clip = clip;
+            instance.has_clip = has_clip;
             sink(instance);
         }
         // The pen advances whether or not the glyph drew, so a missing glyph is a

@@ -351,11 +351,36 @@ Result<usize> Renderer2D::submit(rhi::Device& device, std::span<render::SpriteIn
     instances_.clear();
     batches_.clear();
 
+    // Converts an instance's clip rectangle (viewport pixels, top-left origin) to
+    // a device scissor, or a disabled one for a world instance. Kept here so the
+    // batch split and the device call agree on what a clip means.
+    const auto scissor_of = [](const render::SpriteInstance& instance) noexcept {
+        rhi::ScissorRect scissor;
+        if (instance.has_clip) {
+            scissor.enabled = true;
+            scissor.x = static_cast<u32>(instance.clip.position.x < 0.0f ? 0.0f : instance.clip.position.x);
+            scissor.y = static_cast<u32>(instance.clip.position.y < 0.0f ? 0.0f : instance.clip.position.y);
+            scissor.width = static_cast<u32>(instance.clip.size.x < 0.0f ? 0.0f : instance.clip.size.x);
+            scissor.height = static_cast<u32>(instance.clip.size.y < 0.0f ? 0.0f : instance.clip.size.y);
+        }
+        return scissor;
+    };
+
+    // Compares the scissor two instances ask for, so a clip change splits a batch
+    // even when the texture does not.
+    const auto same_scissor = [](const rhi::ScissorRect& a, const rhi::ScissorRect& b) noexcept {
+        if (a.enabled != b.enabled) {
+            return false;
+        }
+        return !a.enabled || (a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height);
+    };
+
     rhi::Texture* current_texture = nullptr;
     for (const render::SpriteInstance& instance : instances) {
         rhi::Texture* texture = instance.texture != nullptr ? instance.texture : white_texture_.get();
-        if (batches_.empty() || current_texture != texture) {
-            batches_.push_back(Batch{texture, static_cast<u32>(instances_.size()), 0});
+        const rhi::ScissorRect scissor = scissor_of(instance);
+        if (batches_.empty() || current_texture != texture || !same_scissor(batches_.back().scissor, scissor)) {
+            batches_.push_back(Batch{texture, static_cast<u32>(instances_.size()), 0, scissor});
             current_texture = texture;
         }
         append_instance(instance);
@@ -390,12 +415,21 @@ Result<usize> Renderer2D::submit(rhi::Device& device, std::span<render::SpriteIn
 
     for (const Batch& batch : batches_) {
         device.bind_instance_buffer(*instance_buffer_, batch.instance_offset * static_cast<u32>(sizeof(Instance)));
+        // The scissor is per batch: a UI batch inside a clipping panel confines its
+        // quads to the panel, and a world or unclipped batch disables it. Setting it
+        // unconditionally here (rather than only for UI) is what keeps a clipped
+        // batch from leaving the scissor on for the next pass.
+        device.set_scissor(batch.scissor);
         device.bind_texture(0, *batch.texture);
         // Every batch shares the same six indices; only the instance range and
         // the texture differ.
         device.draw_indexed_instanced(static_cast<u32>(kQuadIndices.size()), batch.instance_count);
         ++last_draw_calls_;
     }
+
+    // A pass that ends on a clipped batch must not leave the scissor on for the
+    // next pass, which knows nothing about it.
+    device.set_scissor(rhi::ScissorRect{});
 
     return quad_count;
 }

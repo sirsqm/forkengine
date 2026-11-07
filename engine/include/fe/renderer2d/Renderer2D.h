@@ -212,11 +212,16 @@ public:
     [[nodiscard]] static Camera2D* find_active_camera(Scene& scene);
 
 private:
-    // One contiguous run of instances that share a texture.
+    // One contiguous run of instances that share a texture and a clip rectangle.
     struct Batch {
         rhi::Texture* texture = nullptr;
         u32 instance_offset = 0; // First instance of the run, in the instance buffer.
         u32 instance_count = 0;
+        // The scissor this run draws inside. Two instances of the same texture
+        // but different clips are separate batches, because the scissor is device
+        // state and has to be set between them. A world batch leaves this
+        // disabled.
+        rhi::ScissorRect scissor{};
     };
 
     void ensure_capacity(rhi::Device& device, u32 instance_count);
