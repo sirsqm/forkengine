@@ -27,6 +27,22 @@ namespace fs {
 // returned verbatim).
 [[nodiscard]] Result<std::string> read_text_file(std::string_view path);
 
+// The size in bytes of the file at `path`, or 0 when it does not exist, is not
+// a regular file, or its size cannot be read. This is the one place a file's
+// length is read, so a caller that must know how much a container holds (a pack
+// reader validating its spans) asks here rather than calling a native API.
+[[nodiscard]] u64 file_size(std::string_view path);
+
+// Reads exactly `size` bytes starting at byte `offset` from the file at `path`.
+// Returns an Error when the file cannot be opened, the offset is past its end,
+// or fewer than `size` bytes are available from `offset`.
+//
+// This is the primitive a container reader uses to pull one region of a file
+// without reading the rest of it: a pack reads its header and index with it and
+// leaves the payload region on disk until an entry is asked for (see
+// PackSource::open). A whole-file read is `read_binary_file`.
+[[nodiscard]] Result<std::vector<u8>> read_binary_file_range(std::string_view path, u64 offset, u64 size);
+
 // Writes the buffer, creating parent directories as needed. Overwrites any
 // existing file. Returns an Error on failure.
 [[nodiscard]] Error write_binary_file(std::string_view path, const void* data, usize size);

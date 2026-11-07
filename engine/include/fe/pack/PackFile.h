@@ -99,6 +99,23 @@ public:
     static constexpr i32 kFormatVersion = 2;
     static constexpr i32 kFormatVersionRaw = 1;
 
+    // The fixed header size: magic, format_version, entry_count, index_offset,
+    // payload_offset. A streaming reader reads exactly this many bytes first to
+    // learn where the index ends.
+    static constexpr usize kHeaderSize = 4 + 4 + 4 + 8 + 8;
+
+    // The container's fixed header, as read by parse_header(). Enough to know
+    // where the index lives and how much of the file it spans, without reading
+    // the index or any payload.
+    struct Header {
+        i32 format_version = 0;
+        u32 entry_count = 0;
+        u64 index_offset = 0;
+        // The offset the payload region starts at, which is also the end of the
+        // index: reading [0, payload_offset) yields the header and the index.
+        u64 payload_offset = 0;
+    };
+
     PackFile() = default;
 
     // Appends an entry. `data` is moved in. The key must be unique; a duplicate
@@ -133,6 +150,15 @@ public:
     // decode. Never returns a partial pack.
     [[nodiscard]] static Result<PackFile> parse(const u8* data, usize size);
 
+    // Parses only the container's fixed header. `data` must hold at least
+    // kHeaderSize bytes. This is what a streaming reader calls first, to learn
+    // how much of the file the index spans before reading it.
+    //
+    // `container_size` is the true size of the whole container, used to validate
+    // the header's offsets; the payload region need not be present in `data`.
+    // Zero means "the buffer is the whole container".
+    [[nodiscard]] static Result<Header> parse_header(const u8* data, usize size, u64 container_size = 0);
+
     // Parses only the index of the container bytes: every entry's key, scheme,
     // guid, codec, on-disk location and original length, but not its payload
     // bytes. `data` is left empty on each entry and `read_payload` materialises
@@ -140,7 +166,14 @@ public:
     // region (ADR-0030's streaming refinement). The validation is exactly
     // parse()'s, so a malformed pack is rejected here too; the only difference is
     // that a compressed payload is not decoded until it is asked for.
-    [[nodiscard]] static Result<PackFile> parse_index(const u8* data, usize size);
+    //
+    // `data`/`size` must cover the header and the whole index, i.e. the first
+    // `Header::payload_offset` bytes of the container. `container_size` is the
+    // true size of the whole container, used only to validate each entry's
+    // payload span; the payload bytes need not be present. Zero means "the
+    // buffer is the whole container" (the whole-file case), which is what a
+    // caller holding the complete bytes passes.
+    [[nodiscard]] static Result<PackFile> parse_index(const u8* data, usize size, u64 container_size = 0);
 
     // Materialises one entry's payload from the container bytes `data`/`size`
     // (the same bytes the index was parsed from), decompressing transparently
@@ -149,6 +182,15 @@ public:
     // entry must come from parse_index()/parse() of these bytes; a span that does
     // not fit is an Error, not a read of garbage.
     [[nodiscard]] Result<std::vector<u8>> read_payload(const u8* data, usize size, const PackEntry& entry) const;
+
+    // Decodes one entry's payload from bytes already located at the entry's
+    // payload span, decompressing when the entry names a codec. `payload_size`
+    // must equal the entry's on-disk length. This is the half of read_payload()
+    // that does not need the whole container, so a reader that pulled a single
+    // range from disk (or a network response) decodes it without materialising
+    // the rest of the pack.
+    [[nodiscard]] static Result<std::vector<u8>> decode_payload(const u8* payload, usize payload_size,
+                                                                const PackEntry& entry);
 
 private:
     std::vector<PackEntry> entries_;

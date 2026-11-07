@@ -11,9 +11,6 @@
 namespace fe::pack {
 namespace {
 
-// The fixed header size: magic, format_version, entry_count, index_offset,
-// payload_offset.
-constexpr usize kHeaderSize = 4 + 4 + 4 + 8 + 8;
 // One index entry's fixed part, format version 1: key length, scheme length,
 // guid, offset, length.
 constexpr usize kEntryFixedSizeV1 = 4 + 4 + 16 + 8 + 8;
@@ -246,7 +243,7 @@ Result<std::vector<u8>> PackFile::write(PackCompression compression) const {
     return out;
 }
 
-Result<PackFile> PackFile::parse_index(const u8* data, usize size) {
+Result<PackFile::Header> PackFile::parse_header(const u8* data, usize size, u64 container_size) {
     if (data == nullptr || size < kHeaderSize) {
         return Error("pack: buffer is smaller than the header");
     }
@@ -274,13 +271,49 @@ Result<PackFile> PackFile::parse_index(const u8* data, usize size) {
     if (version < static_cast<u32>(kFormatVersionRaw)) {
         return Error("pack: format version " + std::to_string(version) + " is not a known pack version");
     }
-    const bool has_codec = version >= static_cast<u32>(kFormatVersion);
-    if (index_offset < kHeaderSize || index_offset > size || payload_offset > size || payload_offset < index_offset) {
+    // The header's offsets are validated against the true container size, which
+    // the caller supplies when the buffer is only a prefix of the file. A
+    // whole-file caller passes zero, and the buffer size is then the truth.
+    const u64 total_size = container_size != 0 ? container_size : static_cast<u64>(size);
+    if (index_offset < kHeaderSize || index_offset > total_size || payload_offset > total_size ||
+        payload_offset < index_offset) {
         return Error("pack: header offsets are out of range");
+    }
+
+    Header header;
+    header.format_version = static_cast<i32>(version);
+    header.entry_count = entry_count;
+    header.index_offset = index_offset;
+    header.payload_offset = payload_offset;
+    return header;
+}
+
+Result<PackFile> PackFile::parse_index(const u8* data, usize size, u64 container_size) {
+    // The header carries the version and the index span; validating it here
+    // means a malformed header is rejected before the index is walked, and it
+    // keeps this entry point identical to the whole-file parse.
+    auto header = parse_header(data, size, container_size);
+    if (!header) {
+        return header.error();
+    }
+    const bool has_codec = header.value().format_version >= kFormatVersion;
+    const u64 index_offset = header.value().index_offset;
+    const u64 payload_offset = header.value().payload_offset;
+    const u32 entry_count = header.value().entry_count;
+
+    // A buffer that holds the header and the index but not the payload region
+    // still has to validate each entry's span against the *true* container size,
+    // which the caller passes when the buffer is a prefix. Zero means the buffer
+    // is the whole container.
+    const u64 total_size = container_size != 0 ? container_size : static_cast<u64>(size);
+    if (payload_offset > total_size) {
+        return Error("pack: payload region is out of range");
     }
 
     PackFile pack;
     pack.entries_.reserve(entry_count);
+
+    Reader reader(data, size);
     if (!reader.seek(static_cast<usize>(index_offset))) {
         return Error("pack: index offset is out of range");
     }
@@ -337,10 +370,12 @@ Result<PackFile> PackFile::parse_index(const u8* data, usize size) {
             codec = static_cast<PackCodec>(raw_codec);
         }
 
-        // The payload span must lie within the buffer and within the payload
+        // The payload span must lie within the container and within the payload
         // region, so a corrupt index cannot make the reader hand out bytes from
-        // the header or the index itself.
-        if (offset < payload_offset || length > size || offset > size || length > size - static_cast<usize>(offset)) {
+        // the header or the index itself. It is validated against the true
+        // container size, not the (possibly index-only) buffer, so a streaming
+        // reader that has not read the payloads still rejects a bad span.
+        if (offset < payload_offset || length > total_size || offset > total_size || length > total_size - offset) {
             return Error("pack: entry '" + entry.key + "' has an out-of-range payload");
         }
 
@@ -354,24 +389,26 @@ Result<PackFile> PackFile::parse_index(const u8* data, usize size) {
     return pack;
 }
 
+Result<std::vector<u8>> PackFile::decode_payload(const u8* payload, usize payload_size, const PackEntry& entry) {
+    if (entry.codec == PackCodec::None) {
+        return std::vector<u8>(payload, payload + payload_size);
+    }
+    // Decompress transparently, so a caller reads the bytes the same way for a
+    // stored and a compressed entry. The reader rejects a stream that does not
+    // decode to the length the index promised.
+    auto decoded = decompress(payload, payload_size, static_cast<usize>(entry.uncompressed_size));
+    if (!decoded) {
+        return Error("pack: entry '" + entry.key + "': " + decoded.error().message());
+    }
+    return decoded.value();
+}
+
 Result<std::vector<u8>> PackFile::read_payload(const u8* data, usize size, const PackEntry& entry) const {
     if (data == nullptr || entry.payload_length > size || entry.payload_offset > size ||
         entry.payload_length > size - static_cast<usize>(entry.payload_offset)) {
         return Error("pack: entry '" + entry.key + "' has an out-of-range payload");
     }
-    const u8* payload = data + entry.payload_offset;
-    if (entry.codec == PackCodec::None) {
-        return std::vector<u8>(payload, payload + entry.payload_length);
-    }
-    // Decompress transparently, so a caller reads the bytes the same way for a
-    // stored and a compressed entry. The reader rejects a stream that does not
-    // decode to the length the index promised.
-    auto decoded =
-        decompress(payload, static_cast<usize>(entry.payload_length), static_cast<usize>(entry.uncompressed_size));
-    if (!decoded) {
-        return Error("pack: entry '" + entry.key + "': " + decoded.error().message());
-    }
-    return decoded.value();
+    return decode_payload(data + entry.payload_offset, static_cast<usize>(entry.payload_length), entry);
 }
 
 Result<PackFile> PackFile::parse(const u8* data, usize size) {

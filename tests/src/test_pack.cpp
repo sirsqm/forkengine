@@ -478,6 +478,122 @@ TEST_CASE("a streaming pack read rejects a malformed container like the full par
     CHECK_FALSE(PackFile::parse_index(valid.data(), valid.size() / 2));
 }
 
+TEST_CASE("opening a pack source reads the index only, and an entry is read on demand") {
+    TempDir dir("lazy_open");
+    // A pack with a large, compressible entry so the payload region dominates
+    // the file and the difference between index-only and whole-file open is
+    // unambiguous.
+    PackFile pack;
+    const std::vector<u8> big(64 * 1024, u8{0x42});
+    const std::vector<u8> small = bytes_of("a small text asset");
+    const Uuid big_id = Uuid::generate();
+    pack.add_file("assets/big.bin", "", big_id, big);
+    pack.add_file("scenes/main.fescene", "", Uuid{}, small);
+    auto bytes = pack.write(PackCompression::Best);
+    REQUIRE(bytes);
+    REQUIRE_FALSE(fs::write_binary_file(dir.file("game.fepack"), bytes.value().data(), bytes.value().size()));
+
+    auto source = PackSource::open(dir.file("game.fepack"));
+    REQUIRE(source);
+
+    // Opening read only the header and the index: no entry carries payload bytes
+    // in memory, yet each entry's on-disk location is known.
+    const PackFile& opened = source.value()->pack();
+    CHECK(opened.entry_count() == 2);
+    for (const PackEntry& entry : opened.entries()) {
+        CHECK(entry.data.empty());
+        CHECK(entry.payload_length > 0);
+        CHECK(entry.uncompressed_size > 0);
+    }
+
+    // Each entry reads back byte-identical to the authored payload, through the
+    // ordinary source API. The compressed entry decompresses transparently.
+    auto read_big = source.value()->read_binary("assets/big.bin");
+    REQUIRE(read_big);
+    CHECK(read_big.value() == big);
+
+    auto read_scene = source.value()->read_text("scenes/main.fescene");
+    REQUIRE(read_scene);
+    CHECK(read_scene.value() == std::string(small.begin(), small.end()));
+
+    // The guid lookup resolves through the index without reading any payload.
+    CHECK(source.value()->resolve_asset(AssetId{big_id}) != nullptr);
+
+    // A second read of the same entry returns the same bytes (the memo slot),
+    // and reading a different entry afterwards still works.
+    auto read_again = source.value()->read_binary("assets/big.bin");
+    REQUIRE(read_again);
+    CHECK(read_again.value() == big);
+
+    // A missing key fails cleanly.
+    CHECK_FALSE(source.value()->read_binary("assets/absent.bin"));
+}
+
+TEST_CASE("a lazy pack source serves the same bytes as the whole-file parse") {
+    TempDir dir("lazy_equivalence");
+    PackFile pack;
+    const std::vector<u8> compressed_well = std::vector<u8>(8192, u8{0x11});
+    const std::vector<u8> incompressible = [] {
+        std::vector<u8> noise(512);
+        u32 state = 0x12345678U;
+        for (u8& byte : noise) {
+            state = state * 1664525U + 1013904223U;
+            byte = static_cast<u8>(state >> 24);
+        }
+        return noise;
+    }();
+    pack.add_file("assets/repetitive.bin", "", Uuid{}, compressed_well);
+    pack.add_file("assets/noise.bin", "", Uuid{}, incompressible);
+    auto bytes = pack.write(PackCompression::Fast);
+    REQUIRE(bytes);
+    REQUIRE_FALSE(fs::write_binary_file(dir.file("game.fepack"), bytes.value().data(), bytes.value().size()));
+
+    // The whole-file parse, as the reference.
+    auto loaded = PackFile::parse(bytes.value().data(), bytes.value().size());
+    REQUIRE(loaded);
+
+    // The lazy source, reading from disk on demand.
+    auto source = PackSource::open(dir.file("game.fepack"));
+    REQUIRE(source);
+
+    for (const std::string_view key : {"assets/repetitive.bin", "assets/noise.bin"}) {
+        const PackEntry* reference = loaded.value().find_path(key);
+        REQUIRE(reference != nullptr);
+        auto streamed = source.value()->read_binary(key);
+        REQUIRE(streamed);
+        CHECK(streamed.value() == reference->data);
+    }
+}
+
+TEST_CASE("a corrupted payload fails on read, not at open, for a lazy source") {
+    TempDir dir("lazy_corrupt");
+    PackFile pack;
+    pack.add_file("assets/big.bin", "", Uuid{}, std::vector<u8>(4096, u8{0x33}));
+    auto packed = pack.write(PackCompression::Fast);
+    REQUIRE(packed);
+
+    std::vector<u8> corrupt = packed.value();
+    // Flip a byte inside the compressed payload (the last byte of the file), so
+    // the stream no longer decodes.
+    corrupt.back() ^= 0xFFU;
+    REQUIRE_FALSE(fs::write_binary_file(dir.file("game.fepack"), corrupt.data(), corrupt.size()));
+
+    // Opening succeeds: the index is intact and the payload is not decoded until
+    // it is asked for. This is the whole point of the streaming open - a bad
+    // payload is not a mount-time failure for every asset in the pack.
+    auto source = PackSource::open(dir.file("game.fepack"));
+    REQUIRE(source);
+
+    // Reading the one bad entry fails, and fails cleanly rather than serving a
+    // short or wrong buffer.
+    auto read = source.value()->read_binary("assets/big.bin");
+    CHECK_FALSE(read);
+
+    // The whole-file parse, by contrast, rejects the same bytes up front, which
+    // is what the lazy open deliberately defers.
+    CHECK_FALSE(PackFile::parse(corrupt.data(), corrupt.size()));
+}
+
 TEST_CASE("DEFLATE compresses and decompresses a payload losslessly") {
     // A highly compressible input: the same byte repeated. DEFLATE must shrink
     // it, and the round trip must return the exact bytes.

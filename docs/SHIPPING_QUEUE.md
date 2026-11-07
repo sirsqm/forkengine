@@ -939,6 +939,20 @@ set even when most of it is never played.
 entry read on demand, with a test proving an entry reads back byte-identical to
 the fully-loaded read and that opening a pack does not touch payload bytes.
 
+Landed as an index open plus an on-demand payload read
+([ADR-0131](adr/0131-pack-index-and-on-demand-payloads.md)). `PackFile` gained
+`parse_header` (the fixed header alone), a `parse_index` that validates entry
+spans against the true container size even when only the header and index are in
+memory, and `decode_payload` (the half of `read_payload` that needs no
+container). `fe::fs` gained `read_binary_file_range` and `file_size`.
+`PackSource::open` now reads the header, then the header and index together, and
+materialises a single entry's span on first read, memoising the last payload.
+The whole-file path is unchanged, and the format is untouched, so a streaming
+reader and a whole-file reader accept the same bytes. Tests prove an index open
+leaves every payload empty, that an entry reads back byte-identical to the
+whole-file parse (stored and compressed), and that a corrupt payload fails on
+read rather than at open.
+
 ### `scene-prefab-instancing`
 
 The scene row leaves prefab instancing open: a repeated object (a bullet, a

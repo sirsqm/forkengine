@@ -67,6 +67,56 @@ Result<std::string> read_text_file(std::string_view path) {
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
+u64 file_size(std::string_view path) {
+    const stdfs::path native = to_native(path);
+
+    std::error_code ec;
+    if (!stdfs::is_regular_file(native, ec)) {
+        return 0;
+    }
+    const std::uintmax_t size = stdfs::file_size(native, ec);
+    if (ec) {
+        return 0;
+    }
+    return static_cast<u64>(size);
+}
+
+Result<std::vector<u8>> read_binary_file_range(std::string_view path, u64 offset, u64 size) {
+    const stdfs::path native = to_native(path);
+
+    std::error_code ec;
+    if (!stdfs::exists(native, ec)) {
+        return Error("file not found: " + std::string(path));
+    }
+    if (stdfs::is_directory(native, ec)) {
+        return Error("expected a file but found a directory: " + std::string(path));
+    }
+
+    std::ifstream stream(native, std::ios::binary);
+    if (!stream) {
+        return Error("could not open file for reading: " + std::string(path));
+    }
+
+    // A range past the end of the file is an error, not a short read: a caller
+    // asking for a fixed span (a pack's header or index) must not receive fewer
+    // bytes than it asked for and treat them as complete.
+    stream.seekg(0, std::ios::end);
+    const std::streamoff end = stream.tellg();
+    if (end < 0 || offset > static_cast<u64>(end) || size > static_cast<u64>(end) - offset) {
+        return Error("read range is past the end of " + std::string(path));
+    }
+
+    std::vector<u8> buffer(static_cast<usize>(size));
+    stream.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!buffer.empty()) {
+        stream.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(size));
+        if (!stream) {
+            return Error("read failed: " + std::string(path));
+        }
+    }
+    return buffer;
+}
+
 Error write_binary_file(std::string_view path, const void* data, usize size) {
     const stdfs::path native = to_native(path);
 

@@ -136,6 +136,7 @@ rather than editing it.
 | [0128](0128-render-graph-derived-edges.md) | Render-graph edges derived from resource access | Accepted |
 | [0129](0129-render-graph-pass-timings.md) | Per-pass timings read back from the render graph | Accepted |
 | [0130](0130-physics3d-continuous-collision.md) | Continuous collision detection for the 3D solver | Accepted |
+| [0131](0131-pack-index-and-on-demand-payloads.md) | A pack is opened by its index, and a payload is read on demand | Accepted |
 
 ## Format
 

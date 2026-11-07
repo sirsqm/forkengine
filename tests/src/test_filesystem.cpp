@@ -58,6 +58,59 @@ TEST_CASE("binary files preserve arbitrary bytes") {
     CHECK(read.value() == data);
 }
 
+TEST_CASE("a file's size is reported, and zero for a missing path") {
+    TempDir dir("size");
+    const std::string path = dir.file("blob.bin");
+    const std::vector<u8> data = {0x00, 0x01, 0x02, 0x03, 0x04};
+    REQUIRE_FALSE(fs::write_binary_file(path, data.data(), data.size()));
+
+    CHECK(fs::file_size(path) == 5);
+    CHECK(fs::file_size(dir.file("absent.bin")) == 0);
+    // A directory is not a file: its "size" is not something a caller may read
+    // as a byte count, so it reports zero like a missing path.
+    CHECK(fs::file_size(dir.str()) == 0);
+}
+
+TEST_CASE("a byte range reads exactly the requested span") {
+    TempDir dir("range");
+    const std::string path = dir.file("blob.bin");
+    const std::vector<u8> data = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    REQUIRE_FALSE(fs::write_binary_file(path, data.data(), data.size()));
+
+    // The middle, a prefix, and the whole file.
+    auto middle = fs::read_binary_file_range(path, 3, 4);
+    REQUIRE(middle);
+    CHECK(middle.value() == std::vector<u8>{3, 4, 5, 6});
+
+    auto prefix = fs::read_binary_file_range(path, 0, 2);
+    REQUIRE(prefix);
+    CHECK(prefix.value() == std::vector<u8>{0, 1});
+
+    auto whole = fs::read_binary_file_range(path, 0, data.size());
+    REQUIRE(whole);
+    CHECK(whole.value() == data);
+
+    // A zero-length range at the very end is valid and empty.
+    auto tail = fs::read_binary_file_range(path, data.size(), 0);
+    REQUIRE(tail);
+    CHECK(tail.value().empty());
+}
+
+TEST_CASE("a byte range past the end is an error, not a short read") {
+    TempDir dir("range_oob");
+    const std::string path = dir.file("blob.bin");
+    const std::vector<u8> data = {0, 1, 2, 3};
+    REQUIRE_FALSE(fs::write_binary_file(path, data.data(), data.size()));
+
+    // A span that starts past the end, and one that runs past it, are both
+    // rejected: a caller asking for a fixed span must never receive fewer bytes
+    // and treat them as complete.
+    CHECK_FALSE(fs::read_binary_file_range(path, 10, 1));
+    CHECK_FALSE(fs::read_binary_file_range(path, 2, 4));
+    CHECK_FALSE(fs::read_binary_file_range(path, 0, 5));
+    CHECK_FALSE(fs::read_binary_file_range(dir.file("absent.bin"), 0, 1));
+}
+
 TEST_CASE("write creates missing parent directories") {
     TempDir dir("parents");
     const std::string path = dir.file("a/b/c/deep.txt");
