@@ -31,6 +31,7 @@ add_executable(fork_engine_tests
     src/test_scene.cpp
     src/test_components.cpp
     src/test_serialization.cpp
+    src/test_prefab.cpp
     src/test_reflect.cpp
     src/test_systems.cpp
     src/test_animation_state_machine.cpp
