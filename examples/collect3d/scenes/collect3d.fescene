@@ -1,0 +1,2914 @@
+{
+  "format": "fork_scene",
+  "format_version": 4,
+  "name": "Collect3D",
+  "roots": [
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.3199999928474426,
+            0.3799999952316284,
+            0.46000000834465027,
+            1.0
+          ],
+          "id": "632e3380-a393-436c-ae23-6ab84c5f363d",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.05000000074505806,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            12.0,
+            0.5,
+            12.0
+          ],
+          "id": "389b379d-260c-404a-8eac-8b05095c9eab",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        }
+      ],
+      "id": "1a72f1ab-efea-4f0e-baf0-07b3421be35c",
+      "name": "Floor",
+      "transform": {
+        "position": [
+          0.0,
+          -0.5,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          1.0,
+          24.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.5,
+            0.41999998688697815,
+            0.4000000059604645,
+            1.0
+          ],
+          "id": "b9b76a89-ca44-4f1f-bb50-d073f2048260",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.10000000149011612,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            12.0,
+            1.0,
+            0.5
+          ],
+          "id": "d948fa74-c4a8-4a59-ab83-d52efc6d1d72",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        }
+      ],
+      "id": "6aa98b91-2ee4-413b-a1d7-25f1ab235335",
+      "name": "WallNorth",
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          -12.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          2.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.5,
+            0.41999998688697815,
+            0.4000000059604645,
+            1.0
+          ],
+          "id": "95d5142b-41c3-4bb0-be12-ef91893a4e2d",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.10000000149011612,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            12.0,
+            1.0,
+            0.5
+          ],
+          "id": "bcbb7466-4c20-4db2-9fb3-0e9be962479b",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        }
+      ],
+      "id": "4e72e351-7590-450c-befa-743695bd9b03",
+      "name": "WallSouth",
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          12.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          2.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.5,
+            0.41999998688697815,
+            0.4000000059604645,
+            1.0
+          ],
+          "id": "867b87f8-6166-404a-a589-b2deba8bfc2f",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.10000000149011612,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            0.5,
+            1.0,
+            12.0
+          ],
+          "id": "6548df5c-f132-43d4-8f47-aae54d5aa8a4",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        }
+      ],
+      "id": "b54078c8-37c3-4119-9913-217905cddb7c",
+      "name": "WallWest",
+      "transform": {
+        "position": [
+          -12.5,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          2.0,
+          24.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.5,
+            0.41999998688697815,
+            0.4000000059604645,
+            1.0
+          ],
+          "id": "beafd11a-4fdc-4a9c-b788-4d55c8c26656",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.10000000149011612,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            0.5,
+            1.0,
+            12.0
+          ],
+          "id": "00a88eec-5901-4e67-ba83-87f9ad608f4e",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        }
+      ],
+      "id": "d520a7a0-b678-46b6-add0-c2f701546a61",
+      "name": "WallEast",
+      "transform": {
+        "position": [
+          12.5,
+          1.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          2.0,
+          24.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "base_color": [
+            0.949999988079071,
+            0.6000000238418579,
+            0.20000000298023224,
+            1.0
+          ],
+          "id": "70374649-94d6-40ae-9ce0-9e5e143d57bc",
+          "material": {
+            "base_color": [
+              0.800000011920929,
+              0.800000011920929,
+              0.8500000238418579,
+              1.0
+            ],
+            "base_color_texture": "",
+            "double_sided": false,
+            "emissive": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "emissive_texture": "",
+            "metallic": 0.0,
+            "normal_texture": "",
+            "roughness": 0.6000000238418579
+          },
+          "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+          "override_material": false,
+          "specular": 0.44999998807907104,
+          "texture": "",
+          "type": "MeshRenderer3D"
+        },
+        {
+          "friction": 0.5,
+          "half_extent": [
+            0.44999998807907104,
+            0.550000011920929,
+            0.44999998807907104
+          ],
+          "id": "49baa57d-783b-415d-ab41-c56d29999866",
+          "is_trigger": false,
+          "layer": 1,
+          "mask": 4294967295,
+          "radius": 0.5,
+          "restitution": 0.0,
+          "shape": 0,
+          "type": "Collider3D"
+        },
+        {
+          "affected_by_gravity": false,
+          "angular_damping": 0.0,
+          "angular_velocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "can_sleep": false,
+          "fixed_rotation": true,
+          "gravity_scale": 1.0,
+          "id": "6579f1bc-f9e7-4a2d-b9aa-89cdfd8c4fb1",
+          "inertia": 0.0,
+          "kinematic": false,
+          "linear_damping": 0.0,
+          "mass": 2.0,
+          "sleep_angular_threshold": 0.05000000074505806,
+          "sleep_linear_threshold": 0.05000000074505806,
+          "sleep_time": 0.5,
+          "torque": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "type": "RigidBody3D",
+          "velocity": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      ],
+      "id": "84de9066-fa7b-497a-ac2c-43ee21687203",
+      "name": "Player",
+      "scripts": [
+        {
+          "behaviour": "CharacterController3D",
+          "properties": {
+            "gravity": 20.0,
+            "ground_probe": 0.10000000149011612,
+            "jump_speed": 6.0,
+            "run_multiplier": 2.0,
+            "slide_along_walls": true,
+            "speed": 5.0,
+            "turn_speed": 150.0
+          }
+        }
+      ],
+      "transform": {
+        "position": [
+          0.0,
+          1.0,
+          9.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          0.8999999761581421,
+          1.100000023841858,
+          0.8999999761581421
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "7873711d-2534-4cd3-a87d-444f2bd30b50",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "378db51c-82e0-4557-b1b3-ec6324ca1ff5",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              7.0,
+              1.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "805cc35f-7744-4ad7-9b7d-2f5c18b10d63",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "37ec2ec9-2f65-4d67-9da4-6af923f5584d",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              4.949747562408447,
+              1.0,
+              4.949747562408447
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "f1441e5e-aa22-492e-bbbb-3af7aeb37afb",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "a7c5b2dd-76b4-4715-812a-f4cfacf02327",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              -3.0597971090173814e-07,
+              1.0,
+              7.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "768eecce-4d1f-4d66-804c-64b6face5027",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "eb640c8d-8eb9-4ef5-b9b5-03ef402fc325",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              -4.949747562408447,
+              1.0,
+              4.949747562408447
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "06d18572-9e10-4bf3-ab69-280a95a30e8c",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "7f7072a6-c150-44ef-be17-68747e2ddeb6",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              -7.0,
+              1.0,
+              -6.119594218034763e-07
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "a5933646-2b24-492c-b5ed-ebf3ce56ea4f",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "0155e591-8408-429e-bfd0-7295144e7800",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              -4.949746608734131,
+              1.0,
+              -4.9497480392456055
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "a7a7bd62-5a2c-4fdf-a20c-7ad259d7c70e",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "2927bea5-9327-4e83-a7d6-c22356080ddc",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              8.347416269316454e-08,
+              1.0,
+              -7.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "base_color": [
+                0.30000001192092896,
+                0.8999999761581421,
+                0.699999988079071,
+                1.0
+              ],
+              "id": "7839cab4-aa8b-4ef9-bfb4-500fb6cda5b8",
+              "material": {
+                "base_color": [
+                  0.800000011920929,
+                  0.800000011920929,
+                  0.8500000238418579,
+                  1.0
+                ],
+                "base_color_texture": "",
+                "double_sided": false,
+                "emissive": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "emissive_texture": "",
+                "metallic": 0.0,
+                "normal_texture": "",
+                "roughness": 0.6000000238418579
+              },
+              "mesh": "obj:examples/collect3d/assets/meshes/cube.obj",
+              "override_material": false,
+              "specular": 0.6000000238418579,
+              "texture": "",
+              "type": "MeshRenderer3D"
+            }
+          ],
+          "id": "ec7e7f1c-56ac-467b-b0de-43a70872d5e5",
+          "name": "Collectible",
+          "scripts": [
+            {
+              "behaviour": "SpinNode3D",
+              "properties": {
+                "axis_x": 0.0,
+                "axis_y": 1.0,
+                "axis_z": 0.0,
+                "degrees_per_second": 90.0
+              }
+            }
+          ],
+          "transform": {
+            "position": [
+              4.949748992919922,
+              1.0,
+              -4.9497456550598145
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.800000011920929,
+              0.800000011920929,
+              0.800000011920929
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [],
+      "id": "9c9dc469-b415-4d26-b905-a76c5f3b352f",
+      "name": "Collectibles",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "ambient": 0.30000001192092896,
+          "color": [
+            1.0,
+            0.9700000286102295,
+            0.8999999761581421
+          ],
+          "direction": [
+            -0.4000000059604645,
+            -1.0,
+            -0.3499999940395355
+          ],
+          "id": "e387fa7d-834a-4652-8d13-3f3141296b51",
+          "intensity": 1.0,
+          "type": "DirectionalLight3D"
+        }
+      ],
+      "id": "e7ea45c3-64c9-4114-9c50-409a9600c7a3",
+      "name": "Sun",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "clear_color": [
+            0.05000000074505806,
+            0.05999999865889549,
+            0.10000000149011612,
+            1.0
+          ],
+          "far_plane": 200.0,
+          "fov_degrees": 60.0,
+          "id": "e1bd39a1-a9fa-4b2c-a61e-a6c924cc1722",
+          "near_plane": 0.10000000149011612,
+          "primary": true,
+          "type": "Camera3D"
+        }
+      ],
+      "id": "669a2da0-b0a0-4b6a-af44-694e4e968d5b",
+      "name": "Camera",
+      "scripts": [
+        {
+          "behaviour": "FollowCamera3D",
+          "properties": {
+            "distance": 7.0,
+            "height": 3.200000047683716,
+            "look_ahead": 1.5,
+            "look_height": 1.0,
+            "smoothing": 8.0,
+            "target": "Player"
+          }
+        }
+      ],
+      "transform": {
+        "position": [
+          0.0,
+          3.200000047683716,
+          15.5
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [],
+      "components": [
+        {
+          "bus_name": "",
+          "clip": "",
+          "cone_inner_degrees": 360.0,
+          "cone_outer_degrees": 360.0,
+          "cone_outer_gain": 1.0,
+          "doppler": false,
+          "gain": 0.699999988079071,
+          "id": "93f7b5ca-de90-4f9c-8360-caf1ee6cfcf3",
+          "loop": false,
+          "max_distance": 20.0,
+          "min_distance": 1.0,
+          "pitch": 1.0,
+          "play_on_start": false,
+          "spatial": false,
+          "stream": false,
+          "type": "AudioSource"
+        }
+      ],
+      "id": "abf92d88-00a5-451c-a444-5b5e1a6646d1",
+      "name": "PickupAudio",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 0,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "10b49310-7c34-4d7d-953f-0c13cd82c7fe",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                28.0,
+                28.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 0,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "62450138-d9cc-4bae-84b9-7421629356a6",
+          "name": "ScoreLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 0,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "cf6b5ea6-9b40-46d5-8d37-234e27d79ee8",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                28.0,
+                76.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 0,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "a8ee8d32-af5e-4c8b-9b47-9d43e51689cf",
+          "name": "BestScoreLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 2,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "335cf0f9-60f1-4969-8b4e-0b9df577d6d2",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                -28.0,
+                28.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 2,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "a9dbf4ae-1358-4871-a71a-1340b6b01daf",
+          "name": "CollectedLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 1,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "9c690980-5296-4520-b193-3bef8d17944f",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                28.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "15e65b93-d21b-4546-9d0d-ad3df3b6043a",
+          "name": "TimeLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 720.0,
+          "design_width": 1280.0,
+          "font": "",
+          "id": "6aa3a975-866b-49c2-bb32-d5567b734fd1",
+          "layer": 10,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 40.0,
+          "type": "UiCanvas",
+          "visible": true
+        }
+      ],
+      "id": "6f8aafe7-7dc5-44da-8297-196a59e98fa2",
+      "name": "HudCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "799ffabb-10be-470b-831b-25594b9f1503",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "GEM RUSH",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "337ce210-2dd3-4f62-8e81-b31ce6bfffd8",
+          "name": "TitleLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 7,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "117fca5d-d2fe-4804-b384-a5186539bb4f",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                -28.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "SETTINGS",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "ba5f9d18-d76b-45c3-8116-2f9421335cb5",
+          "name": "SettingsButton",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 720.0,
+          "design_width": 1280.0,
+          "font": "",
+          "id": "a3a14f18-d01b-400d-83c2-147222f3726a",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "8a9d6b47-a459-4937-a570-c3e70a462408",
+      "name": "TitleCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "a569cfd3-b311-41a1-a01c-e7611793ccd6",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "PAUSED",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "2009daed-a6e8-41b1-bef5-b3ddccb1add4",
+          "name": "PauseLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        },
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 7,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "75ae6817-a296-4c3a-bb38-d6b6197dbf94",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                -28.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "SETTINGS",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "5bd364ed-4aba-42db-acc0-3ceee881ec6d",
+          "name": "PauseSettingsButton",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 720.0,
+          "design_width": 1280.0,
+          "font": "",
+          "id": "79748b16-5304-4559-85b3-667c5b1b231b",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "47c84618-f8fe-4bc3-9098-ac488a8b19db",
+      "name": "PauseCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "components": [
+            {
+              "align": 0,
+              "anchor": 4,
+              "clip": false,
+              "direction": 0,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 0.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "28bbd4f3-e7c5-406d-a706-17ec0bd3a2df",
+              "interactable": true,
+              "justify": 0,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "GAME OVER",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "a695919d-f106-4045-ba9c-ef1477c52d45",
+          "name": "GameOverLabel",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 720.0,
+          "design_width": 1280.0,
+          "font": "",
+          "id": "f0581ea5-9df7-4e52-9603-435357070aff",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 72.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "03668622-ed60-4052-be3d-df9348dff8d2",
+      "name": "GameOverCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [],
+              "components": [
+                {
+                  "align": 0,
+                  "anchor": 1,
+                  "clip": false,
+                  "direction": 0,
+                  "fill": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "focusable": false,
+                  "font": "",
+                  "gap": 0.0,
+                  "height_mode": 2,
+                  "height_value": 0.0,
+                  "id": "3e8c0c06-d002-40b1-96ac-34c2f42b4d3e",
+                  "interactable": true,
+                  "justify": 0,
+                  "layer": 0,
+                  "margin": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "offset": [
+                    0.0,
+                    0.0
+                  ],
+                  "padding": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "scroll": [
+                    0.0,
+                    0.0
+                  ],
+                  "text": "SETTINGS",
+                  "text_align": 1,
+                  "text_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "text_size": 0.0,
+                  "text_vertical": 1,
+                  "texture": "",
+                  "texture_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "texture_uv": [
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                  ],
+                  "type": "UiElement",
+                  "visible": true,
+                  "width_mode": 2,
+                  "width_value": 0.0
+                }
+              ],
+              "id": "a534b30c-89c6-4e6e-b75d-d73828965025",
+              "name": "SettingsTitleLabel",
+              "transform": {
+                "position": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              "type": "Node"
+            },
+            {
+              "children": [
+                {
+                  "children": [],
+                  "components": [
+                    {
+                      "align": 0,
+                      "anchor": 3,
+                      "clip": false,
+                      "direction": 0,
+                      "fill": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "focusable": false,
+                      "font": "",
+                      "gap": 0.0,
+                      "height_mode": 0,
+                      "height_value": 72.0,
+                      "id": "6f46841b-59f4-468f-9ba5-20fda960bfad",
+                      "interactable": true,
+                      "justify": 0,
+                      "layer": 0,
+                      "margin": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "offset": [
+                        0.0,
+                        0.0
+                      ],
+                      "padding": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "scroll": [
+                        0.0,
+                        0.0
+                      ],
+                      "text": "-",
+                      "text_align": 1,
+                      "text_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "text_size": 0.0,
+                      "text_vertical": 1,
+                      "texture": "",
+                      "texture_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "texture_uv": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "type": "UiElement",
+                      "visible": true,
+                      "width_mode": 0,
+                      "width_value": 72.0
+                    }
+                  ],
+                  "id": "dd8b0220-28e0-4d92-894e-fdbc335dd76a",
+                  "name": "SettingsVolumeDown",
+                  "transform": {
+                    "position": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ]
+                  },
+                  "type": "Node"
+                },
+                {
+                  "children": [],
+                  "components": [
+                    {
+                      "align": 0,
+                      "anchor": 4,
+                      "clip": false,
+                      "direction": 0,
+                      "fill": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "focusable": false,
+                      "font": "",
+                      "gap": 0.0,
+                      "height_mode": 2,
+                      "height_value": 0.0,
+                      "id": "f0851730-ea50-45b5-a8e7-3ccec47cba35",
+                      "interactable": true,
+                      "justify": 0,
+                      "layer": 0,
+                      "margin": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "offset": [
+                        0.0,
+                        0.0
+                      ],
+                      "padding": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "scroll": [
+                        0.0,
+                        0.0
+                      ],
+                      "text": "",
+                      "text_align": 1,
+                      "text_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "text_size": 0.0,
+                      "text_vertical": 1,
+                      "texture": "",
+                      "texture_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "texture_uv": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "type": "UiElement",
+                      "visible": true,
+                      "width_mode": 2,
+                      "width_value": 0.0
+                    }
+                  ],
+                  "id": "eb9d7cf2-9b52-47aa-af49-e67bd4925786",
+                  "name": "SettingsVolumeValue",
+                  "transform": {
+                    "position": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ]
+                  },
+                  "type": "Node"
+                },
+                {
+                  "children": [],
+                  "components": [
+                    {
+                      "align": 0,
+                      "anchor": 3,
+                      "clip": false,
+                      "direction": 0,
+                      "fill": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "focusable": false,
+                      "font": "",
+                      "gap": 0.0,
+                      "height_mode": 0,
+                      "height_value": 72.0,
+                      "id": "0dbad511-6bc8-4ec8-944c-e6570f716d12",
+                      "interactable": true,
+                      "justify": 0,
+                      "layer": 0,
+                      "margin": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "offset": [
+                        0.0,
+                        0.0
+                      ],
+                      "padding": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "scroll": [
+                        0.0,
+                        0.0
+                      ],
+                      "text": "+",
+                      "text_align": 1,
+                      "text_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "text_size": 0.0,
+                      "text_vertical": 1,
+                      "texture": "",
+                      "texture_color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                      ],
+                      "texture_uv": [
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                      ],
+                      "type": "UiElement",
+                      "visible": true,
+                      "width_mode": 0,
+                      "width_value": 72.0
+                    }
+                  ],
+                  "id": "dbe74a0f-46c3-4adf-bc5a-00030056bc2f",
+                  "name": "SettingsVolumeUp",
+                  "transform": {
+                    "position": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "rotation": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "scale": [
+                      1.0,
+                      1.0,
+                      1.0
+                    ]
+                  },
+                  "type": "Node"
+                }
+              ],
+              "components": [
+                {
+                  "align": 1,
+                  "anchor": 0,
+                  "clip": false,
+                  "direction": 1,
+                  "fill": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "focusable": false,
+                  "font": "",
+                  "gap": 40.0,
+                  "height_mode": 2,
+                  "height_value": 0.0,
+                  "id": "2770405d-a731-45ec-a040-70be6e11a4b9",
+                  "interactable": true,
+                  "justify": 1,
+                  "layer": 0,
+                  "margin": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "offset": [
+                    0.0,
+                    0.0
+                  ],
+                  "padding": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "scroll": [
+                    0.0,
+                    0.0
+                  ],
+                  "text": "",
+                  "text_align": 1,
+                  "text_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "text_size": 0.0,
+                  "text_vertical": 1,
+                  "texture": "",
+                  "texture_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "texture_uv": [
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                  ],
+                  "type": "UiElement",
+                  "visible": true,
+                  "width_mode": 2,
+                  "width_value": 0.0
+                }
+              ],
+              "id": "064ef74d-2171-4ae9-a9a9-acaaf00b41f4",
+              "name": "VolumeRow",
+              "transform": {
+                "position": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              "type": "Node"
+            },
+            {
+              "children": [],
+              "components": [
+                {
+                  "align": 0,
+                  "anchor": 1,
+                  "clip": false,
+                  "direction": 0,
+                  "fill": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "focusable": false,
+                  "font": "",
+                  "gap": 0.0,
+                  "height_mode": 2,
+                  "height_value": 0.0,
+                  "id": "0482d672-fb46-4316-be8e-6bb1107e2f71",
+                  "interactable": true,
+                  "justify": 0,
+                  "layer": 0,
+                  "margin": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "offset": [
+                    0.0,
+                    0.0
+                  ],
+                  "padding": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "scroll": [
+                    0.0,
+                    0.0
+                  ],
+                  "text": "BACK",
+                  "text_align": 1,
+                  "text_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "text_size": 0.0,
+                  "text_vertical": 1,
+                  "texture": "",
+                  "texture_color": [
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0
+                  ],
+                  "texture_uv": [
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                  ],
+                  "type": "UiElement",
+                  "visible": true,
+                  "width_mode": 2,
+                  "width_value": 0.0
+                }
+              ],
+              "id": "9040f071-eeab-44ce-86d6-e394de5d3bb0",
+              "name": "SettingsBack",
+              "transform": {
+                "position": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "rotation": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "scale": [
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              "type": "Node"
+            }
+          ],
+          "components": [
+            {
+              "align": 1,
+              "anchor": 4,
+              "clip": false,
+              "direction": 2,
+              "fill": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "focusable": false,
+              "font": "",
+              "gap": 40.0,
+              "height_mode": 2,
+              "height_value": 0.0,
+              "id": "3364a67d-070d-4c87-95ea-b1e6e4cec9f1",
+              "interactable": true,
+              "justify": 1,
+              "layer": 0,
+              "margin": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "offset": [
+                0.0,
+                0.0
+              ],
+              "padding": [
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scroll": [
+                0.0,
+                0.0
+              ],
+              "text": "",
+              "text_align": 1,
+              "text_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "text_size": 0.0,
+              "text_vertical": 1,
+              "texture": "",
+              "texture_color": [
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "texture_uv": [
+                0.0,
+                0.0,
+                1.0,
+                1.0
+              ],
+              "type": "UiElement",
+              "visible": true,
+              "width_mode": 2,
+              "width_value": 0.0
+            }
+          ],
+          "id": "3f680669-f425-48fd-8d08-dbc91aeb8e4e",
+          "name": "SettingsRows",
+          "transform": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "type": "Node"
+        }
+      ],
+      "components": [
+        {
+          "design_height": 720.0,
+          "design_width": 1280.0,
+          "font": "",
+          "id": "6fdf31c1-61cc-4a29-8844-50d553446271",
+          "layer": 20,
+          "padding": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale_mode": 0,
+          "text_size": 40.0,
+          "type": "UiCanvas",
+          "visible": false
+        }
+      ],
+      "id": "fc33ce71-88ee-4d8b-8231-1bd1041cfcdb",
+      "name": "SettingsCanvas",
+      "transform": {
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "type": "Node"
+    }
+  ]
+}

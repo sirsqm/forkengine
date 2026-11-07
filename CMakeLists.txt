@@ -89,6 +89,8 @@ add_subdirectory(engine)
 if(FE_BUILD_EXAMPLES)
   add_subdirectory(examples/sandbox)
   add_subdirectory(examples/breakout)
+  # The 3D vertical slice (M11), the counterpart of the breakout slice.
+  add_subdirectory(examples/collect3d)
   # The headless example needs no display, so it is built (and can be run) even
   # where the sandbox cannot open a window. See ADR-0041.
   add_subdirectory(examples/headless)
