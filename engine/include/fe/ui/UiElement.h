@@ -161,6 +161,12 @@ public:
     // through to what is behind it. A disabled button is the case.
     bool interactable = true;
 
+    // When true the element can receive keyboard/gamepad focus and be confirmed
+    // by `UiFocusSystem`. Off by default, so a HUD label is not a menu stop; a
+    // menu button sets it. An element that is not `interactable` is never
+    // focusable, so a disabled button is skipped by focus navigation too.
+    bool focusable = false;
+
     // --- Runtime output ----------------------------------------------------
     // What the input system observed this frame. Written by
     // `UiInputSystem`, read by the game. Not serialized: it is the result of an

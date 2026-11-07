@@ -70,6 +70,7 @@ add_executable(fork_engine_tests
     src/test_render_graph.cpp
     src/test_text.cpp
     src/test_ui_layout.cpp
+    src/test_ui_focus.cpp
     src/test_ui.cpp
     src/test_tilemap.cpp
     src/test_debugdraw.cpp

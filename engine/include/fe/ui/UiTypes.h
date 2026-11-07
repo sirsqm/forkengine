@@ -218,6 +218,19 @@ struct UiInteraction {
     // down.
     bool released = false;
 
+    // The element holds keyboard/gamepad focus: a menu moved onto it with the
+    // d-pad, a stick, or the arrow keys. Written by `UiFocusSystem`, not by the
+    // pointer. Distinct from `hovered` because a focus ring and a mouse-over are
+    // different states and a menu wants to show the ring.
+    bool focused = false;
+
+    // The element was confirmed this frame while focused: the player pressed the
+    // confirm action (Enter, Space, the gamepad's south button) with this element
+    // focused. The keyboard counterpart of `clicked`, so a menu system that reads
+    // `clicked` also reads `activated` and a button works from a pad and a mouse
+    // alike.
+    bool activated = false;
+
     [[nodiscard]] constexpr bool operator==(const UiInteraction&) const noexcept = default;
 };
 

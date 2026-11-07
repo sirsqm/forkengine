@@ -193,6 +193,8 @@ void register_ui_element(Registry& registry) {
     desc.properties.push_back(make_scalar<UiElement, bool>("visible", &UiElement::visible, ValueKind::Bool, &defaults));
     desc.properties.push_back(
         make_scalar<UiElement, bool>("interactable", &UiElement::interactable, ValueKind::Bool, &defaults));
+    desc.properties.push_back(
+        make_scalar<UiElement, bool>("focusable", &UiElement::focusable, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }

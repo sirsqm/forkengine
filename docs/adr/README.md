@@ -150,6 +150,7 @@ rather than editing it.
 | [0142](0142-per-layer-joint-mask.md) | A per-layer joint mask for additive animation | Accepted |
 | [0143](0143-stacked-additive-layers.md) | Stacked additive layers: several additive effects over one base | Accepted |
 | [0144](0144-animation-events.md) | Animation events on the clip timeline | Accepted |
+| [0145](0145-ui-focus-navigation.md) | Keyboard and gamepad focus navigation for UI | Accepted |
 
 ## Format
 

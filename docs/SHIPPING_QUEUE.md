@@ -595,6 +595,21 @@ equals the rectangle the input system hit tests, and the breakout HUD is a
 screen-space canvas whose score and lives stay in the window's corners at any
 aspect ratio.
 
+### `ui-focus-navigation`
+
+The pointer is not the only way into a menu. A console has no cursor, and a
+keyboard-only player expects the arrow keys to walk a menu and Enter to pick, so
+a UI that only responds to a mouse or a touch is unplayable on a TV and awkward
+at a desk. Add a focus model: a `focusable` flag on `UiElement`, and a
+`UiFocusSystem` that moves focus between the focusable elements by geometry on a
+d-pad, a stick, or the arrow keys and confirms the focused one, writing `focused`
+and `activated` onto the same `UiInteraction` the pointer path writes
+([ADR-0145](adr/0145-ui-focus-navigation.md)).
+
+**Done when** a test drives an `InputState` and asserts that a direction press
+moves focus to the geometrically next element and that a confirm activates it,
+and that a disabled or non-focusable element is not a focus stop.
+
 ### `collision-filtering-and-triggers`
 
 Every collider collides with every other collider, so a game cannot say "these

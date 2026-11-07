@@ -132,6 +132,7 @@ set(FE_ENGINE_SOURCES
     src/scene/Tilemap.cpp
     src/scene/TilemapTypes.cpp
     src/ui/UiLayout.cpp
+    src/ui/UiFocusSystem.cpp
     src/ui/UiInputSystem.cpp
     src/ui/UiTypesReflect.cpp
     src/reflect/Property.cpp

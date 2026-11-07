@@ -99,9 +99,9 @@ Phase 5 refinement — the asset/content row `scene-prefab-instancing` — has l
 along with the render graph's own rows, 3D continuous collision, the rotational
 CCD row (`physics2d-rotational-ccd`), the 3D joint refinement
 (`physics-more-joints`), the pack streaming row (`audio-pack-streaming`), and the
-in-game UI's scrolling and clipping (`ui-scroll-and-masks`). (`gamepad-input`
-landed under a `platform:` subject, so the slug check does not see it — treat it
-as finished.)
+in-game UI's scrolling and clipping (`ui-scroll-and-masks`) and its keyboard and
+gamepad focus navigation (`ui-focus-navigation`). (`gamepad-input` landed under a
+`platform:` subject, so the slug check does not see it — treat it as finished.)
 
 The remaining work is the *un-ordered* backlog (the bullet list at the end of the
 shipping queue) plus the `[~]` rows above and the **M11** second slice below —
