@@ -254,11 +254,22 @@ void build_collect3d_scene(fe::Scene& scene, const SceneAssets& assets) {
     // The pickup cue: a one-shot that starts silent and is re-triggered by
     // CollectibleSystem through play(). It lives in the scene so the sound is
     // authored, not hardcoded; the application only attaches the decoded clip.
+    //
+    // It is positional (`spatial`) and on the "sfx" bus: CollectibleSystem moves
+    // this node onto the gem it collects, so the mixer attenuates the cue against
+    // the listener at the camera and pans it to the side the gem was on, and the
+    // bus keeps effects off the master volume the settings screen drives. Both are
+    // the M11 audio row's "positional sources and a bus layout", exercised on the
+    // shipped game rather than only in a test.
     fe::Node* audio = scene.create_node(std::string(names::kAudio));
     auto* source = audio->add_component<fe::audio::AudioSource>();
     source->gain = 0.7f;
     source->loop = false;
     source->play_on_start = false;
+    source->spatial = true;
+    source->min_distance = cfg::kPickupMinDistance;
+    source->max_distance = cfg::kPickupMaxDistance;
+    source->bus_name = cfg::kSfxBusName;
 
     // The HUD: a screen-space UI canvas whose counters are pinned to the window's
     // corners. The text is filled in each frame by HudSystem, so the canvas is

@@ -1166,7 +1166,7 @@
       "children": [],
       "components": [
         {
-          "bus_name": "",
+          "bus_name": "sfx",
           "clip": "",
           "cone_inner_degrees": 360.0,
           "cone_outer_degrees": 360.0,
@@ -1176,10 +1176,10 @@
           "id": "93f7b5ca-de90-4f9c-8360-caf1ee6cfcf3",
           "loop": false,
           "max_distance": 20.0,
-          "min_distance": 1.0,
+          "min_distance": 2.0,
           "pitch": 1.0,
           "play_on_start": false,
-          "spatial": false,
+          "spatial": true,
           "stream": false,
           "type": "AudioSource"
         }

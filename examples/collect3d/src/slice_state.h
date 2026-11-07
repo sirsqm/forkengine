@@ -111,6 +111,22 @@ inline constexpr fe::f32 kMinVolume = 0.0f;
 inline constexpr fe::f32 kMaxVolume = 1.0f;
 inline constexpr fe::f32 kVolumeStep = 0.1f;
 
+// The pickup cue is positional: CollectibleSystem moves its node to the gem
+// that was just collected before it plays, so a gem across the arena is quieter
+// than one at the player's feet and a gem to the player's left is heard on the
+// left. The falloff runs from full gain at kPickupMinDistance to silence at
+// kPickupMaxDistance, chosen so a cue anywhere on the gem ring is still audible
+// while the player can tell which side it came from.
+inline constexpr fe::f32 kPickupMinDistance = 2.0f;
+inline constexpr fe::f32 kPickupMaxDistance = 20.0f;
+
+// The mixer group bus the game's sound effects route to. The volume setting
+// drives the *master* bus, so an effects bus with its own gain is the layout the
+// M11 audio row asked for: the two are independent, so muting effects later does
+// not have to touch the master volume the player set.
+inline constexpr const char* kSfxBusName = "sfx";
+inline constexpr fe::f32 kSfxBusGain = 1.0f;
+
 } // namespace config
 
 // The node names the scene builder and the systems share. One place, so the two
