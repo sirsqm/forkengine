@@ -75,6 +75,23 @@ inline constexpr i32 kFormatVersion = 4;
 [[nodiscard]] Error from_json(std::string_view text, Scene& out_scene, ResourceManager* resources = nullptr,
                               ScriptBinding* scripts = nullptr);
 
+// Serialises a single node subtree as a scene document with one root.
+//
+// The document is the same shape `to_json` writes, so it round-trips through
+// `subtree_from_json` (or `from_json`) unchanged. Prefab capture is the caller
+// that needs one subtree rather than a whole scene (see
+// docs/adr/0133-prefab-instancing.md).
+[[nodiscard]] Result<std::string> subtree_to_json(const Node& node, const ResourceManager* resources = nullptr,
+                                                  const ScriptBinding* scripts = nullptr);
+
+// Reads a document produced by `subtree_to_json` (or `to_json`) and *appends*
+// its roots to `out_scene`, leaving the scene's existing content in place.
+// Unlike `from_json`, it neither clears the scene nor changes its name, which is
+// what lets an instantiated prefab join a live scene. Saved ids are restored as
+// written; a caller that needs fresh ids rewrites them in the document first.
+[[nodiscard]] Error subtree_from_json(std::string_view text, Scene& out_scene, ResourceManager* resources = nullptr,
+                                      ScriptBinding* scripts = nullptr);
+
 [[nodiscard]] Error save(const Scene& scene, std::string_view path, const ResourceManager* resources = nullptr,
                          const ScriptBinding* scripts = nullptr);
 [[nodiscard]] Error load(std::string_view path, Scene& out_scene, ResourceManager* resources = nullptr,

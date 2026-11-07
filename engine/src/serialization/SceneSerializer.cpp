@@ -226,6 +226,65 @@ Error from_json(std::string_view text, Scene& out_scene, ResourceManager* resour
     return Error::none();
 }
 
+Result<std::string> subtree_to_json(const Node& node, const ResourceManager* resources, const ScriptBinding* scripts) {
+    json document;
+    document["format"] = "fork_scene";
+    document["format_version"] = kFormatVersion;
+    // A subtree document is a scene with exactly one root, so a reader that
+    // expects a scene (from_json) can load it too; the name is a placeholder the
+    // caller of subtree_from_json does not apply.
+    document["name"] = "Prefab";
+    document["roots"] = json::array({node_to_json(node, resources, scripts)});
+    return document.dump(2);
+}
+
+Error subtree_from_json(std::string_view text, Scene& out_scene, ResourceManager* resources, ScriptBinding* scripts) {
+    reflect::register_builtin_types();
+
+    json document;
+    try {
+        document = json::parse(text);
+    } catch (const json::parse_error& e) {
+        return Error(std::string("prefab parse error: ") + e.what());
+    }
+
+    const std::string format = document.value("format", std::string{});
+    if (format != "fork_scene") {
+        return Error("not a fork scene document (format='" + format + "')");
+    }
+
+    const i32 version = document.value("format_version", 0);
+    if (version > kFormatVersion) {
+        return Error("prefab format version " + std::to_string(version) + " is newer than supported version " +
+                     std::to_string(kFormatVersion));
+    }
+
+    if (scripts != nullptr) {
+        scripts->reset();
+    }
+
+    if (!document.contains("roots")) {
+        return Error::none();
+    }
+
+    // Append rather than replace: the caller instantiates into a live scene.
+    for (const auto& root_json : document.at("roots")) {
+        Node* root = out_scene.create_node();
+        if (Error error = node_from_json(root_json, *root, resources, version, scripts); error) {
+            return error;
+        }
+    }
+
+    // The appended nodes restored saved ids after attachment, so the index holds
+    // the placeholder ids from creation; rebuild it as from_json does.
+    out_scene.rebuild_index();
+
+    if (scripts != nullptr) {
+        return scripts->finish(out_scene);
+    }
+    return Error::none();
+}
+
 Error save(const Scene& scene, std::string_view path, const ResourceManager* resources, const ScriptBinding* scripts) {
     auto text = to_json(scene, resources, scripts);
     if (!text) {
