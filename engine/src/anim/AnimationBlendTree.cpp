@@ -132,6 +132,33 @@ void compose_additive(SkeletonPose& base, const SkeletonPose& delta, f32 alpha) 
     }
 }
 
+void compose_additive_masked(SkeletonPose& base, const SkeletonPose& delta, f32 alpha, const JointMask& mask) {
+    if (mask.empty()) {
+        compose_additive(base, delta, alpha);
+        return;
+    }
+    const f32 weight = clamp01(alpha);
+    if (weight <= 0.0f) {
+        return;
+    }
+    const usize count = std::min(base.joint_count(), delta.joint_count());
+    for (usize i = 0; i < count; ++i) {
+        if (!mask.contains(i)) {
+            continue; // a joint the layer does not own keeps the base pose
+        }
+        const JointPose& add = delta.at(i);
+        JointPose& target = base.at(i);
+        target.translation =
+            Vec3{target.translation.x + add.translation.x * weight, target.translation.y + add.translation.y * weight,
+                 target.translation.z + add.translation.z * weight};
+        const Quat scaled_delta = Quat::slerp(Quat::identity(), add.rotation, weight);
+        target.rotation = (target.rotation * scaled_delta).normalized();
+        target.scale = Vec3{target.scale.x * (1.0f + (add.scale.x - 1.0f) * weight),
+                            target.scale.y * (1.0f + (add.scale.y - 1.0f) * weight),
+                            target.scale.z * (1.0f + (add.scale.z - 1.0f) * weight)};
+    }
+}
+
 std::string AnimationBlendTree::to_json() const {
     nlohmann::json document;
     document["parameter"] = parameter;
@@ -141,6 +168,7 @@ std::string AnimationBlendTree::to_json() const {
     document["additive_weight"] = additive_weight;
     document["additive_time"] = additive_time;
     document["additive_speed"] = additive_speed;
+    document["additive_mask"] = additive_mask.names();
 
     nlohmann::json samples_json = nlohmann::json::array();
     for (const BlendSample& sample : samples) {
@@ -203,6 +231,15 @@ bool AnimationBlendTree::from_json(std::string_view text) {
     additive_weight = document.value("additive_weight", 0.0f);
     additive_time = document.value("additive_time", 0.0f);
     additive_speed = document.value("additive_speed", 1.0f);
+
+    additive_mask = JointMask{};
+    if (document.contains("additive_mask") && document.at("additive_mask").is_array()) {
+        for (const auto& entry : document.at("additive_mask")) {
+            if (entry.is_string()) {
+                additive_mask.add(entry.get<std::string>());
+            }
+        }
+    }
 
     // The clips are resolved by the system from their keys; a document load is
     // pure and has no ResourceManager.

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/anim/AnimationClip.h"
+#include "fe/anim/JointMask.h"
 #include "fe/anim/Skeleton.h"
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
@@ -100,6 +101,10 @@ public:
     f32 additive_weight = 0.0f;
     f32 additive_time = 0.0f;
     f32 additive_speed = 1.0f;
+
+    // The joints the additive layer may write; see `AnimationBlendTree`. An
+    // empty mask applies the delta to every joint.
+    JointMask additive_mask;
 
     // --- Queried state -----------------------------------------------------
 

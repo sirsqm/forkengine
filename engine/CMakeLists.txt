@@ -144,6 +144,7 @@ set(FE_ENGINE_SOURCES
     src/anim/AnimationStateMachineSystem.cpp
     src/anim/AnimationBlendTree.cpp
     src/anim/AnimationBlendTreeSystem.cpp
+    src/anim/JointMask.cpp
     src/anim/AnimationBlendSpace2D.cpp
     src/anim/AnimationBlendSpaceSystem.cpp
     src/anim/AnimationTypes.cpp

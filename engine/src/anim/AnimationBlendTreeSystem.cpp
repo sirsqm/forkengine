@@ -81,7 +81,13 @@ void AnimationBlendTreeSystem::update(const FrameContext& context, Scene& scene)
                 tree->additive_time += context.delta_time * tree->additive_speed;
             }
             sample_additive_pose(*skeleton, *tree->additive_clip, tree->additive_time, mode, additive_scratch_);
-            compose_additive(animator->mutable_pose(), additive_scratch_, tree->additive_weight);
+            // A masked layer resolves against the skeleton first, so the per-joint
+            // test in the compose is an index lookup rather than a name search.
+            if (!tree->additive_mask.empty()) {
+                tree->additive_mask.resolve(*skeleton);
+            }
+            compose_additive_masked(animator->mutable_pose(), additive_scratch_, tree->additive_weight,
+                                    tree->additive_mask);
             wrote_pose = true;
         }
 

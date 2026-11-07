@@ -267,6 +267,7 @@ std::string AnimationBlendSpace2D::to_json() const {
     document["additive_weight"] = additive_weight;
     document["additive_time"] = additive_time;
     document["additive_speed"] = additive_speed;
+    document["additive_mask"] = additive_mask.names();
 
     nlohmann::json samples_json = nlohmann::json::array();
     for (const BlendPoint& sample : samples) {
@@ -331,6 +332,15 @@ bool AnimationBlendSpace2D::from_json(std::string_view text) {
     additive_weight = document.value("additive_weight", 0.0f);
     additive_time = document.value("additive_time", 0.0f);
     additive_speed = document.value("additive_speed", 1.0f);
+
+    additive_mask = JointMask{};
+    if (document.contains("additive_mask") && document.at("additive_mask").is_array()) {
+        for (const auto& entry : document.at("additive_mask")) {
+            if (entry.is_string()) {
+                additive_mask.add(entry.get<std::string>());
+            }
+        }
+    }
 
     // The clips are resolved by the system from their keys; a document load is
     // pure and has no ResourceManager.

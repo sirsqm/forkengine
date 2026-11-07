@@ -91,7 +91,11 @@ void AnimationBlendSpaceSystem::update(const FrameContext& context, Scene& scene
                 space->additive_time += context.delta_time * space->additive_speed;
             }
             sample_additive_pose(*skeleton, *space->additive_clip, space->additive_time, mode, additive_scratch_);
-            compose_additive(animator->mutable_pose(), additive_scratch_, space->additive_weight);
+            if (!space->additive_mask.empty()) {
+                space->additive_mask.resolve(*skeleton);
+            }
+            compose_additive_masked(animator->mutable_pose(), additive_scratch_, space->additive_weight,
+                                    space->additive_mask);
             wrote_pose = true;
         }
 

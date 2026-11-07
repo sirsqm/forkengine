@@ -1100,8 +1100,9 @@ a pixel the unclipped control paints.
   glTF import, and skinned draw ([ADR-0104](adr/0104-skeletal-animation.md),
   [ADR-0123](adr/0123-skeletal-state-machines.md),
   [ADR-0124](adr/0124-animation-blend-trees.md),
-  [ADR-0141](adr/0141-two-axis-blend-space.md)). What remains is the wider shape:
-  a tree feeding a tree, additive-on-additive, and a per-layer joint mask.
+  [ADR-0141](adr/0141-two-axis-blend-space.md),
+  [ADR-0142](adr/0142-per-layer-joint-mask.md)). What remains is the wider shape:
+  a tree feeding a tree and additive-on-additive.
 - More example games beyond the breakout slice, once the first one ships. The
   next one is planned as a **finished 3D game** — the roadmap's
   [M11](ROADMAP.md#m11--a-second-vertical-slice-a-3d-game-end-to-end) — built from

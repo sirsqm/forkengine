@@ -3,6 +3,7 @@
 #pragma once
 
 #include "fe/anim/AnimationClip.h"
+#include "fe/anim/JointMask.h"
 #include "fe/core/Types.h"
 #include "fe/scene/Component.h"
 
@@ -115,6 +116,12 @@ public:
     // reaction ramps it in and back out.
     f32 additive_weight = 0.0f;
 
+    // The joints the additive layer may write. An empty mask (the default)
+    // applies the delta to every joint; a mask naming the upper body lets a hit
+    // reaction move the arms without swinging the legs. Resolved against the
+    // animator's skeleton by the system before the delta is composed.
+    JointMask additive_mask;
+
     // The additive clip's own playback clock, in seconds. Kept separate from the
     // base clock so a one-shot reaction plays at its own rate over a locomotion
     // blend that is looping.
@@ -181,5 +188,11 @@ void sample_additive_pose(const Skeleton& skeleton, const AnimationClip& clip, f
 // delta, so a reaction ramps in and back out. `base` is unchanged when `alpha`
 // is zero or the two poses differ in length past the shorter.
 void compose_additive(SkeletonPose& base, const SkeletonPose& delta, f32 alpha);
+
+// Composes the additive `delta` over `base` in place, but only for the joints
+// `mask` contains. A joint outside the mask keeps its base value, so a masked
+// layer cannot fight the base pose on the joints it does not own. An empty mask
+// is the same as the unmasked overload.
+void compose_additive_masked(SkeletonPose& base, const SkeletonPose& delta, f32 alpha, const JointMask& mask);
 
 } // namespace fe::anim
