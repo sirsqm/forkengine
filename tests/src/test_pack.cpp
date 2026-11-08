@@ -779,3 +779,53 @@ TEST_CASE("a corrupted compressed payload is rejected, not served as garbage") {
     auto parsed = PackFile::parse(corrupt.data(), corrupt.size());
     CHECK_FALSE(parsed);
 }
+
+TEST_CASE("a whole-parsed pack can release its payloads and still read them on demand") {
+    PackFile pack;
+    pack.add_file("assets/hero.png", "tex", Uuid::generate(), bytes_of("PNG DATA"));
+    pack.add_file("assets/beep.wav", "wav", Uuid{}, bytes_of("WAVE"));
+    // A payload DEFLATE shrinks, so the release round-trips a *compressed* entry
+    // too, not only a stored one.
+    const std::vector<u8> big(4096, u8{0x41});
+    pack.add_file("assets/big.bin", "", Uuid{}, big);
+
+    auto bytes = pack.write(pack::PackCompression::Fast);
+    REQUIRE(bytes);
+    const std::vector<u8>& container = bytes.value();
+
+    auto parsed = PackFile::parse(container.data(), container.size());
+    REQUIRE(parsed);
+    PackFile p = std::move(parsed.value());
+    CHECK(p.payloads_resident());
+
+    const PackEntry* hero = p.find_path("assets/hero.png");
+    REQUIRE(hero != nullptr);
+    CHECK(hero->data == bytes_of("PNG DATA"));
+    // The large entry was stored compressed, so the on-demand read has to decode.
+    const PackEntry* big_entry = p.find_path("assets/big.bin");
+    REQUIRE(big_entry != nullptr);
+    CHECK(big_entry->codec != PackCodec::None);
+    CHECK(big_entry->data == big);
+
+    // Dropping the resident copies keeps each entry's span and codec, so a read
+    // from the container bytes still serves the same bytes.
+    p.release_payloads();
+    CHECK_FALSE(p.payloads_resident());
+    CHECK(p.find_path("assets/hero.png")->data.empty());
+    CHECK(p.find_path("assets/big.bin")->data.empty());
+
+    auto hero_read = p.read_payload(container, *p.find_path("assets/hero.png"));
+    REQUIRE(hero_read);
+    CHECK(hero_read.value() == bytes_of("PNG DATA"));
+    auto beep_read = p.read_payload(container, *p.find_path("assets/beep.wav"));
+    REQUIRE(beep_read);
+    CHECK(beep_read.value() == bytes_of("WAVE"));
+    auto big_read = p.read_payload(container, *p.find_path("assets/big.bin"));
+    REQUIRE(big_read);
+    CHECK(big_read.value() == big);
+
+    // A container that no longer holds the span is rejected, not read as
+    // garbage: the bytes come from the container, so a truncated one is caught.
+    std::vector<u8> truncated(container.begin(), container.begin() + container.size() / 2);
+    CHECK_FALSE(p.read_payload(truncated, *p.find_path("assets/big.bin")));
+}

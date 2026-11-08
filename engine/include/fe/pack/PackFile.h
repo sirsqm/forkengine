@@ -183,6 +183,28 @@ public:
     // not fit is an Error, not a read of garbage.
     [[nodiscard]] Result<std::vector<u8>> read_payload(const u8* data, usize size, const PackEntry& entry) const;
 
+    // The same read against the container held as a vector, so a caller that
+    // kept the whole-file bytes can read an entry by value. The bytes are
+    // borrowed, not copied.
+    [[nodiscard]] Result<std::vector<u8>> read_payload(const std::vector<u8>& container,
+                                                       const PackEntry& entry) const {
+        return read_payload(container.data(), container.size(), entry);
+    }
+
+    // Drops every entry's in-memory payload, keeping its on-disk span
+    // (`payload_offset`/`payload_length`) and `codec`, so a pack that was read
+    // whole can be served on demand from the container bytes afterwards. This is
+    // the whole-file counterpart of parse_index(): parse() materialises every
+    // payload, and release_payloads() lets the caller give that memory back once
+    // it has decided to stream instead, reading entries through read_payload()
+    // with the bytes parse() was given. An entry with no payload (length 0) is
+    // unchanged: its read still yields an empty buffer.
+    void release_payloads() noexcept;
+
+    // Whether every entry's payload is currently resident in memory. True after
+    // parse(), false after release_payloads() (and for a parse_index() pack).
+    [[nodiscard]] bool payloads_resident() const noexcept;
+
     // Decodes one entry's payload from bytes already located at the entry's
     // payload span, decompressing when the entry names a codec. `payload_size`
     // must equal the entry's on-disk length. This is the half of read_payload()
@@ -194,6 +216,11 @@ public:
 
 private:
     std::vector<PackEntry> entries_;
+    // Whether every entry's payload is currently held in `data`. Set by parse()
+    // and cleared by release_payloads(); a parse_index() pack starts false. It
+    // tracks the whole table, not a per-entry flag, because parse() and
+    // release_payloads() act on the whole pack at once.
+    bool payloads_resident_ = false;
 };
 
 } // namespace fe::pack

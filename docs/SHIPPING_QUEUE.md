@@ -1231,6 +1231,150 @@ motor's clamp, reaction reporting, and breaking threshold. Tests pin the row
 driving the coordinate towards its target, the clamp giving way under a load it
 cannot hold, a scene servo holding a joint against gravity, and the round trip.
 
+
+### `pack-index-streaming`
+
+ADR-0030 and ADR-0126 leave the pack reader's streaming story half-open: a
+container can now be opened by reading only its header and index, and a payload
+is materialised on demand, but a pack parsed whole (`PackFile::parse`) still
+holds every entry's bytes in memory at once, so a mounted audio bank or texture
+set is resident in full the moment it is read. The reader needs a way to drop
+each payload's bytes and keep only its span, so the same pack that was read whole
+is served with the same on-demand read the index path uses.
+
+**Done when** a whole-parsed pack can release its entries' in-memory payloads
+while keeping each entry's `payload_offset`/`payload_length`/`codec`, with a test
+proving an entry read after the release returns byte-for-byte the same bytes it
+returned before, a compressed entry still decompresses, and a malformed span is
+still rejected rather than read as garbage.
+
+### `pack-file-backed-whole-parse`
+
+The complement of the item above: today a caller who wants on-demand payloads
+must call `PackFile::parse_index` and hand the container path to `PackSource`
+separately, so a whole-file parse always keeps its bytes. The two-step is easy to
+get wrong — the pack and the container path must agree, and nothing checks that
+the path is the file the index came from.
+
+**Done when** a pack read whole from a path can be re-pointed at that path for
+on-demand payload reads, with a test proving a payload read after the re-point
+comes from the container (the in-memory copy dropped) and equals the bytes from
+the original parse, and that a re-point at a truncated or wrong-version container
+fails the read with an error rather than returning a stale in-memory copy.
+
+### `audio-bus-mute-solo`
+
+ADR-0034 defers hierarchical buses, mute/solo state, and per-bus effect chains;
+the first of those is the cheapest and the one a game's settings menu wants
+first. An `AudioBus` today carries only a `gain`, so a designer who wants a
+"Mute" toggle or an "Solo" audition must overwrite the authored gain and lose it.
+
+**Done when** an `AudioBus` carries an independent `mute` flag and a `solo` flag,
+a muted bus contributes silence while keeping its authored `gain`, a soloed bus
+silences every non-soloed bus, and both are opt-in (no mute, no solo) so an
+existing scene mixes unchanged, with a test proving a muted bus's voice is silent
+and its `gain` is intact after unmuting, and a soloed bus silences the others.
+
+### `audio-pan-smoothing`
+
+ADR-0099 leaves a pan that crosses the listener in a single frame unsmoothed: the
+pan the mixer computes is a pure function of the current geometry, so a source
+that passes the listener snaps from hard left to hard right between two frames
+and clicks.
+
+**Done when** a voice's recorded pan is rate-limited toward the freshly computed
+pan, with a time constant the mixer owns, and a test proving a source teleported
+from the far left to the far right moves its recorded pan by a bounded step per
+frame rather than jumping the full span, while a source whose pan is already at
+its target is unchanged.
+
+### `audio-distance-model-rolloff`
+
+ADR-0099 names a listener "distance model" other than inverse-distance-clamped as
+deferred. A game that wants a linear falloff, or an exponential one, cannot
+express it: the curve is hard-wired to inverse distance with a cutoff.
+
+**Done when** the mixer's distance attenuation can be authored as a model
+(inverse, linear, or exponential) with a rolloff factor, the inverse-clamped curve
+is the default so an existing scene is unchanged, and a test proves each model
+returns unity at the reference distance and a lower, monotonic gain as distance
+grows, with the chosen model round-tripping through the serializer.
+
+### `physics-world-point-force`
+
+ADR-0136 and ADR-0137 leave the force and impulse forms taking an offset in the
+body's *local* frame: a caller with a world contact point must subtract the
+body's centre and rotate into the local frame by hand, and nothing stops a caller
+from passing a world point as if it were local.
+
+**Done when** a rigid body takes a force at a *world* point that internally
+converts to the local offset and applies the same force plus torque the
+local-offset form would, in both 2D and 3D, with a test proving a force at the
+body's centre equals the same force at a world point coincident with the centre,
+and a force at an off-centre world point spins the body the same way the
+equivalent hand-computed local offset does.
+
+### `physics-break-event`
+
+ADR-0135 leaves a broken joint with a diagnostic-free hole: the joint's `broken`
+flag flips, but nothing reports *that* it broke on the step it broke, so gameplay
+cannot react (play a snap sound, spawn debris, mark a structure failed).
+
+**Done when** a joint that snaps records a break event naming the joint and the
+peak reaction that exceeded its threshold on the step it breaks, readable for
+that step and cleared the next, in both 2D and 3D, with a test proving a joint
+driven past its threshold reports exactly one break event on the snapping step
+and none on the steps before or after.
+
+### `physics-per-collider-restitution-threshold`
+
+ADR-0138 leaves the restitution velocity threshold a single global value per
+world, so a material that wants a different threshold than the default has no
+per-collider override — the friction and restitution *combine* rules are
+per-collider, but the threshold is not.
+
+**Done when** a collider can author its own restitution velocity threshold, with
+the world value as the fallback when the collider does not set one, so an
+existing scene is unchanged, and a test proving a collider with a high threshold
+reports no bounce where a collider with the default does, with the field
+round-tripping through the serializer.
+
+### `character-jump-buffer`
+
+ADR-0152 adds coyote time but names the jump *buffer* — the mirror feature — as
+not added: a press made a moment *before* landing is forgotten, so a player who
+mashes jump just before touching down gets no jump, which reads as an input drop.
+
+**Done when** `CharacterController3D` carries a `jump_buffer` window in seconds
+that remembers a jump press for that long and fires it on the first frame the
+character is grounded, zero disables it so behaviour is unchanged, and a test
+proving a press made while airborne a moment before landing jumps on the landing
+frame, while a press made long before landing is not remembered.
+
+### `ui-scroll-clamp-and-inertia`
+
+ADR-0132 lands clipping and scrolling but leaves a scroll value unclamped: a list
+scrolled past its content or in the negative direction shows blank space, and
+there is no momentum, so a flick stops dead.
+
+**Done when** a scrolling container clamps its scroll to its content extent (zero
+to content minus viewport, never negative, and zero when the content fits), with
+a test proving an over-scrolled list clamps to the end, a negative scroll clamps
+to zero, a list shorter than its viewport reports zero scroll, and the clamp is
+applied on the resolved layout so `hit_test` and drawing agree with it.
+
+### `render-graph-target-alias-verify`
+
+ADR-0100 aliases two render targets onto one slot when their lifetimes do not
+overlap, keyed on identical descriptions, but nothing verifies the aliased pair
+truly do not overlap: a mis-declared lifetime would silently share one buffer and
+show a torn frame.
+
+**Done when** `RenderGraph` can report which targets share a slot, with a test
+proving two targets whose lifetimes do not overlap are reported as sharing one
+slot, two whose lifetimes *do* overlap are given separate slots, and a resize
+that re-describes one target re-aliases (or un-aliases) it correctly.
+
 ---
 ## Backlog — not yet ordered
 

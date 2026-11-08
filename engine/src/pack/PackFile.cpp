@@ -427,7 +427,22 @@ Result<PackFile> PackFile::parse(const u8* data, usize size) {
         }
         entry.data = std::move(payload.value());
     }
+    pack.payloads_resident_ = true;
     return pack;
 }
+
+void PackFile::release_payloads() noexcept {
+    // Give each entry's bytes back while keeping the span and codec it was read
+    // from, so read_payload() with the container bytes still serves it. The span
+    // and codec are what a streaming read needs; the resident copy is the only
+    // thing dropped.
+    for (PackEntry& entry : entries_) {
+        entry.data.clear();
+        entry.data.shrink_to_fit();
+    }
+    payloads_resident_ = false;
+}
+
+bool PackFile::payloads_resident() const noexcept { return payloads_resident_; }
 
 } // namespace fe::pack
