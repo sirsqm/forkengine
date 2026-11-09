@@ -829,3 +829,69 @@ TEST_CASE("a whole-parsed pack can release its payloads and still read them on d
     std::vector<u8> truncated(container.begin(), container.begin() + container.size() / 2);
     CHECK_FALSE(p.read_payload(truncated, *p.find_path("assets/big.bin")));
 }
+
+TEST_CASE("a whole-file pack re-pointed at its container serves payloads on demand") {
+    TempDir dir("bind_container");
+    const std::string path = dir.file("game.fepack");
+
+    PackFile pack;
+    pack.add_file("assets/hero.png", "tex", Uuid::generate(), bytes_of("PNG DATA"));
+    pack.add_file("assets/beep.wav", "wav", Uuid{}, bytes_of("WAVE"));
+    // A payload DEFLATE shrinks, so the re-pointed read round-trips a compressed
+    // entry too, not only a stored one.
+    const std::vector<u8> big(4096, u8{0x42});
+    pack.add_file("assets/big.bin", "", Uuid{}, big);
+    auto packed = pack.write(pack::PackCompression::Fast);
+    REQUIRE(packed);
+    REQUIRE_FALSE(fs::write_binary_file(path, packed.value().data(), packed.value().size()));
+
+    // Read the pack whole from the path, then re-point it at that path.
+    auto read_whole = PackFile::parse_file(path);
+    REQUIRE(read_whole);
+    PackFile p = std::move(read_whole.value());
+    CHECK(p.payloads_resident());
+    CHECK(p.container_path().empty());
+
+    auto bound = p.bind_container(path);
+    REQUIRE(bound);
+    CHECK(p.container_path() == path);
+    CHECK_FALSE(p.payloads_resident());
+    // The re-point kept each entry's span and codec, only the bytes were dropped.
+    CHECK(p.find_path("assets/hero.png")->data.empty());
+    CHECK(p.find_path("assets/big.bin")->codec != PackCodec::None);
+
+    // Every payload now reads back from the container, byte-identical to the
+    // bytes the original whole-file parse held, including the compressed entry.
+    auto hero = p.read_payload(*p.find_path("assets/hero.png"));
+    REQUIRE(hero);
+    CHECK(hero.value() == bytes_of("PNG DATA"));
+    auto beep = p.read_payload(*p.find_path("assets/beep.wav"));
+    REQUIRE(beep);
+    CHECK(beep.value() == bytes_of("WAVE"));
+    auto big_read = p.read_payload(*p.find_path("assets/big.bin"));
+    REQUIRE(big_read);
+    CHECK(big_read.value() == big);
+
+    // Re-pointing at a truncated container is rejected and leaves the working
+    // pack untouched: the resident payloads and the previous bind both survive.
+    std::vector<u8> truncated(packed.value().begin(), packed.value().begin() + packed.value().size() / 2);
+    const std::string truncated_path = dir.file("truncated.fepack");
+    REQUIRE_FALSE(fs::write_binary_file(truncated_path, truncated.data(), truncated.size()));
+    CHECK_FALSE(p.bind_container(truncated_path));
+    CHECK(p.container_path() == path);
+    auto still = p.read_payload(*p.find_path("assets/hero.png"));
+    REQUIRE(still);
+    CHECK(still.value() == bytes_of("PNG DATA"));
+
+    // Re-pointing at a different pack's container is rejected too, and does not
+    // silently serve the other pack's bytes.
+    PackFile other;
+    other.add_file("assets/other.bin", "", Uuid{}, bytes_of("OTHER"));
+    auto other_packed = other.write();
+    REQUIRE(other_packed);
+    const std::string other_path = dir.file("other.fepack");
+    REQUIRE_FALSE(fs::write_binary_file(other_path, other_packed.value().data(), other_packed.value().size()));
+    CHECK_FALSE(p.bind_container(other_path));
+    CHECK(p.container_path() == path);
+    CHECK_FALSE(p.bind_container(dir.file("missing.fepack")));
+}

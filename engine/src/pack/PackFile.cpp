@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "fe/pack/PackFile.h"
 
+#include "fe/core/FileSystem.h"
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -411,6 +413,21 @@ Result<std::vector<u8>> PackFile::read_payload(const u8* data, usize size, const
     return decode_payload(data + entry.payload_offset, static_cast<usize>(entry.payload_length), entry);
 }
 
+Result<std::vector<u8>> PackFile::read_payload(const PackEntry& entry) const {
+    // A pack bound to its container reads the entry's span from that file and
+    // decodes it, so a whole-file parse that gave its bytes back is served on
+    // demand. A pack with no container bound answers from the resident copy, so
+    // this overload is the whole-file read too.
+    if (container_path_.empty()) {
+        return entry.data;
+    }
+    auto bytes = fs::read_binary_file_range(container_path_, entry.payload_offset, entry.payload_length);
+    if (!bytes) {
+        return bytes.error();
+    }
+    return decode_payload(bytes.value().data(), bytes.value().size(), entry);
+}
+
 Result<PackFile> PackFile::parse(const u8* data, usize size) {
     // Parse the index, then materialise every payload. A caller that wants to
     // avoid reading the payload region uses parse_index() and read_payload()
@@ -444,5 +461,73 @@ void PackFile::release_payloads() noexcept {
 }
 
 bool PackFile::payloads_resident() const noexcept { return payloads_resident_; }
+
+Result<PackFile> PackFile::parse_file(std::string_view path) {
+    // Read the whole container, then parse it exactly as parse() does. This is
+    // the path-based entry point a caller reaches for when it wants a
+    // self-contained pack value; bind_container() can then re-point it at the
+    // same file for on-demand reads.
+    auto bytes = fs::read_binary_file(path);
+    if (!bytes) {
+        return bytes.error();
+    }
+    return parse(bytes.value().data(), bytes.value().size());
+}
+
+Result<void> PackFile::bind_container(std::string_view path) {
+    // Read the container's header and index back and check they describe this
+    // same pack before anything is dropped. A path that is not this pack's
+    // container (a different pack, a truncated file, a wrong-version file) is
+    // rejected, and the resident payloads are left intact, so a bad bind is a
+    // no-op the caller can ignore rather than a pack that silently reads the
+    // wrong bytes.
+    auto header_bytes = fs::read_binary_file_range(path, 0, kHeaderSize);
+    if (!header_bytes) {
+        return header_bytes.error();
+    }
+    const u64 container_size = fs::file_size(path);
+    auto header = parse_header(header_bytes.value().data(), header_bytes.value().size(), container_size);
+    if (!header) {
+        return header.error();
+    }
+    if (header.value().entry_count != static_cast<u32>(entries_.size())) {
+        return Error("pack: container '" + std::string(path) + "' has a different entry count");
+    }
+    const u64 index_span = header.value().payload_offset;
+    if (index_span < kHeaderSize) {
+        return Error("pack: payload region starts inside the header");
+    }
+    auto index_bytes = fs::read_binary_file_range(path, 0, index_span);
+    if (!index_bytes) {
+        return index_bytes.error();
+    }
+    auto indexed = parse_index(index_bytes.value().data(), index_bytes.value().size(), container_size);
+    if (!indexed) {
+        return indexed.error();
+    }
+
+    // The parsed index must describe the same entries: same keys in the same
+    // order, and the same on-disk span, codec and original length for each. A
+    // mismatch means the path is not the container this pack came from.
+    const std::vector<PackEntry>& other = indexed.value().entries();
+    if (other.size() != entries_.size()) {
+        return Error("pack: container '" + std::string(path) + "' has a different entry count");
+    }
+    for (usize i = 0; i < entries_.size(); ++i) {
+        const PackEntry& mine = entries_[i];
+        const PackEntry& theirs = other[i];
+        if (mine.key != theirs.key || mine.payload_offset != theirs.payload_offset ||
+            mine.payload_length != theirs.payload_length || mine.codec != theirs.codec ||
+            mine.uncompressed_size != theirs.uncompressed_size) {
+            return Error("pack: container '" + std::string(path) + "' does not match entry '" + mine.key + "'");
+        }
+    }
+
+    // The container is this pack's, so it can be served on demand: record the
+    // path and drop the resident payloads, keeping each span and codec.
+    container_path_ = std::string(path);
+    release_payloads();
+    return {};
+}
 
 } // namespace fe::pack

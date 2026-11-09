@@ -150,6 +150,14 @@ public:
     // decode. Never returns a partial pack.
     [[nodiscard]] static Result<PackFile> parse(const u8* data, usize size);
 
+    // Reads the whole pack file at `path` and parses it: the "read a pack whole
+    // from a path" entry point. Every payload is resident afterwards. The pack
+    // can then be re-pointed at the same container for on-demand reads with
+    // bind_container(), so a caller holding a whole-file pack can hand its bytes
+    // back and stream instead, without the two-step of parse_index() plus a
+    // separately supplied PackSource path (which nothing checked agreed).
+    [[nodiscard]] static Result<PackFile> parse_file(std::string_view path);
+
     // Parses only the container's fixed header. `data` must hold at least
     // kHeaderSize bytes. This is what a streaming reader calls first, to learn
     // how much of the file the index spans before reading it.
@@ -183,6 +191,13 @@ public:
     // not fit is an Error, not a read of garbage.
     [[nodiscard]] Result<std::vector<u8>> read_payload(const u8* data, usize size, const PackEntry& entry) const;
 
+    // Materialises one entry's payload without the caller holding the container
+    // bytes: from the file bound by bind_container() when one is bound, and
+    // otherwise from the entry's resident `data` (a whole-file parse). This is
+    // the read a pack re-pointed at its container serves, so a whole-file parse
+    // that has released its payloads is read on demand through the same call.
+    [[nodiscard]] Result<std::vector<u8>> read_payload(const PackEntry& entry) const;
+
     // The same read against the container held as a vector, so a caller that
     // kept the whole-file bytes can read an entry by value. The bytes are
     // borrowed, not copied.
@@ -205,6 +220,27 @@ public:
     // parse(), false after release_payloads() (and for a parse_index() pack).
     [[nodiscard]] bool payloads_resident() const noexcept;
 
+    // Re-points a whole-parsed pack at the container file it came from, so its
+    // payloads are served on demand from that file instead of from the resident
+    // copies. This is the one-step form of "parse_index plus a PackSource path":
+    // the pack and the container cannot disagree, because the path is the one
+    // parse_file() read. The call reads the container's header and index back and
+    // checks they match this pack (magic, format version, entry count, keys,
+    // spans and codecs) before it drops any payload; a path that is not this
+    // pack's container is rejected with an Error and the resident payloads are
+    // left intact, so a caller that passes a wrong or truncated file keeps a
+    // working pack rather than a pack whose reads silently come from the wrong
+    // bytes.
+    //
+    // After a successful bind, payloads_resident() is false and read_payload()
+    // with the container bytes still serves each entry (the span and codec are
+    // kept). `path` must name the same container parse()/parse_file() read the
+    // index from.
+    [[nodiscard]] Result<void> bind_container(std::string_view path);
+
+    // The container path bound by bind_container(), or empty when none is bound.
+    [[nodiscard]] const std::string& container_path() const noexcept { return container_path_; }
+
     // Decodes one entry's payload from bytes already located at the entry's
     // payload span, decompressing when the entry names a codec. `payload_size`
     // must equal the entry's on-disk length. This is the half of read_payload()
@@ -221,6 +257,10 @@ private:
     // tracks the whole table, not a per-entry flag, because parse() and
     // release_payloads() act on the whole pack at once.
     bool payloads_resident_ = false;
+    // The container file a whole-parsed pack was re-pointed at by
+    // bind_container(). Empty when none is bound, in which case reads come from
+    // each entry's resident `data`.
+    std::string container_path_;
 };
 
 } // namespace fe::pack
