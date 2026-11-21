@@ -578,24 +578,40 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
                 b.position += correction * b.inv_mass;
             }
 
-            // The contact point, taken on A's surface along the normal (a
-            // single-point approximation, standard for box and disc
-            // contacts). Angular impulses need the lever arm from each
-            // centre to this point; a contact through a centre produces no
-            // torque, which is what keeps a body resting flat stable. Each
-            // shape is placed by its node's offset and Z rotation, so a
-            // rotated box or an offset shape reports the lever arm at its
-            // true surface rather than at a shape centred on the node.
-            const Vec2 center_a = a.collider->world_center(a.position, a.rotation);
-            const f32 support_a =
-                a.collider->shape == ShapeType::Circle
-                    ? a.collider->radius
-                    : support_radius(a.collider->oriented_box(a.position, a.rotation), contact.normal);
-            const Vec2 contact_point = center_a + contact.normal * (support_a - contact.penetration * 0.5f);
+            // Where the support acts, as one point (a true face contact is a
+            // manifold, and this is the single point that stands in for it). The
+            // narrow phase's point is the centre of the overlapping region, which is
+            // right for a sphere but wrong for a box on a face: a crate straddling two
+            // tiles gets one contact per tile, each a quarter of its base away from
+            // its centre line, and their sequential impulses spin it until it rolls
+            // off. The point is instead taken under the reference body's centre of
+            // mass, slid along the face into the region the two shapes actually
+            // share: under the centre when the body is supported there, so a flat
+            // resting contact applies no torque, and at the edge of the overlap when
+            // it overhangs, so a box on a ledge tips instead of floating.
+            Vec2 contact_point = contact.point;
+            if (a.collider->shape == ShapeType::Box && b.collider->shape == ShapeType::Box) {
+                const Vec2 tangent{-contact.normal.y, contact.normal.x};
+                const auto interval = [&tangent](const Collider2D& collider, const Vec2& position, f32 rotation) {
+                    const Vec2 center = collider.world_center(position, rotation);
+                    const f32 reach = support_radius(collider.oriented_box(position, rotation), tangent);
+                    return Vec2{center.dot(tangent) - reach, center.dot(tangent) + reach};
+                };
+                const Vec2 span_a = interval(*a.collider, a.position, a.rotation);
+                const Vec2 span_b = interval(*b.collider, b.position, b.rotation);
+                const f32 lo = std::max(span_a.x, span_b.x);
+                const f32 hi = std::min(span_a.y, span_b.y);
+                // The body that can move is the one the support is for; when both
+                // can, the midpoint of the two centres is the shared reference.
+                const Vec2 reference = a.inv_mass > 0.0f && b.inv_mass > 0.0f
+                                           ? (a.position + b.position) * 0.5f
+                                           : (a.inv_mass > 0.0f ? a.position : b.position);
+                const f32 along = std::clamp(reference.dot(tangent), lo, hi);
+                contact_point += tangent * (along - contact.point.dot(tangent));
+            }
 
-            // Lever arms from each body centre to the contact point. The
-            // body's centre of mass is the node origin, so the offset shifts
-            // where the surface is and therefore the lever arm.
+            // Lever arms from each body centre to the contact point. The body's
+            // centre of mass is the node origin.
             const Vec2 ra = contact_point - a.position;
             const Vec2 rb = contact_point - b.position;
 

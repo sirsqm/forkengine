@@ -569,24 +569,42 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
                 b.position += correction * b.inv_mass;
             }
 
-            // The contact point, taken on A's surface along the normal (a
-            // single-point approximation, standard for box and sphere contacts).
-            // Angular impulses need the lever arm from each body centre to this
-            // point; a contact through a centre produces no torque, which is what
-            // keeps a body resting flat stable. For a box the support distance is
-            // the projection of the oriented half-extents onto the normal
-            // (sum of |axis_i . n| * half_i), so a rotated box reports its true
-            // surface rather than an unrotated extent.
-            f32 support_distance = 0.0f;
-            if (a.collider->shape == ShapeType3D::Sphere) {
-                support_distance = a.collider->radius;
-            } else {
-                const Obb3D oriented = a.collider->oriented_box(a.position, a.orientation);
-                for (usize axis = 0; axis < 3; ++axis) {
-                    support_distance += oriented.half(axis) * std::abs(oriented.axis(axis).dot(contact.normal));
+            // Where the support acts, as one point standing in for the face contact.
+            // The narrow phase's point is the centroid of the overlap, which is right
+            // for a sphere but off-centre for a box: rebuilding it from A's centre
+            // along the normal (as this solver once did) slides it onto A's centre
+            // line, giving an off-centre box a lever arm as long as its distance to
+            // the middle of the floor, and the impact impulse then cannot stop the
+            // fall. The point is instead taken under the reference body's centre of
+            // mass, projected into the region the two shapes share: under the centre
+            // when the body is supported there, so a flat resting contact applies no
+            // torque, and at the edge of the overlap when it overhangs, so a box on a
+            // ledge tips instead of floating.
+            Vec3 contact_point = contact.point;
+            if (a.collider->shape == ShapeType3D::Box && b.collider->shape == ShapeType3D::Box) {
+                const Obb3D box_a = a.collider->oriented_box(a.position, a.orientation);
+                const Obb3D box_b = b.collider->oriented_box(b.position, b.orientation);
+                // Any two axes perpendicular to the normal span the contact plane.
+                const Vec3 helper = std::abs(contact.normal.y) < 0.9f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+                const Vec3 tangent_u = contact.normal.cross(helper).normalized();
+                const Vec3 tangent_v = contact.normal.cross(tangent_u);
+                const Vec3 reference = a.inv_mass > 0.0f && b.inv_mass > 0.0f
+                                           ? (a.position + b.position) * 0.5f
+                                           : (a.inv_mass > 0.0f ? a.position : b.position);
+                const auto reach = [](const Obb3D& box, const Vec3& axis) {
+                    return box.half(0) * std::abs(box.axis(0).dot(axis)) +
+                           box.half(1) * std::abs(box.axis(1).dot(axis)) +
+                           box.half(2) * std::abs(box.axis(2).dot(axis));
+                };
+                for (const Vec3& axis : {tangent_u, tangent_v}) {
+                    const f32 lo = std::max(box_a.center.dot(axis) - reach(box_a, axis),
+                                            box_b.center.dot(axis) - reach(box_b, axis));
+                    const f32 hi = std::min(box_a.center.dot(axis) + reach(box_a, axis),
+                                            box_b.center.dot(axis) + reach(box_b, axis));
+                    const f32 along = std::clamp(reference.dot(axis), lo, hi);
+                    contact_point += axis * (along - contact.point.dot(axis));
                 }
             }
-            const Vec3 contact_point = a.position + contact.normal * (support_distance - contact.penetration * 0.5f);
 
             // Lever arms from each body centre to the contact point. The body's
             // centre of mass is the node origin.

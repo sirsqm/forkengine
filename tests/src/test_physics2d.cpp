@@ -327,6 +327,52 @@ TEST_CASE("a body lands on a static floor and does not fall through") {
     CHECK(std::abs(body_node->get_component<physics2d::RigidBody2D>()->velocity.y) < 0.5f);
 }
 
+TEST_CASE("a box lands off-centre on a wide floor and comes to rest") {
+    // The contact point has to be where the box actually meets the floor. Taking it
+    // from the floor's centre instead gave a box at x = -2 a lever arm two units
+    // long: the effective mass grew by the angular term, the impact impulse could
+    // not cancel the fall, and the body sank to y ~= 0.63 while accelerating at
+    // -47 m/s and spinning.
+    Scene scene;
+    add_floor(scene, 20.0f); // top face at y = 0, spanning x in [-20, 20]
+    Node* body_node = add_dynamic_box(scene, Vec2{-2.0f, 4.0f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    const auto* body = body_node->get_component<physics2d::RigidBody2D>();
+    // Rests half a unit above the floor's top face, wherever it landed.
+    CHECK(body_node->transform().position.y > 0.4f);
+    CHECK(body_node->transform().position.y < 0.6f);
+    CHECK(std::abs(body->velocity.y) < 0.5f);
+    // A flat landing on a face must not spin the box: the contact point is under its
+    // centre line, so the impulse's torque is zero.
+    CHECK(std::abs(body->angular_velocity) < 0.5f);
+    // And it stays put horizontally: no torque means no roll.
+    CHECK(std::abs(body_node->transform().position.x + 2.0f) < 0.1f);
+}
+
+TEST_CASE("a box hanging off a ledge tips off it rather than floating") {
+    // The support point is slid under the body's centre only as far as the two
+    // shapes actually overlap. A body whose centre hangs past the floor's edge keeps
+    // the edge as its support, so it gets a torque and tips; a clamp that ignored the
+    // overlap would instead hold it level in mid-air.
+    Scene scene;
+    add_floor(scene, 2.0f); // top face at y = 0, spanning x in [-2, 2]
+    Node* body_node = add_dynamic_box(scene, Vec2{2.4f, 0.5f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 240; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+
+    // It rotated off the edge and fell past the floor rather than resting on it.
+    CHECK(body_node->transform().position.y < 0.0f);
+    CHECK(std::abs(body_node->transform().rotation.z) > 0.05f);
+}
+
 TEST_CASE("a static collider with no rigid body never moves") {
     Scene scene;
     Node* floor_node = add_floor(scene, 5.0f);

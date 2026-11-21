@@ -344,6 +344,29 @@ TEST_CASE("a body lands on a static floor and does not fall through") {
     CHECK(node->transform().position.y < 0.6f);
 }
 
+TEST_CASE("a box lands off-centre on a wide floor and comes to rest") {
+    // The 2D solver took the contact point from the floor's centre line, which gave
+    // an off-centre box a lever arm as long as its distance to the middle of the
+    // floor; the impact impulse could not cancel the fall and the body sank while
+    // spinning. The 3D solver had the same defect, so it is pinned here too.
+    Scene scene;
+    add_floor(scene, 10.0f); // top face at y = 0
+    Node* node = add_dynamic_box(scene, Vec3{-2.0f, 5.0f, -2.0f}, 0.5f, 1.0f);
+    physics3d::Physics3DSystem system;
+
+    run(system, scene, 1.0f / 60.0f, 300);
+
+    const auto* body = node->get_component<physics3d::RigidBody3D>();
+    CHECK(node->transform().position.y > 0.4f);
+    CHECK(node->transform().position.y < 0.6f);
+    CHECK(std::abs(body->velocity.y) < 0.5f);
+    // A flat landing must not spin it, and it must not slide off.
+    CHECK(std::abs(body->angular_velocity.x) < 0.5f);
+    CHECK(std::abs(body->angular_velocity.z) < 0.5f);
+    CHECK(std::abs(node->transform().position.x + 2.0f) < 0.1f);
+    CHECK(std::abs(node->transform().position.z + 2.0f) < 0.1f);
+}
+
 TEST_CASE("a static collider with no rigid body never moves") {
     Scene scene;
     Node* floor = add_floor(scene, 10.0f);

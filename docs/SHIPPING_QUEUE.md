@@ -1363,6 +1363,19 @@ a test proving an over-scrolled list clamps to the end, a negative scroll clamps
 to zero, a list shorter than its viewport reports zero scroll, and the clamp is
 applied on the resolved layout so `hit_test` and drawing agree with it.
 
+### `physics-face-contact-support-point`
+
+The 2D and 3D solvers built their contact point from body A's centre along the
+contact normal, so a box landing anywhere but over A's centre line got a lever arm
+as long as its distance to A's middle. For a small box on a wide floor that lever
+arm inflated the effective mass, the impact impulse could no longer cancel the
+fall, and the body sank while spinning at ~15 rad/s -- a player dropping onto any
+floor away from the world origin fell through it.
+
+**Done when** a box dropped away from a floor's centre comes to rest on it without
+spinning, in both 2D and 3D, and a body whose centre hangs past a ledge still tips
+off rather than floating.
+
 ### `render-graph-target-alias-verify`
 
 ADR-0100 aliases two render targets onto one slot when their lifetimes do not
