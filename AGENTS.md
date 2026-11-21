@@ -430,6 +430,17 @@ the meantime — so re-read the affected docs after rebasing, not only the code.
 
 ## Tooling in a fresh sandbox
 
+A long-lived sandbox can lose its tools between messages: a session that built and
+tested fine can come back with `cmake` gone from `~/.local/bin`, and then
+`cmake --build build 2>&1 | grep -E "error"` prints nothing, the build never runs,
+and the *stale* binary from before the edit runs and reports the previous
+behaviour. That invalidates the one experiment the repository asks for -- "the
+test must fail when the fix is removed" -- silently, and the conclusion is the
+opposite of the truth. Check that the build actually ran (its `EXIT=` marker, or a
+`[100%] Built target` line) before reading a test result, and re-run
+`pip install cmake` plus the GLFW header packages below when it has not.
+
+
 `cmake`, `ctest`, and `xvfb-run` are not always on `PATH`. `pip install cmake`
 puts `cmake`/`ctest` in `~/.local/bin`, which is not on `PATH` either; add it:
 `export PATH="$HOME/.local/bin:$PATH"`. `xvfb-run` may be absent, in which case
