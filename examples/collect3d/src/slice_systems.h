@@ -90,12 +90,19 @@ public:
 
     void set_state(CollectState* state) noexcept { state_ = state; }
 
+    // The host a collected gem's script is detached from before the gem's node is
+    // destroyed. A binding outlives nothing: the host holds the node by pointer,
+    // so a node that dies with its script still attached leaves the host reading
+    // freed memory on the next update.
+    void set_host(fe::ScriptHost* host) noexcept { host_ = host; }
+
 private:
     // Starts the pickup sound on the audio node, if one is present, placing it at
     // `at` first so a positional cue is heard from where the gem was.
     void play_pickup_sound(fe::Scene& scene, const fe::Vec3& at) const;
 
     CollectState* state_ = nullptr;
+    fe::ScriptHost* host_ = nullptr;
 };
 
 // Runs the clock, ends the round when it expires, honours the restart key, and

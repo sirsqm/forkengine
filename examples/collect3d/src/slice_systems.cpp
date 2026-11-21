@@ -140,6 +140,11 @@ void CollectibleSystem::update(const fe::FrameContext& context, fe::Scene& scene
             break;
         }
         play_pickup_sound(scene, node->transform().position);
+        // The gem's spin script is bound to the node by pointer, so it has to go
+        // before the node does: the host would otherwise update freed memory.
+        if (host_ != nullptr) {
+            static_cast<void>(host_->detach_script(node->id()));
+        }
         if (fe::Node* parent = node->parent(); parent != nullptr) {
             static_cast<void>(parent->remove_child(node));
         } else {
@@ -552,6 +557,7 @@ fe::physics3d::Physics3DSystem* install_collect3d_systems(fe::SceneSchedule& sch
     // gem the player just reached is collected the same frame it was reached.
     auto* collectible = schedule.add_system<CollectibleSystem>();
     collectible->set_state(&state);
+    collectible->set_host(host);
 
     auto* goal = schedule.add_system<GoalSystem>();
     goal->set_state(&state);

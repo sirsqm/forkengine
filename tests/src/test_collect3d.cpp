@@ -760,6 +760,7 @@ TEST_CASE("an autoplay run clears the arena and wins") {
     collect3d::CollectState state;
     static_cast<void>(collect3d::install_collect3d_systems(schedule, state, /*autoplay=*/true, &host));
 
+    const usize scripted_before = host.script_count();
     const int max_frames = 60 * 120; // a generous bound; the run should clear sooner
     int frames = 0;
     while (!state.is_over() && frames < max_frames) {
@@ -772,4 +773,9 @@ TEST_CASE("an autoplay run clears the arena and wins") {
     CHECK(state.collected() == state.collectibles_total());
     CHECK(count_collectibles(scene) == 0);
     CHECK(frames < max_frames); // it finished inside the clock, not by running out
+
+    // Every gem carried a spin script, and a collected gem's node is destroyed, so
+    // each pickup must unbind one: a binding left behind points at freed memory,
+    // which the host would then read on the next update.
+    CHECK(host.script_count() == scripted_before - static_cast<usize>(state.collected()));
 }
