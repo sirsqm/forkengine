@@ -164,6 +164,22 @@ public:
     [[nodiscard]] const std::vector<ContactEvent>& contact_events() const noexcept { return events_; }
     [[nodiscard]] usize contact_event_count() const noexcept { return events_.size(); }
 
+    // A joint that snapped in the most recent update, with the reactions that
+    // exceeded its threshold. A game reacts to a break here -- a snap sound,
+    // debris, marking a structure failed -- and needs the step it happened on:
+    // the buffer is cleared at the start of every update and filled only on the
+    // step a joint breaks, so an event is readable for exactly one step. The
+    // joint is named by the two body ids it joined, the same identity the joint
+    // itself uses.
+    struct JointBreak {
+        Uuid body_a;
+        Uuid body_b;
+        f32 peak_force = 0.0f;
+        f32 peak_torque = 0.0f;
+    };
+    [[nodiscard]] const std::vector<JointBreak>& joint_break_events() const noexcept { return break_events_; }
+    [[nodiscard]] usize joint_break_event_count() const noexcept { return break_events_.size(); }
+
     // --- Joints ------------------------------------------------------------
 
     // Number of joints solved in the most recent update: distance joints that
@@ -400,6 +416,7 @@ private:
     std::vector<BodyPair> active_pairs_;
     std::vector<BodyPair> previous_pairs_;
     std::vector<ContactEvent> events_;
+    std::vector<JointBreak> break_events_;
 
     // The position each dynamic body had before this step's integration, indexed
     // like `bodies_`. The continuous pass sweeps from here to the integrated

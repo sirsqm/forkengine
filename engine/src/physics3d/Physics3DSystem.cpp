@@ -259,6 +259,7 @@ void Physics3DSystem::Joint::set_broken(bool value) noexcept {
 void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
     contacts_ = 0;
     events_.clear();
+    break_events_.clear();
     active_pairs_.clear();
     joints_solved_ = 0;
     joints_.clear();
@@ -933,6 +934,9 @@ void Physics3DSystem::solve_joints(Scene& scene, f32 delta_time) {
         if ((break_force > 0.0f && peak_force > break_force) ||
             (break_torque > 0.0f && reaction_torque.length() > break_torque)) {
             joint.set_broken(true);
+            // Report the snap on the step it happened. A broken joint is skipped
+            // from the next step on, so this is recorded exactly once.
+            break_events_.push_back(JointBreak{joint.body_a(), joint.body_b(), peak_force, reaction_torque.length()});
         }
 
         store_joint_body(*joint.a, body_a);

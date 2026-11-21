@@ -3334,6 +3334,45 @@ TEST_CASE("a joint snaps when the load it carries exceeds its break force") {
     CHECK(system.joint_count() == 0);
 }
 
+TEST_CASE("a 2D joint break reports one event on the step it snaps") {
+    Scene scene;
+    Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
+    Node* mass = add_point_mass(scene, Vec2{0.0f, -3.0f}, 5.0f);
+
+    Node* host = scene.create_node("Rod");
+    auto* joint = host->add_component<physics2d::DistanceJoint2D>();
+    joint->body_a = anchor->id();
+    joint->body_b = mass->id();
+    joint->rest_length = 3.0f;
+    joint->break_force = 10.0f; // the 5 kg bob pulls ~49 N, so this rod snaps
+
+    physics2d::Physics2DSystem system;
+    int snapping_step = -1;
+    for (int i = 0; i < 60; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        if (joint->broken) {
+            snapping_step = i;
+            break;
+        }
+        // Nothing has snapped yet, so nothing is reported: the buffer describes
+        // the step, not the joint's state.
+        CHECK(system.joint_break_event_count() == 0);
+    }
+    REQUIRE(snapping_step >= 0);
+
+    // The snapping step reports exactly one event, naming the joint and the load
+    // that broke it.
+    REQUIRE(system.joint_break_event_count() == 1);
+    const auto& event = system.joint_break_events()[0];
+    CHECK((event.body_a == anchor->id()));
+    CHECK((event.body_b == mass->id()));
+    CHECK(event.peak_force > 10.0f);
+
+    // The next step clears it.
+    system.update(step(1.0f / 60.0f), scene);
+    CHECK(system.joint_break_event_count() == 0);
+}
+
 TEST_CASE("a broken joint stops constraining its bodies") {
     Scene scene;
     Node* anchor = add_pivot(scene, Vec2{0.0f, 0.0f});
