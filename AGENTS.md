@@ -413,6 +413,16 @@ GIT_TERMINAL_PROMPT=0 git -c credential.helper= \
   push "https://${GITHUB_TOKEN}@github.com/sirsqm/forkengine.git" main:main
 ```
 
+Verify the push landed before reporting the run complete: `git push` can fail
+with an authentication error (a stale embedded token in `origin` did exactly that
+and silently discarded two weeks of daily commits, each run still reporting
+COMPLETED, because nothing checked the result). Compare the local head with the
+remote after pushing and treat a mismatch as a failed run:
+
+```sh
+git rev-parse HEAD; git ls-remote origin refs/heads/main
+```
+
 Fetch first, as always: another agent may have pushed while the run worked, and
 `main` may need a rebase before the push. A rebase can also invalidate what the
 run just wrote — a queue item it described as open may have landed upstream in
