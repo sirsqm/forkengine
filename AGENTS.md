@@ -304,6 +304,18 @@ defect, not noise.
   `std::filesystem::temp_directory_path()`, join with `std::filesystem::path`
   `/` rather than string `+ "/"`, and compare resolved paths through
   `fs::normalize` so a forward-slash expectation matches a backslash result.
+- A 2D box dropped on a wide box floor sinks through it unless it starts at
+  x = 0. `add_floor(scene, 20.0f)` plus `add_dynamic_box(scene, Vec2{-2.0f, 4.0f},
+  0.5f, 1.0f)` ends at y ~= 0.63 with velocity -47 and never rests, while the same
+  body at x = 0 rests at y = 0.5 with velocity 0. It is pre-existing (reproduces
+  with the solver reverted, and with restitution 0 on both colliders, so it is not
+  the restitution threshold), and it is not a multi-body effect: one off-centre box
+  reproduces it. The contact is found (the pair is reported and the position
+  correction holds the body up) but the velocity impulse is not, so the body keeps
+  accelerating while its position is clamped. Physics tests that need a body to
+  land must therefore place it at x = 0 until this is fixed; a test at an offset
+  measures this bug instead of the feature.
+
 - A GPU vertex layout and the C++ struct it describes are two independent
   declarations that must agree byte for byte, and nothing checks them against
   each other. `SkinnedVertex3D` stored its joint indices as `u16` (56 bytes)
