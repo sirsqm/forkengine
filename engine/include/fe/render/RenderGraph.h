@@ -171,6 +171,20 @@ public:
     };
     [[nodiscard]] Result<TargetPlan> plan() const;
 
+    // The targets that share each physical slot, in slot order. A group of one is
+    // a target nothing aliases; a group of two or more is a set that shares one
+    // allocation. This is the aliasing `plan()` decides, reported as the groups
+    // themselves so a caller can verify the pair it expects to share really does --
+    // a mis-declared lifetime that silently aliased two live targets would show up
+    // here as one group where two were wanted. Dead targets get no group, and a
+    // cycle fails exactly as `plan()` does.
+    struct SlotGroup {
+        u32 slot = 0;
+        // The declared target names in this slot, in declaration order.
+        std::vector<std::string> targets;
+    };
+    [[nodiscard]] Result<std::vector<SlotGroup>> slot_groups() const;
+
     // Allocates one render target per slot in `plan()`, through `device`, and
     // keeps them alive. Fails on a cycle or on a device refusal. Calling it again
     // releases what was allocated first, so it is safe to re-run after the graph

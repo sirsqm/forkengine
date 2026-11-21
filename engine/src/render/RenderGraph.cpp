@@ -473,6 +473,27 @@ Result<RenderGraph::TargetPlan> RenderGraph::plan() const {
     return result;
 }
 
+Result<std::vector<RenderGraph::SlotGroup>> RenderGraph::slot_groups() const {
+    auto planned = plan();
+    if (!planned) {
+        return planned.error();
+    }
+
+    std::vector<SlotGroup> groups;
+    groups.reserve(planned.value().slot_count);
+    for (u32 slot = 0; slot < planned.value().slot_count; ++slot) {
+        SlotGroup group;
+        group.slot = slot;
+        for (u32 i = 0; i < planned.value().slots.size(); ++i) {
+            if (planned.value().slots[i] == slot) {
+                group.targets.push_back(targets_[i].desc.name);
+            }
+        }
+        groups.push_back(std::move(group));
+    }
+    return groups;
+}
+
 Error RenderGraph::allocate(rhi::Device& device) {
     release();
     auto planned = plan();

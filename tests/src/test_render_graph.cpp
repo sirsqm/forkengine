@@ -584,6 +584,95 @@ TEST_CASE("aliasing requires identical shapes") {
     CHECK(planned.value().slot_count == 2);
 }
 
+TEST_CASE("the graph reports which targets share a slot") {
+    // Two disjoint targets of the same shape alias one slot, so they are reported
+    // as one group of two: this is the pair ADR-0100 claims is safe to share, made
+    // observable rather than inferred from the slot numbers.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_pass("d").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_dependency("d", "c").ok());
+    REQUIRE(graph.add_write("a", "shadow").ok());
+    REQUIRE(graph.add_read("b", "shadow").ok());
+    REQUIRE(graph.add_write("c", "post").ok());
+    REQUIRE(graph.add_read("d", "post").ok());
+    REQUIRE(graph.add_target(color_target("shadow")).ok());
+    REQUIRE(graph.add_target(color_target("post")).ok());
+
+    const auto groups = graph.slot_groups();
+    REQUIRE(groups.ok());
+    REQUIRE(groups.value().size() == 1);
+    REQUIRE(groups.value()[0].targets.size() == 2);
+    CHECK(groups.value()[0].targets[0] == "shadow");
+    CHECK(groups.value()[0].targets[1] == "post");
+}
+
+TEST_CASE("targets whose lifetimes overlap are reported in separate groups") {
+    // A mis-declared lifetime is what this report exists to catch: two targets live
+    // on the same pass must never appear in one group, and here they do not.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_dependency("present", "main").ok());
+    REQUIRE(graph.add_write("main", "color").ok());
+    REQUIRE(graph.add_write("main", "depth").ok());
+    REQUIRE(graph.add_read("present", "color").ok());
+    REQUIRE(graph.add_read("present", "depth").ok());
+    REQUIRE(graph.add_target(color_target("color")).ok());
+    REQUIRE(graph.add_target(color_target("depth")).ok());
+
+    const auto groups = graph.slot_groups();
+    REQUIRE(groups.ok());
+    REQUIRE(groups.value().size() == 2);
+    CHECK(groups.value()[0].targets.size() == 1);
+    CHECK(groups.value()[1].targets.size() == 1);
+    CHECK(groups.value()[0].targets[0] != groups.value()[1].targets[0]);
+}
+
+TEST_CASE("a resize re-describes a target and the report follows the alias plan") {
+    // Aliasing is keyed on identical descriptions, so resizing one of a sharing pair
+    // separates them, and resizing it back re-aliases them.
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_pass("d").ok());
+    REQUIRE(graph.add_dependency("b", "a").ok());
+    REQUIRE(graph.add_dependency("c", "b").ok());
+    REQUIRE(graph.add_dependency("d", "c").ok());
+    REQUIRE(graph.add_write("a", "shadow").ok());
+    REQUIRE(graph.add_read("b", "shadow").ok());
+    REQUIRE(graph.add_write("c", "post").ok());
+    REQUIRE(graph.add_read("d", "post").ok());
+    REQUIRE(graph.add_target(color_target("shadow")).ok());
+    REQUIRE(graph.add_target(color_target("post")).ok());
+
+    const auto before = graph.slot_groups();
+    REQUIRE(before.ok());
+    REQUIRE(before.value().size() == 1);
+    CHECK(before.value()[0].targets.size() == 2);
+
+    // A resize that changes the shape: no longer the same allocation, so the pair
+    // separates into two groups.
+    REQUIRE(graph.set_target_desc(color_target("post", 640, 480)).ok());
+    const auto separated = graph.slot_groups();
+    REQUIRE(separated.ok());
+    REQUIRE(separated.value().size() == 2);
+    CHECK(separated.value()[0].targets.size() == 1);
+    CHECK(separated.value()[1].targets.size() == 1);
+
+    // Back to the shared shape: they alias again.
+    REQUIRE(graph.set_target_desc(color_target("post")).ok());
+    const auto aliased_again = graph.slot_groups();
+    REQUIRE(aliased_again.ok());
+    REQUIRE(aliased_again.value().size() == 1);
+    CHECK(aliased_again.value()[0].targets.size() == 2);
+}
+
 TEST_CASE("a target no live pass touches is dead and gets no slot") {
     RenderGraph graph;
     REQUIRE(graph.add_pass("present").ok()); // writes nothing
