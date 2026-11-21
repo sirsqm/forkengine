@@ -1376,6 +1376,19 @@ floor away from the world origin fell through it.
 spinning, in both 2D and 3D, and a body whose centre hangs past a ledge still tips
 off rather than floating.
 
+### `ui-wheel-scroll`
+
+`InputState` has carried a wheel/trackpad delta since the platform layer landed,
+and nothing in the UI consumed it: a list panel could be scrolled only by a script
+setting `UiElement::scroll`, so a player could not scroll a menu, an inventory, or
+any list longer than its frame. The clamp the layout applies was a local, so a
+caller that overshot had its value silently clamped on the way out and then had to
+scroll back through the overshoot before anything moved.
+
+**Done when** the wheel over a panel scrolls it, stops at the end of its content,
+and moves the panel around it once an inner list has reached its own end; and the
+layout reports each element's scroll range so the stored offset is the clamped one.
+
 ### `render-graph-target-alias-verify`
 
 ADR-0100 aliases two render targets onto one slot when their lifetimes do not

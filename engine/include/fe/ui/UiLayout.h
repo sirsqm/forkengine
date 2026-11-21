@@ -65,6 +65,14 @@ struct UiResolved {
     // the draw step need not scissor at all, which keeps the common unclipped case
     // free of a scissor call.
     bool has_clip = false;
+    // The furthest this element's own content can be scrolled, in design pixels:
+    // the content extent minus the content box, per axis, and zero when the content
+    // fits or the element does not clip. The layout already computes it to clamp the
+    // scroll it draws, and reporting it lets a caller move the scroll itself (the
+    // wheel, a script) without overshooting into a value the layout would only clamp
+    // on the way out -- which would leave the overshoot for the next reverse scroll
+    // to undo before anything moved.
+    Vec2 max_scroll{};
 };
 
 // The design-space-to-viewport mapping a canvas produces. One uniform scale and

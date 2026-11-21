@@ -7,6 +7,8 @@
 #include "fe/scene/Scene.h"
 #include "fe/ui/UiElement.h"
 
+#include <algorithm>
+
 namespace fe::ui {
 namespace {
 
@@ -70,6 +72,52 @@ void clear_interactions(Scene& scene) noexcept {
     });
 }
 
+// A wheel notch, in design pixels of scroll. The platform reports a mouse notch as
+// 1.0 and a trackpad as a fraction of one, so a single constant serves both; a game
+// that wants a different feel sets the scroll itself rather than fighting the system.
+constexpr f32 kPixelsPerScrollNotch = 40.0f;
+
+// Moves the scroll of the nearest ancestor of `hovered` (itself included) that clips
+// and still has content to reveal. Returns true when something moved, so the caller
+// lays out again before writing the interaction: the content has shifted, so the
+// element under the pointer may not be the one that was there.
+//
+// The wheel delta is in the platform's units, positive up and right. `scroll` is the
+// content's offset, and a positive y moves the content up -- what a list scrolled
+// down does -- so the sign flips on y.
+[[nodiscard]] bool scroll_at(const UiLayoutResult& layout, const UiResolved& hovered, const Vec2& delta) noexcept {
+    const Vec2 step{delta.x * kPixelsPerScrollNotch, -delta.y * kPixelsPerScrollNotch};
+    // The layout holds const pointers because it does not mutate the scene; the
+    // element itself is owned by the mutable scene, exactly as the interaction
+    // writes below treat it.
+    for (const Node* node = hovered.node; node != nullptr; node = node->parent()) {
+        auto* element = const_cast<Node*>(node)->get_component<UiElement>();
+        if (element == nullptr || !element->clip) {
+            continue;
+        }
+        const UiResolved* resolved = nullptr;
+        for (const UiResolved& entry : layout) {
+            if (entry.node == node) {
+                resolved = &entry;
+                break;
+            }
+        }
+        if (resolved == nullptr) {
+            continue;
+        }
+        const Vec2 moved{std::clamp(element->scroll.x + step.x, 0.0f, resolved->max_scroll.x),
+                         std::clamp(element->scroll.y + step.y, 0.0f, resolved->max_scroll.y)};
+        if (moved.x != element->scroll.x || moved.y != element->scroll.y) {
+            element->scroll = moved;
+            return true;
+        }
+        // This container has nothing left to reveal on the wheel's axis, so an outer
+        // one may still: a list inside a scrolling page scrolls the page once the
+        // list has reached its end, which is what a reader expects.
+    }
+    return false;
+}
+
 } // namespace
 
 void UiInputSystem::update(const FrameContext& context, Scene& scene) {
@@ -116,6 +164,16 @@ void UiInputSystem::update(const FrameContext& context, Scene& scene) {
     }
 
     hovered_ = hit_test(layout_, pointer.position);
+
+    // The wheel scrolls what it is over, then the layout is rebuilt so everything
+    // below describes what is now drawn rather than where the content was.
+    if (hovered_ != nullptr) {
+        const Vec2 wheel = input.scroll_delta();
+        if ((wheel.x != 0.0f || wheel.y != 0.0f) && scroll_at(layout_, *hovered_, wheel)) {
+            fe::ui::layout(scene, width, height, layout_);
+            hovered_ = hit_test(layout_, pointer.position);
+        }
+    }
 
     // A press begins on whatever is under the pointer, and the press is
     // remembered by component identity so a release can be matched to it. This is

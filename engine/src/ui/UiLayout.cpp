@@ -367,8 +367,8 @@ void place_children(const Node& node, const UiElement& element, const UiCanvas& 
 // space before the content and a scroll past the end shows it after, so both are
 // refused here rather than left to every caller. `placed` is the children at scroll
 // zero, so the extent is measured before the scroll moves anything.
-[[nodiscard]] Vec2 clamped_scroll(const Vec2& scroll, const Rect& content_box,
-                                  const std::vector<Placed>& placed) noexcept {
+[[nodiscard]] Vec2 clamped_scroll(const Vec2& scroll, const Rect& content_box, const std::vector<Placed>& placed,
+                                  Vec2& max_scroll) noexcept {
     Vec2 content_extent{};
     for (const Placed& entry : placed) {
         content_extent.x =
@@ -376,8 +376,8 @@ void place_children(const Node& node, const UiElement& element, const UiCanvas& 
         content_extent.y =
             std::max(content_extent.y, entry.rect.position.y + entry.rect.size.y - content_box.position.y);
     }
-    const Vec2 max_scroll{std::max(content_extent.x - content_box.size.x, 0.0f),
-                          std::max(content_extent.y - content_box.size.y, 0.0f)};
+    max_scroll = Vec2{std::max(content_extent.x - content_box.size.x, 0.0f),
+                      std::max(content_extent.y - content_box.size.y, 0.0f)};
     return Vec2{std::clamp(scroll.x, 0.0f, max_scroll.x), std::clamp(scroll.y, 0.0f, max_scroll.y)};
 }
 
@@ -396,9 +396,6 @@ void place_children(const Node& node, const UiElement& element, const UiCanvas& 
 // sets `clip`, which is what a scroll panel does.
 void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, const UiCanvasTransform& transform,
           const Rect& design_rect, i32 canvas_layer, u32 depth, const ClipContext& clip, UiLayoutResult& out) {
-    out.push_back(UiResolved{&element, &canvas, &node, transform.to_viewport(design_rect), design_rect,
-                             canvas_layer + element.layer, depth, transform.to_viewport(clip.rect), clip.active});
-
     // The children are laid out inside the padding, so a panel's border is never
     // covered by its contents. A clipping container narrows the clip region to its
     // own box; its scroll is resolved below, against the extent the children cover.
@@ -413,12 +410,19 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
 
     // The scroll moves the content inside the window, and is clamped to the extent
     // the content covers so a list scrolled past its end shows its last item rather
-    // than blank space. The clamp is resolved here, before the children are
-    // emitted, so the rectangles a hit test walks are the ones that were drawn.
+    // than blank space. The clamp is resolved here, before the element is emitted,
+    // so the rectangles a hit test walks are the ones that were drawn, and the
+    // element carries the range so a caller that moves the scroll itself can stay
+    // inside it.
     Vec2 scroll{};
+    Vec2 max_scroll{};
     if (element.clip) {
-        scroll = clamped_scroll(element.scroll, content_box, placed);
+        scroll = clamped_scroll(element.scroll, content_box, placed, max_scroll);
     }
+
+    out.push_back(UiResolved{&element, &canvas, &node, transform.to_viewport(design_rect), design_rect,
+                             canvas_layer + element.layer, depth, transform.to_viewport(clip.rect), clip.active,
+                             max_scroll});
 
     // Whether `child_rect` is visible inside `child_clip`: always true when
     // nothing clips, else only when the two overlap. A wholly-outside child is

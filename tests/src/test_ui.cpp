@@ -419,6 +419,113 @@ TEST_CASE("the arena UI pass reproduces the heap UI pass") {
 // Interaction
 // ---------------------------------------------------------------------------
 
+TEST_CASE("the wheel scrolls the panel under the pointer and stops at its end") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    // A list panel 200x100 holding four 40-tall rows: 160 of content, so 60 of it
+    // can be revealed by scrolling and no more.
+    Node* panel_node = add_element(canvas_node, "List", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{10.0f, 10.0f});
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+    panel->direction = ui::UiDirection::Column;
+    for (int i = 0; i < 4; ++i) {
+        add_element(panel_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    }
+
+    ui::UiInputSystem system;
+    InputState input;
+    input.on_mouse_move(50.0f, 30.0f); // over the first row, inside the panel
+
+    // The wheel is over a row, which does not scroll; the panel around it does.
+    input.on_scroll(0.0f, -1.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    CHECK(panel->scroll.y == doctest::Approx(40.0f));
+
+    // Past the end it stops at the content extent, not past it.
+    input.begin_frame();
+    input.on_scroll(0.0f, -1.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    CHECK(panel->scroll.y == doctest::Approx(60.0f));
+
+    // Scrolling back moves immediately, which it would not if the stored value had
+    // been left at 80 and only clamped on the way out.
+    input.begin_frame();
+    input.on_scroll(0.0f, 1.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    CHECK(panel->scroll.y == doctest::Approx(20.0f));
+
+    // A wheel up at the top stays at zero rather than going negative.
+    input.begin_frame();
+    input.on_scroll(0.0f, 1.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    CHECK(panel->scroll.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("the wheel does nothing when the pointer is not over a scrolling panel") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "List", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{10.0f, 10.0f});
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+    panel->direction = ui::UiDirection::Column;
+    for (int i = 0; i < 4; ++i) {
+        add_element(panel_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    }
+
+    ui::UiInputSystem system;
+    InputState input;
+    input.on_mouse_move(900.0f, 600.0f); // empty canvas, not the panel
+    input.on_scroll(0.0f, -3.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+
+    CHECK(panel->scroll.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a wheel past the end of an inner list scrolls the panel around it") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* outer_node = add_element(canvas_node, "Page", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f),
+                                   ui::UiAnchor::TopLeft, Vec2{10.0f, 10.0f});
+    auto* outer = outer_node->get_component<ui::UiElement>();
+    outer->clip = true;
+    outer->direction = ui::UiDirection::Column;
+
+    // 40 of list plus 100 of spacer: 140 of content in a 100-tall page, so 40 of it
+    // can scroll once the list has reached its own end.
+    Node* inner_node = add_element(outer_node, "List", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    auto* inner = inner_node->get_component<ui::UiElement>();
+    inner->clip = true;
+    inner->direction = ui::UiDirection::Column;
+    for (int i = 0; i < 4; ++i) {
+        add_element(inner_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    }
+    add_element(outer_node, "Spacer", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+
+    ui::UiInputSystem system;
+    InputState input;
+    input.on_mouse_move(50.0f, 30.0f); // over the inner list
+
+    // Three notches take the inner list to its end (120 of hidden content).
+    for (int i = 0; i < 3; ++i) {
+        if (i > 0) {
+            input.begin_frame();
+        }
+        input.on_scroll(0.0f, -1.0f);
+        system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    }
+    CHECK(inner->scroll.y == doctest::Approx(120.0f));
+    CHECK(outer->scroll.y == doctest::Approx(0.0f));
+
+    // The next notch has nowhere to go inside, so it moves the page instead.
+    input.begin_frame();
+    input.on_scroll(0.0f, -1.0f);
+    system.update(make_context(input, Vec2{1280.0f, 720.0f}), scene);
+    CHECK(inner->scroll.y == doctest::Approx(120.0f));
+    CHECK(outer->scroll.y == doctest::Approx(40.0f));
+}
+
 TEST_CASE("a press and release on an element is a click") {
     Scene scene;
     Node* canvas_node = add_canvas(scene);
