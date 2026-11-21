@@ -345,6 +345,19 @@ defect, not noise.
   re-introduces this. A self-contained zip bundles the redistributable instead:
   `InstallRequiredSystemLibraries` installs the CRT DLLs beside the binaries and
   packaging carries them into the archive (ADR-0122).
+- A job killed by a runner recycle does not look like a cancellation in the log.
+  The build prints `Terminated` for every child at once, then
+  `Process completed with exit code 143` and "The runner has received a shutdown
+  signal", the step is recorded as `cancelled`, and the job can sit `in_progress`
+  for hours with no log blob at all (`BlobNotFound` from the logs API). Every
+  `gmake: *** [x] Terminated` line is the whole process group dying at one instant,
+  which no compiler or test does; a real build failure names one file and one
+  diagnostic. Read the exit code before the diff: 143 on the *Build* step of a job
+  whose other siblings are green is infrastructure, and the fix is a rerun once the
+  runners are healthy, not a code change. Two of the three failures seen on
+  2026-11-21 were this, on the `warnings` and `sanitizers` jobs, at 4 and 46 minutes
+  in. Every job now carries `timeout-minutes` so a genuine hang fails by itself.
+
 - ctest's default timeout is 1500s, longer than anyone waits before cancelling a
   run, so a hanging test looks like an infrastructure stall. CI passes
   `--timeout 300` to every `ctest` and bounds the job with `timeout-minutes`, so
