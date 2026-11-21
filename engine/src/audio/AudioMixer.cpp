@@ -78,6 +78,24 @@ f32 voice_pan(const Voice& voice, const MixParams& params) noexcept {
     return (offset / distance).dot(right / right_len);
 }
 
+f32 smoothed_pan(f32 current, f32 target, f32 elapsed_seconds, f32 time_constant_seconds) noexcept {
+    const f32 from = std::clamp(current, -1.0f, 1.0f);
+    const f32 to = std::clamp(target, -1.0f, 1.0f);
+
+    // Smoothing off (the default), or a call with no time in it: the pan is the
+    // freshly computed one. Also the exact fixed point, so a settled pan does not
+    // drift by a rounding error every frame.
+    if (time_constant_seconds <= 0.0f || elapsed_seconds <= 0.0f || from == to) {
+        return to;
+    }
+
+    // One-pole: the fraction of the remaining distance covered in this call. A
+    // small elapsed time or a large constant moves a small step, so the pan
+    // approaches the target asymptotically and never overshoots.
+    const f32 alpha = 1.0f - std::exp(-elapsed_seconds / time_constant_seconds);
+    return std::clamp(from + (to - from) * alpha, -1.0f, 1.0f);
+}
+
 f32 shadow_strength(const Voice& voice, const MixParams& params) noexcept {
     // A non-positional voice has no place in space; a listener with no facing
     // has no front or back; and the cue is opt-in. Each of those leaves the
@@ -138,7 +156,10 @@ f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_cha
     return samples[frame * source_channels + source_channel];
 }
 
-f32 voice_level(Voice& voice, const MixParams& params) noexcept {
+f32 voice_level(Voice& voice, const MixParams& params, f32 elapsed_seconds) noexcept {
+    // The recorded pan is the smoothing filter's state, so read it before the
+    // reset below and let the step carry across calls.
+    const f32 previous_pan = voice.pan;
     voice.attenuation = 1.0f;
     voice.pan = 0.0f;
     voice.cone_gain = 1.0f;
@@ -146,7 +167,7 @@ f32 voice_level(Voice& voice, const MixParams& params) noexcept {
     if (voice.spatial) {
         const Vec3 offset = voice.world_position - params.listener_position;
         voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
-        voice.pan = voice_pan(voice, params);
+        voice.pan = smoothed_pan(previous_pan, voice_pan(voice, params), elapsed_seconds, params.pan_smoothing_seconds);
         voice.shadow = shadow_strength(voice, params);
 
         // Directivity: the angle between the source's cone axis and the direction
@@ -257,8 +278,11 @@ f32 add_streamed_voice(Voice& voice, const f32* samples, u32 source_frames, u32 
     }
     // The level is resolved exactly as a clip voice's is, then the master gain is
     // applied here because mix_voices already folded it into the sum these
-    // samples are added to.
-    const f32 level = voice_level(voice, params) * params.master_gain;
+    // samples are added to. The pan smoothing step uses this call's duration, so
+    // a streamed voice eases at the same rate as a clip voice.
+    const f32 elapsed_seconds =
+        output_sample_rate > 0 ? static_cast<f32>(frames) / static_cast<f32>(output_sample_rate) : 0.0f;
+    const f32 level = voice_level(voice, params, elapsed_seconds) * params.master_gain;
     const u32 source_channels = voice.stream_channels == 0 ? out_channels : voice.stream_channels;
     if (ratio <= 0.0) {
         ratio = 1.0;
@@ -325,6 +349,9 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
     }
 
     const f64 output_rate = static_cast<f64>(output_sample_rate);
+    // This call's duration, for the pan smoothing step: the mixer is called once
+    // per frame, so one call is one step regardless of how many frames it mixes.
+    const f32 elapsed_seconds = static_cast<f32>(frames) / static_cast<f32>(output_sample_rate);
 
     for (usize v = 0; v < voice_count; ++v) {
         Voice& voice = voices[v];
@@ -339,7 +366,7 @@ f32 mix_voices(Voice* voices, usize voice_count, f32* output, u32 frames, u32 ou
         // zero (a muted bus, a silent source, a voice past its cutoff) still
         // advances the read position through the normal path below, so unmuting
         // resumes at the right place rather than replaying from where it stopped.
-        const f32 level = voice_level(voice, params);
+        const f32 level = voice_level(voice, params, elapsed_seconds);
 
         // Panning: a per-ear gain applied on top of the level, computed once per
         // voice because it depends only on the voice and the listener, not on the

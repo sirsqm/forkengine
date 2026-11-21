@@ -309,6 +309,7 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         params.doppler_enabled = doppler_enabled_;
         params.front_back_enabled = front_back_enabled_;
         params.head_shadow_cutoff_hz = head_shadow_cutoff_hz_;
+        params.pan_smoothing_seconds = pan_smoothing_seconds_;
         params.buses = buses_.empty() ? nullptr : buses_.data();
         params.bus_count = static_cast<u32>(buses_.size());
         params.master_gain = master_gain_;

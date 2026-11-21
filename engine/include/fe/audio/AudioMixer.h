@@ -68,6 +68,10 @@ struct Voice {
     // listener has no orientation (a 2D scene), so the mix is unchanged. Exposed
     // for the same reason `attenuation` is: a test can assert the pan without
     // re-deriving the vector maths.
+    //
+    // With pan smoothing enabled (`MixParams::pan_smoothing_seconds`) this is
+    // the eased value, carried from call to call as the filter's state; with it
+    // disabled (the default) it is the freshly computed pan.
     f32 pan = 0.0f;
 
     // --- Directivity cone --------------------------------------------------
@@ -277,6 +281,21 @@ struct MixParams {
     // direction.
     [[nodiscard]] bool has_orientation() const noexcept { return listener_forward.length_squared() > 0.0f; }
 
+    // The time constant, in seconds, of the one-pole smoothing applied to a
+    // positional voice's pan. 0 (the default) disables smoothing, so the pan
+    // jumps to the freshly computed value and every existing mix is unchanged
+    // byte for byte.
+    //
+    // With a positive value the recorded pan (`voice.pan`) eases toward the
+    // target by `1 - exp(-dt / pan_smoothing_seconds)` on each mixer call, where
+    // `dt` is that call's frame count over the output rate. A source that
+    // crosses the listener - or is teleported across it - therefore sweeps
+    // instead of snapping, which is what removes the click. The constant is a
+    // property of the mix, not the voice: every positional voice is smoothed by
+    // the same rule, and a voice whose pan is already at its target is
+    // unchanged.
+    f32 pan_smoothing_seconds = 0.0f;
+
     // Whether the front/back head-shadow cue is applied. Off by default, and
     // only meaningful together with a facing, so a scene authored before this
     // refinement - and every 2D scene - mixes byte for byte as it did. A game
@@ -360,7 +379,12 @@ struct MixParams {
 // gain for the left and right ears rather than one number for the voice. The
 // level folds in the directivity cone as well as distance attenuation: a source
 // facing away from the listener is quieter than one facing it.
-[[nodiscard]] f32 voice_level(Voice& voice, const MixParams& params) noexcept;
+//
+// Also advances the recorded pan by one smoothing step: `elapsed_seconds` is the
+// call's duration, so a caller that knows its frame count and output rate passes
+// `frames / rate`. The default 0 means "no time passed", which makes the step
+// instantaneous and leaves the pre-smoothing behaviour exact.
+[[nodiscard]] f32 voice_level(Voice& voice, const MixParams& params, f32 elapsed_seconds = 0.0f) noexcept;
 
 // The pan the mixer computes for a voice, in [-1, 1], and records on
 // `voice.pan`. 0 for a non-positional voice, and 0 when the listener has no
@@ -375,6 +399,23 @@ struct MixParams {
 // gives left/right separation, which is the audible half of spatialisation, and
 // leaves front/back and elevation to a future head-related filter.
 [[nodiscard]] f32 voice_pan(const Voice& voice, const MixParams& params) noexcept;
+
+// One smoothing step of a pan toward a target.
+//
+// A one-pole exponential approach: with a positive `time_constant_seconds` and
+// `elapsed_seconds`, returns
+//
+//     current + (target - current) * (1 - exp(-elapsed / time_constant))
+//
+// so a larger time constant moves a smaller fraction per call and the pan
+// approaches the target without overshooting. Returns `target` when either
+// duration is zero - smoothing disabled, or a call with no frames - and when
+// `current` already equals `target`, so a settled pan is bit-for-bit unchanged.
+//
+// Inputs and the result are clamped to [-1, 1], the pan law's domain, so a
+// caller cannot record a value `pan_gain` would have to clamp again. Total and
+// pure, so the tests assert the step directly as well as through the mixer.
+[[nodiscard]] f32 smoothed_pan(f32 current, f32 target, f32 elapsed_seconds, f32 time_constant_seconds) noexcept;
 
 // The front/back head-shadow strength for a voice, in [0, 1], and recorded on
 // `voice.shadow`.

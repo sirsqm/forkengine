@@ -673,6 +673,91 @@ TEST_CASE("a non-positional voice is never panned even with a facing set") {
     CHECK(output[1] == doctest::Approx(0.5f));
 }
 
+TEST_CASE("smoothed_pan eases toward the target and snaps when smoothing is off") {
+    // Off (the default): the target, exactly, so the pre-smoothing behaviour is
+    // preserved.
+    CHECK(audio::smoothed_pan(-1.0f, 1.0f, 1.0f / 60.0f, 0.0f) == doctest::Approx(1.0f));
+
+    // No time in the call: also the target, rather than a zero-length step.
+    CHECK(audio::smoothed_pan(-1.0f, 1.0f, 0.0f, 0.05f) == doctest::Approx(1.0f));
+
+    // A settled pan is the exact fixed point, so it does not drift every frame.
+    CHECK(audio::smoothed_pan(0.25f, 0.25f, 1.0f / 60.0f, 0.05f) == 0.25f);
+
+    // A positive constant moves a fraction of the remaining span - never the
+    // whole of it - and the step is the one-pole law.
+    const f32 dt = 1.0f / 60.0f;
+    const f32 tau = 0.05f;
+    const f32 step = audio::smoothed_pan(-1.0f, 1.0f, dt, tau);
+    CHECK(step == doctest::Approx(-1.0f + 2.0f * (1.0f - std::exp(-dt / tau))));
+    CHECK(step > -1.0f);
+    CHECK(step < 1.0f);
+
+    // Repeated steps approach the target from one side and never overshoot.
+    f32 pan = -1.0f;
+    for (int i = 0; i < 60; ++i) {
+        const f32 next = audio::smoothed_pan(pan, 1.0f, dt, tau);
+        CHECK(next >= pan);
+        CHECK(next <= 1.0f);
+        pan = next;
+    }
+    CHECK(pan == doctest::Approx(1.0f).epsilon(0.01));
+
+    // Out-of-range inputs are clamped to the pan law's domain.
+    CHECK(audio::smoothed_pan(-5.0f, 5.0f, dt, 0.0f) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("pan smoothing bounds the step when a source teleports across the listener") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.loop = true; // the voice must keep mixing for its pan to keep updating
+    voice.spatial = true;
+    voice.min_distance = 1.0f;
+    voice.max_distance = 100.0f;
+    voice.world_position = Vec3{-5.0f, 0.0f, 0.0f}; // hard left
+
+    audio::MixParams params;
+    params.listener_forward = Vec3{0.0f, 0.0f, -1.0f};
+    params.listener_up = Vec3{0.0f, 1.0f, 0.0f};
+    params.pan_smoothing_seconds = 0.05f;
+
+    constexpr u32 kFrames = 133; // ~16.6 ms at 8 kHz, one 60 Hz frame
+    std::vector<f32> output(kFrames * 2);
+
+    // Settle at hard left.
+    for (int i = 0; i < 200; ++i) {
+        static_cast<void>(audio::mix_voices(&voice, 1, output.data(), kFrames, 2, 8000, params));
+    }
+    CHECK(voice.pan == doctest::Approx(-1.0f).epsilon(0.001));
+
+    // Teleport to hard right. One mixer call is one frame, and it must move a
+    // bounded step toward the target rather than the whole two-unit span.
+    voice.world_position = Vec3{5.0f, 0.0f, 0.0f};
+    const f32 before = voice.pan;
+    static_cast<void>(audio::mix_voices(&voice, 1, output.data(), kFrames, 2, 8000, params));
+    const f32 expected = audio::smoothed_pan(before, 1.0f, static_cast<f32>(kFrames) / 8000.0f, 0.05f);
+    CHECK(voice.pan == doctest::Approx(expected));
+    CHECK(voice.pan > before);        // moved toward the right
+    CHECK(voice.pan < 0.0f);          // but not across the centre in one frame
+    CHECK(voice.pan - before < 1.0f); // less than half the span
+
+    // A second frame keeps easing in the same direction, still short of the target.
+    const f32 first = voice.pan;
+    static_cast<void>(audio::mix_voices(&voice, 1, output.data(), kFrames, 2, 8000, params));
+    CHECK(voice.pan > first);
+    CHECK(voice.pan < 1.0f);
+
+    // Once settled at the target, another call leaves the recorded pan unchanged.
+    for (int i = 0; i < 400; ++i) {
+        static_cast<void>(audio::mix_voices(&voice, 1, output.data(), kFrames, 2, 8000, params));
+    }
+    CHECK(voice.pan == doctest::Approx(1.0f).epsilon(0.001));
+    const f32 settled = voice.pan;
+    static_cast<void>(audio::mix_voices(&voice, 1, output.data(), kFrames, 2, 8000, params));
+    CHECK(voice.pan == settled);
+}
+
 TEST_CASE("a streamed positional voice pans the same as a clip voice") {
     // The streamed path applies the same per-ear gains as the clip path, so a
     // streamed source to the right is louder in the right ear too.

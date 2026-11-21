@@ -141,6 +141,15 @@ public:
     void set_head_shadow_cutoff(f32 cutoff_hz) noexcept { head_shadow_cutoff_hz_ = cutoff_hz; }
     [[nodiscard]] f32 head_shadow_cutoff() const noexcept { return head_shadow_cutoff_hz_; }
 
+    // The time constant, in seconds, of the pan smoothing the mixer applies to
+    // every positional voice. 0 (the default) disables it, so a pan jumps to the
+    // freshly computed value and an existing scene is unchanged. A positive value
+    // eases the pan toward its target, so a source that crosses the listener
+    // sweeps across the stereo field instead of snapping from one ear to the
+    // other and clicking. See MixParams::pan_smoothing_seconds.
+    void set_pan_smoothing_seconds(f32 seconds) noexcept { pan_smoothing_seconds_ = seconds; }
+    [[nodiscard]] f32 pan_smoothing_seconds() const noexcept { return pan_smoothing_seconds_; }
+
     // The gain of the master bus, applied to the summed output. 1 is unity.
     void set_master_gain(f32 gain) noexcept { master_gain_ = gain; }
     [[nodiscard]] f32 master_gain() const noexcept { return master_gain_; }
@@ -238,6 +247,7 @@ private:
     bool doppler_enabled_ = false;
     bool front_back_enabled_ = false;
     f32 head_shadow_cutoff_hz_ = 2000.0f;
+    f32 pan_smoothing_seconds_ = 0.0f;
     f32 master_gain_ = 1.0f;
     std::vector<AudioBus> buses_;
 
