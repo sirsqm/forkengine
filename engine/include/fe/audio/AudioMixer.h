@@ -306,8 +306,33 @@ struct MixParams {
     // buses and scaling the sum.
     f32 master_gain = 1.0f;
 
+    // Whether any group bus is soloed. While one is, every bus that is not
+    // soloed contributes silence; the master bus is not a group and keeps its
+    // own gain, so an unrouted voice is unaffected by a group's solo.
+    [[nodiscard]] bool any_solo() const noexcept {
+        if (buses == nullptr) {
+            return false;
+        }
+        for (u32 i = 0; i < bus_count; ++i) {
+            if (buses[i].solo) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // The level a voice's bus applies: 0 for a muted bus, 0 for a non-soloed bus
+    // while another bus is soloed, and the authored `gain` otherwise. Mute and
+    // solo never overwrite `gain`, so clearing both restores the authored level.
     [[nodiscard]] f32 bus_gain(u32 index) const noexcept {
-        return index < bus_count && buses != nullptr ? buses[index].gain : 1.0f;
+        if (index >= bus_count || buses == nullptr) {
+            return 1.0f;
+        }
+        const AudioBus& bus = buses[index];
+        if (bus.mute || (any_solo() && !bus.solo)) {
+            return 0.0f;
+        }
+        return bus.gain;
     }
 };
 
@@ -426,8 +451,9 @@ struct MixParams {
 //
 // where `attenuation` is distance_attenuation() for a positional voice and 1
 // otherwise, `cone_gain` is cone_attenuation() for a positional voice with a
-// cone axis and 1 otherwise, and `bus_gain` is the gain of the voice's bus (1
-// when it is on no bus). A non-positional voice on no bus therefore keeps
+// cone axis and 1 otherwise, and `bus_gain` is the level of the voice's bus (1
+// when it is on no bus, 0 for a muted bus, and 0 for a bus that is not soloed
+// while another one is). A non-positional voice on no bus therefore keeps
 // exactly its authored gain, which is the behaviour that existed before this
 // refinement.
 //

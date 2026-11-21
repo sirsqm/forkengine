@@ -156,6 +156,22 @@ public:
     // returns the master gain.
     [[nodiscard]] f32 bus_gain(std::string_view name) const;
 
+    // Silences (or unsilences) the named group bus without touching its gain, so
+    // a settings menu's mute toggle is a switch and unmuting restores the
+    // authored level. Creates the bus if it does not exist yet. The empty name is
+    // the master bus and is rejected, as it is for the gain.
+    void set_bus_mute(std::string_view name, bool mute);
+
+    // Auditions the named group bus: while any bus is soloed, every bus that is
+    // not soloed is silent. Independent of mute and gain. Creates the bus if it
+    // does not exist yet; the empty name is rejected.
+    void set_bus_solo(std::string_view name, bool solo);
+
+    // The mute/solo flag of the named bus, false when no such bus exists (or for
+    // the empty master name, which has neither).
+    [[nodiscard]] bool bus_mute(std::string_view name) const;
+    [[nodiscard]] bool bus_solo(std::string_view name) const;
+
     // Removes every group bus, returning the system to master-only mixing.
     void clear_buses();
 

@@ -106,6 +106,50 @@ f32 AudioSystem::bus_gain(std::string_view name) const {
     return 1.0f;
 }
 
+void AudioSystem::set_bus_mute(std::string_view name, bool mute) {
+    if (name.empty()) {
+        return;
+    }
+    for (AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            bus.mute = mute;
+            return;
+        }
+    }
+    buses_.push_back(AudioBus{std::string(name), 1.0f, mute, false});
+}
+
+void AudioSystem::set_bus_solo(std::string_view name, bool solo) {
+    if (name.empty()) {
+        return;
+    }
+    for (AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            bus.solo = solo;
+            return;
+        }
+    }
+    buses_.push_back(AudioBus{std::string(name), 1.0f, false, solo});
+}
+
+bool AudioSystem::bus_mute(std::string_view name) const {
+    for (const AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            return bus.mute;
+        }
+    }
+    return false;
+}
+
+bool AudioSystem::bus_solo(std::string_view name) const {
+    for (const AudioBus& bus : buses_) {
+        if (bus.name == name) {
+            return bus.solo;
+        }
+    }
+    return false;
+}
+
 void AudioSystem::clear_buses() {
     buses_.clear();
 }

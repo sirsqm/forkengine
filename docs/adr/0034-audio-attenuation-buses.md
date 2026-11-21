@@ -157,5 +157,7 @@ Still out of scope, and tracked in the roadmap:
 
 - Streaming / large-file playback (clips are fully decoded into memory).
 - Compressed codecs (only PCM and float WAV are decoded).
-- Hierarchical buses, mute/solo state, and per-bus effect chains.
+- Hierarchical buses and per-bus effect chains. (Mute and solo have since
+  landed: they are independent flags on the bus, so toggling one never
+  overwrites the authored gain.)
 - Doppler shift and directional (cone) attenuation.

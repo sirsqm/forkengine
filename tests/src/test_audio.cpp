@@ -998,6 +998,89 @@ TEST_CASE("a muted bus is silent but still advances the voice") {
     CHECK(voice.frames_played == 2);
 }
 
+TEST_CASE("a bus mute silences it while keeping its gain for unmuting") {
+    auto clip = mono_clip(8000, {1.0f, 1.0f, 1.0f, 1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.bus = 0;
+
+    audio::AudioBus buses[1] = {audio::AudioBus{"music", 0.5f, true, false}};
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 1;
+
+    f32 output[2] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 2, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.0f));
+    CHECK(output[1] == doctest::Approx(0.0f));
+    // Muting is a switch, not a gain edit: the authored level survives it.
+    CHECK(buses[0].gain == doctest::Approx(0.5f));
+
+    buses[0].mute = false;
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 2, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.5f));
+    CHECK(output[1] == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a soloed bus silences every bus that is not soloed") {
+    auto clip = mono_clip(8000, {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f});
+    audio::Voice voices[2];
+    voices[0].clip = clip.get();
+    voices[0].bus = 0;
+    voices[1].clip = clip.get();
+    voices[1].bus = 1;
+
+    audio::AudioBus buses[2] = {
+        audio::AudioBus{"sfx", 0.25f, false, false},
+        audio::AudioBus{"music", 0.5f, false, true},
+    };
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 2;
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.5f)); // music soloed, sfx silent
+
+    // Soloing the other bus swaps which one is heard.
+    buses[0].solo = true;
+    buses[1].solo = false;
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.25f));
+
+    // Two soloed buses are both heard.
+    buses[1].solo = true;
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.75f));
+
+    // With no solo left the full mix returns; neither flag touched a gain.
+    buses[0].solo = false;
+    buses[1].solo = false;
+    static_cast<void>(audio::mix_voices(voices, 2, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.75f));
+    CHECK(buses[0].gain == doctest::Approx(0.25f));
+    CHECK(buses[1].gain == doctest::Approx(0.5f));
+}
+
+TEST_CASE("a muted bus stays silent even when it is the soloed one") {
+    auto clip = mono_clip(8000, {1.0f, 1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.bus = 0;
+
+    audio::AudioBus buses[2] = {
+        audio::AudioBus{"music", 1.0f, true, true},
+        audio::AudioBus{"sfx", 1.0f, false, false},
+    };
+    audio::MixParams params;
+    params.buses = buses;
+    params.bus_count = 2;
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+    CHECK(output[0] == doctest::Approx(0.0f));
+}
+
 // ---------------------------------------------------------------------------
 // The null device (the contract under test; audio output is not in CI)
 // ---------------------------------------------------------------------------
@@ -1186,6 +1269,57 @@ TEST_CASE("the AudioSystem routes a source to a named bus and its gain scales th
     system.clear_buses();
     system.update(step(0.001f), scene);
     CHECK(system.last_peak() == doctest::Approx(1.0f));
+}
+
+TEST_CASE("the AudioSystem mutes and solos buses without touching their gains") {
+    audio::NullAudioDevice device;
+    REQUIRE(device.open(8000, 1));
+    REQUIRE_FALSE(device.start());
+
+    audio::AudioSystem system(&device);
+    Scene scene;
+    Node* music_node = scene.create_node("Music");
+    auto* music = music_node->add_component<audio::AudioSource>();
+    music->clip = mono_clip(8000, std::vector<f32>(8, 1.0f));
+    music->loop = true;
+    music->bus_name = "music";
+    Node* sfx_node = scene.create_node("Sfx");
+    auto* sfx = sfx_node->add_component<audio::AudioSource>();
+    sfx->clip = mono_clip(8000, std::vector<f32>(8, 1.0f));
+    sfx->loop = true;
+    sfx->bus_name = "sfx";
+
+    system.set_bus_gain("music", 0.5f);
+    system.set_bus_gain("sfx", 0.25f);
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.75f));
+
+    // A mute silences its bus but leaves the authored gain readable.
+    system.set_bus_mute("music", true);
+    CHECK(system.bus_mute("music"));
+    CHECK(system.bus_gain("music") == doctest::Approx(0.5f));
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.25f));
+    system.set_bus_mute("music", false);
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.75f));
+
+    // A solo silences the buses it does not name.
+    system.set_bus_solo("sfx", true);
+    CHECK(system.bus_solo("sfx"));
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.25f));
+    system.set_bus_solo("sfx", false);
+    system.update(step(0.001f), scene);
+    CHECK(system.last_peak() == doctest::Approx(0.75f));
+
+    // The master is not a group: it has neither flag and neither setter creates
+    // a bus for it.
+    system.set_bus_mute("", true);
+    system.set_bus_solo("", true);
+    CHECK_FALSE(system.bus_mute(""));
+    CHECK_FALSE(system.bus_solo(""));
+    CHECK(system.bus_count() == 2);
 }
 
 TEST_CASE("the AudioSystem master gain scales the whole mix") {
