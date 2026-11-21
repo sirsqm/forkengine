@@ -460,7 +460,9 @@ void PackFile::release_payloads() noexcept {
     payloads_resident_ = false;
 }
 
-bool PackFile::payloads_resident() const noexcept { return payloads_resident_; }
+bool PackFile::payloads_resident() const noexcept {
+    return payloads_resident_;
+}
 
 Result<PackFile> PackFile::parse_file(std::string_view path) {
     // Read the whole container, then parse it exactly as parse() does. This is

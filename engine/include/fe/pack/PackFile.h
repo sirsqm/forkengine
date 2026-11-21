@@ -201,8 +201,7 @@ public:
     // The same read against the container held as a vector, so a caller that
     // kept the whole-file bytes can read an entry by value. The bytes are
     // borrowed, not copied.
-    [[nodiscard]] Result<std::vector<u8>> read_payload(const std::vector<u8>& container,
-                                                       const PackEntry& entry) const {
+    [[nodiscard]] Result<std::vector<u8>> read_payload(const std::vector<u8>& container, const PackEntry& entry) const {
         return read_payload(container.data(), container.size(), entry);
     }
 
