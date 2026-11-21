@@ -62,6 +62,13 @@ void main() {
 }
 )glsl";
 
+// The fragment shader's uniform array and its two-tile atlas layout are written
+// for exactly this many cascades: the sampler is a plain 2D texture (a sampler
+// array does not index dynamically in GLSL ES 3.00), so the count is baked into
+// the tile offset and the `[2]` declaration. Raising the constant means editing
+// both.
+static_assert(kShadowCascades == 2, "the shadow shader is written for two cascades");
+
 constexpr const char* kFragmentShaderSource = R"glsl(
 #version 330 core
 
@@ -105,27 +112,45 @@ uniform vec4 u_spot_light_cone[8];
 
 out vec4 frag_color;
 
-// Shadow map: depth rendered from the directional light's point of view. The
-// comparison is done by hand (compare mode NONE) so the shader stays
-// backend-agnostic; `u_light_space_matrix` maps world space into the map's
-// clip space, and its .xyz/.w gives the depth the light saw at this fragment.
+// Shadow map: depth rendered from the directional light's point of view, once
+// per cascade, with the cascades sharing one atlas side by side. The comparison
+// is done by hand (compare mode NONE) so the shader stays backend-agnostic;
+// `u_light_space_matrix` maps world space into a cascade's clip space, and its
+// .xyz/.w gives the depth the light saw at this fragment.
 uniform sampler2D u_shadow_map;
-uniform mat4 u_light_space_matrix;
+uniform mat4 u_light_space_matrix[2];
 uniform float u_shadow_bias;
+// The view depth where the far cascade takes over, and the axis that depth is
+// measured along. Both come from the same fit that produced the matrices, so a
+// fragment is always sampled from the cascade that contains it.
+uniform vec3 u_camera_forward;
+uniform float u_cascade_split;
 
 // 1.0 where the fragment is lit, 0.0 where it is occluded. Samples a 3x3
 // neighbourhood and averages the pass/fail, which softens the hard texel edge
 // enough to read as a shadow rather than a staircase.
 float shadow_factor(vec3 world_position, vec3 to_light) {
-    vec4 light_space = u_light_space_matrix * vec4(world_position, 1.0);
+    // Cascade selection by view depth: the near band is sampled from the cascade
+    // fitted to it, which covers less of the world per texel than the far one.
+    float depth = dot(world_position - u_camera_position, u_camera_forward);
+    int cascade = depth <= u_cascade_split ? 0 : 1;
+
+    vec4 light_space = u_light_space_matrix[cascade] * vec4(world_position, 1.0);
     vec3 projected = light_space.xyz / light_space.w;
     projected = projected * 0.5 + 0.5; // Clip [-1, 1] to texture [0, 1].
 
-    // Outside the map there is no occlusion information, so treat it as lit.
+    // Outside the cascade there is no occlusion information, so treat it as lit.
     if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z < 0.0 ||
         projected.z > 1.0) {
         return 1.0;
     }
+
+    // The cascade's tile: cascade 0 is the left half of the atlas, cascade 1 the
+    // right. The tile bounds below keep a 3x3 tap at the seam from reading the
+    // other cascade's depths.
+    vec2 tile_min = vec2(float(cascade) * 0.5, 0.0);
+    vec2 tile_max = tile_min + vec2(0.5, 1.0);
+    vec2 uv = vec2(projected.x * 0.5 + tile_min.x, projected.y);
 
     // Slope-scaled bias: a surface nearly edge-on to the light needs a larger
     // offset to avoid self-shadowing acne. The slope is how edge-on the surface
@@ -139,7 +164,8 @@ float shadow_factor(vec3 world_position, vec3 to_light) {
     vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float closest = texture(u_shadow_map, projected.xy + vec2(float(x), float(y)) * texel).r;
+            vec2 sample_uv = clamp(uv + vec2(float(x), float(y)) * texel, tile_min + texel, tile_max - texel);
+            float closest = texture(u_shadow_map, sample_uv).r;
             occluded += projected.z - bias > closest ? 1.0 : 0.0;
         }
     }
@@ -489,39 +515,6 @@ constexpr std::array<u32, 6> kBackgroundQuadIndices = {0, 1, 2, 0, 2, 3};
 // into each `render::MeshInstance` and the culling pass is a pure function of
 // that array. See ADR-0052.
 
-// Builds a world-to-light-clip matrix for a directional shadow map that covers
-// the given world AABB.
-//
-// A directional light has no position, so the light "eye" is placed back along
-// the light direction far enough that the whole scene sits in front of it. The
-// orthographic box is square and centred on the scene, sized from the scene's
-// bounding sphere: the sphere radius is view-independent, so the coverage does
-// not shrink when the scene is viewed edge-on, which an AABB fit would.
-//
-// One cascade over the whole scene is the deliberate first cut: it is correct
-// for the common "sun over a scene" case and needs no frustum fitting. The cost
-// is resolution - a large scene shares one map - which cascaded shadow maps
-// would fix later without changing this call site.
-[[nodiscard]] Mat4 directional_light_view_projection(const Vec3& scene_min, const Vec3& scene_max,
-                                                     const Vec3& light_direction) noexcept {
-    const Vec3 center = (scene_min + scene_max) * 0.5f;
-    const Vec3 extent = (scene_max - scene_min) * 0.5f;
-    const f32 radius = std::max(extent.length(), 1e-3f);
-
-    // `light_direction` is the direction the light travels, so the eye sits
-    // opposite it, one full diameter back plus a margin for geometry that sits
-    // above the scene box.
-    const Vec3 to_light = light_direction.normalized() * -1.0f;
-    const Vec3 eye = center + to_light * (radius * 2.0f + 1.0f);
-
-    // Pick an up vector that is not parallel to the light, or look_at degenerates.
-    const Vec3 up = std::abs(to_light.y) > 0.99f ? Vec3{0.0f, 0.0f, 1.0f} : Vec3{0.0f, 1.0f, 0.0f};
-
-    const Mat4 view = look_at(eye, center, up);
-    const Mat4 projection = Mat4::orthographic(-radius, radius, -radius, radius, 0.01f, radius * 4.0f + 2.0f);
-    return projection * view;
-}
-
 } // namespace
 
 Renderer3D::Renderer3D() = default;
@@ -847,7 +840,9 @@ Error Renderer3D::ensure_shadow_target(rhi::Device& device) {
 
     rhi::RenderTargetDesc desc;
     desc.name = "renderer3d_shadow_map";
-    desc.width = kShadowMapSize;
+    // One tile per cascade, side by side: the pass switches viewport rather than
+    // render target, and the shader offsets into the tile it selected.
+    desc.width = kShadowMapSize * kShadowCascades;
     desc.height = kShadowMapSize;
     // Depth-only: the shadow pass writes no colour, so the target has no colour
     // attachment. A WebGL2 context otherwise rejects every draw into it, because
@@ -950,6 +945,8 @@ Result<usize> Renderer3D::render_frame(rhi::Device& device, const Scene& scene, 
     last_point_lights_ = 0;
     last_spot_lights_ = 0;
     last_shadow_casters_ = 0;
+    last_shadow_cascades_ = 0;
+    last_cascade_split_ = 0.0f;
     last_skinned_draw_calls_ = 0;
     last_skinned_culled_ = 0;
     last_transparent_draw_calls_ = 0;
@@ -1136,8 +1133,10 @@ void Renderer3D::set_lighting_uniforms(rhi::Shader& shader, const Vec3& camera_p
     // sampled usefully, but the sampler still needs a bound texture to be a
     // complete program, so bind the white texel.
     shader.set_int("u_shadow_map", 1);
-    shader.set_mat4("u_light_space_matrix", lighting.light_view_projection);
+    shader.set_mat4_array("u_light_space_matrix", lighting.light_space_matrix.data(), kShadowCascades);
     shader.set_float("u_shadow_bias", kShadowBias);
+    shader.set_vec3("u_camera_forward", lighting.camera_forward);
+    shader.set_float("u_cascade_split", lighting.cascade_split);
     // The device is reached through the shader's own owner, so the texture
     // binding is done by the caller; this sets the uniform state only. See the
     // bind sites in draw() and draw_skinned().
@@ -1171,7 +1170,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
     // The shadow and main passes are this renderer's two steps, run in that
     // order. `render_frame` declares them on a graph; this direct path keeps
     // them as calls, so an existing caller's behaviour is unchanged.
-    draw_shadow_pass(device, instances, lighting);
+    draw_shadow_pass(device, view_projection, camera_position, instances, lighting);
     Result<usize> main = draw_main_pass(device, view_projection, camera_position, nullptr, instances, lighting);
     if (!main) {
         return main.error();
@@ -1188,6 +1187,8 @@ usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::ve
     last_point_lights_ = 0;
     last_spot_lights_ = 0;
     last_shadow_casters_ = 0;
+    last_shadow_cascades_ = 0;
+    last_cascade_split_ = 0.0f;
     // The material-texture memo is per frame: a reference re-resolves each frame
     // so a hot-reloaded map is picked up, while instances within one frame share
     // the single lookup.
@@ -1303,7 +1304,8 @@ usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::ve
     lighting.color = light_color;
     lighting.intensity = light_intensity;
     lighting.ambient = ambient;
-    lighting.light_view_projection = Mat4::identity();
+    lighting.light_space_matrix = {Mat4::identity(), Mat4::identity()};
+    lighting.cascade_split = 0.0f;
     // The shadow pass runs only when there is a directional light and something
     // to cast from. `instancing_ready` and the skinned set are the frame's
     // drawable geometry, so a lit but empty frame skips the map entirely.
@@ -1311,150 +1313,172 @@ usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::ve
     return static_cast<usize>(drawn);
 }
 
-void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshInstance>& instances,
-                                  FrameLighting& lighting) {
-    // Render the visible geometry's depth from the light's point of view into
-    // the shadow map, then restore the target the pass found bound. The map's
-    // coverage is fitted to the world bounds of the instances that survived
-    // culling: those are the only casters whose shadows can land on something
-    // visible, and it keeps the map from being spread thin by distant geometry.
+void Renderer3D::draw_shadow_pass(rhi::Device& device, const Mat4& view_projection, const Vec3& camera_position,
+                                  std::vector<render::MeshInstance>& instances, FrameLighting& lighting) {
+    // Render the visible geometry's depth from the light's point of view, once
+    // per cascade, then restore the target the pass found bound. The cascades
+    // partition the depth band the casters occupy, so the atlas spends its
+    // resolution on the geometry nearest the camera instead of spreading it
+    // evenly over the whole scene (ADR-0161).
     //
     // The light is resolved in `prepare_frame`; a scene with no directional light
     // resolves `shadows_enabled` false and this pass is a no-op.
     if (!lighting.shadows_enabled) {
         return;
     }
-    Mat4 light_view_projection = Mat4::identity();
-    {
-        Vec3 scene_min{};
-        Vec3 scene_max{};
-        bool bounds_valid = false;
-        // Only casters shape the fit. A large non-casting ground plane would
-        // otherwise stretch the map over the whole world and starve the objects
-        // whose shadows are actually seen, which is the reason the flag exists.
-        for (const render::MeshInstance& instance : instances) {
-            if (instance.renderer == nullptr || !instance.renderer->casts_shadow || instance.transparent) {
+
+    Vec3 caster_min{};
+    Vec3 caster_max{};
+    bool bounds_valid = false;
+    const auto expand = [&](const Vec3& world_min, const Vec3& world_max) {
+        if (!bounds_valid) {
+            caster_min = world_min;
+            caster_max = world_max;
+            bounds_valid = true;
+            return;
+        }
+        caster_min.x = std::min(caster_min.x, world_min.x);
+        caster_min.y = std::min(caster_min.y, world_min.y);
+        caster_min.z = std::min(caster_min.z, world_min.z);
+        caster_max.x = std::max(caster_max.x, world_max.x);
+        caster_max.y = std::max(caster_max.y, world_max.y);
+        caster_max.z = std::max(caster_max.z, world_max.z);
+    };
+    // Only casters shape the fit. A large non-casting ground plane would
+    // otherwise stretch the map over the whole world and starve the objects
+    // whose shadows are actually seen, which is the reason the flag exists.
+    for (const render::MeshInstance& instance : instances) {
+        if (instance.renderer == nullptr || !instance.renderer->casts_shadow || instance.transparent) {
+            continue;
+        }
+        // The world AABB was computed once at extraction; the fit reads it rather
+        // than re-expanding the mesh's local bounds.
+        expand(instance.world_min, instance.world_max);
+    }
+    // A skinned caster contributes its *posed* bounds, so a character whose arm
+    // swings outside the static geometry still fits the shadow box.
+    for (const render::SkinnedInstance& instance : frame_skinned_instances_) {
+        if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
+            continue;
+        }
+        expand(instance.world_min, instance.world_max);
+    }
+    if (!bounds_valid) {
+        return;
+    }
+
+    if (Error error = ensure_shadow_target(device); error) {
+        FE_LOG_ERROR("renderer3d: shadow map unavailable: %s", error.message().c_str());
+        return;
+    }
+
+    const Mat4 inverse_view_projection = inverse(view_projection);
+    const Vec3 forward = camera_forward(inverse_view_projection);
+    // The band runs from the camera's near plane to the farthest caster: nothing
+    // nearer is drawn, and nothing farther can cast into the view. Starting at
+    // the nearest caster instead would be tighter, but a caster whose AABB
+    // straddles the camera plane reports a nearest depth of zero and would hand
+    // the near cascade almost no world to cover.
+    const f32 camera_near = shadow_camera_near_depth(inverse_view_projection, camera_position);
+    const auto caster_depths = shadow_caster_depth_range(caster_min, caster_max, camera_position, forward);
+    const f32 band_near = std::max(std::max(camera_near, kShadowNearDepth), caster_depths.first);
+    const f32 band_far = std::max(caster_depths.second, band_near);
+    const auto splits = shadow_cascade_splits(band_near, band_far, kShadowSplitLambda);
+
+    // The skinned instance stream is built once for the frame rather than per
+    // cascade: the shadow pass and the lit pass must upload identical transforms,
+    // and a second cascade would only rebuild the same records.
+    if (!frame_skinned_instances_.empty()) {
+        build_skinned_instance_stream();
+        ensure_skinned_instance_capacity(device, static_cast<u32>(frame_skinned_instance_data_.size()));
+        if (skinned_instance_buffer_ != nullptr) {
+            skinned_instance_buffer_->update(
+                std::span<const u8>(reinterpret_cast<const u8*>(frame_skinned_instance_data_.data()),
+                                    frame_skinned_instance_data_.size() * sizeof(Instance)));
+        }
+    }
+
+    rhi::RenderTarget* previous_target = device.bound_render_target();
+    device.bind_render_target(shadow_target_.get());
+    // One clear for the whole atlas. A per-cascade clear would wipe the cascade
+    // just drawn, because a clear is bounded by the scissor and not the viewport.
+    shadow_target_->clear(rhi::ClearColor{1.0f, 1.0f, 1.0f, 1.0f}); // Far depth.
+    device.set_depth_test(true);
+
+    for (u32 cascade = 0; cascade < kShadowCascades; ++cascade) {
+        // Each cascade owns one tile of the atlas, so the pass switches viewport
+        // rather than render target: the shader samples one texture and offsets
+        // into the tile it selected.
+        device.set_viewport(cascade * kShadowMapSize, 0, kShadowMapSize, kShadowMapSize);
+        const Mat4 light_view_projection =
+            shadow_cascade_light_matrix(inverse_view_projection, camera_position, splits[cascade], splits[cascade + 1],
+                                        caster_min, caster_max, lighting.direction);
+        lighting.light_space_matrix[cascade] = light_view_projection;
+
+        device.bind_shader(*shadow_shader_);
+        shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
+
+        for (const Batch& batch : frame_batches_) {
+            if (!batch.casts_shadow || batch.transparent) {
+                continue; // Draws in the main pass, casts nothing.
+            }
+            auto gpu = acquire_mesh(device, *batch.mesh);
+            if (!gpu) {
                 continue;
             }
-            // The world AABB was computed once at extraction; the shadow fit
-            // reads it rather than re-expanding the mesh's local bounds.
-            const Vec3& world_min = instance.world_min;
-            const Vec3& world_max = instance.world_max;
-            if (!bounds_valid) {
-                scene_min = world_min;
-                scene_max = world_max;
-                bounds_valid = true;
-            } else {
-                scene_min.x = std::min(scene_min.x, world_min.x);
-                scene_min.y = std::min(scene_min.y, world_min.y);
-                scene_min.z = std::min(scene_min.z, world_min.z);
-                scene_max.x = std::max(scene_max.x, world_max.x);
-                scene_max.y = std::max(scene_max.y, world_max.y);
-                scene_max.z = std::max(scene_max.z, world_max.z);
-            }
-        }
-        // A skinned caster contributes its *posed* bounds, so a character whose
-        // arm swings outside the static geometry still fits the shadow box.
-        for (const render::SkinnedInstance& instance : frame_skinned_instances_) {
-            if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
-                continue;
-            }
-            const Vec3& world_min = instance.world_min;
-            const Vec3& world_max = instance.world_max;
-            if (!bounds_valid) {
-                scene_min = world_min;
-                scene_max = world_max;
-                bounds_valid = true;
-            } else {
-                scene_min.x = std::min(scene_min.x, world_min.x);
-                scene_min.y = std::min(scene_min.y, world_min.y);
-                scene_min.z = std::min(scene_min.z, world_min.z);
-                scene_max.x = std::max(scene_max.x, world_max.x);
-                scene_max.y = std::max(scene_max.y, world_max.y);
-                scene_max.z = std::max(scene_max.z, world_max.z);
-            }
+            device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+            device.bind_instance_buffer(*instance_buffer_, batch.instance_offset * static_cast<u32>(sizeof(Instance)));
+            device.bind_index_buffer(*gpu.value()->index_buffer);
+            device.draw_indexed_instanced(gpu.value()->index_count, batch.instance_count);
+            last_shadow_casters_ += batch.instance_count;
         }
 
-        if (Error error = ensure_shadow_target(device); error) {
-            FE_LOG_ERROR("renderer3d: shadow map unavailable: %s", error.message().c_str());
-        } else {
-            light_view_projection = directional_light_view_projection(scene_min, scene_max, lighting.direction);
-            rhi::RenderTarget* previous_target = device.bound_render_target();
-            device.bind_render_target(shadow_target_.get());
-            shadow_target_->clear(rhi::ClearColor{1.0f, 1.0f, 1.0f, 1.0f}); // Far depth.
-            device.set_depth_test(true);
-            device.bind_shader(*shadow_shader_);
-            shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
-
-            for (const Batch& batch : frame_batches_) {
-                if (!batch.casts_shadow || batch.transparent) {
+        // Skinned casters, with the skinned depth shader so a character casts the
+        // shadow of its pose. The instance stream was built above; only the
+        // per-instance palette changes from draw to draw.
+        if (skinned_instance_buffer_ != nullptr) {
+            device.bind_shader(*skinned_shadow_shader_);
+            skinned_shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
+            for (usize i = 0; i < frame_skinned_instances_.size(); ++i) {
+                const render::SkinnedInstance& instance = frame_skinned_instances_[i];
+                if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
                     continue; // Draws in the main pass, casts nothing.
                 }
-                auto gpu = acquire_mesh(device, *batch.mesh);
+                auto gpu = acquire_skinned_mesh(device, *instance.mesh);
                 if (!gpu) {
                     continue;
                 }
-                device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
-                device.bind_instance_buffer(*instance_buffer_,
-                                            batch.instance_offset * static_cast<u32>(sizeof(Instance)));
-                device.bind_index_buffer(*gpu.value()->index_buffer);
-                device.draw_indexed_instanced(gpu.value()->index_count, batch.instance_count);
-                last_shadow_casters_ += batch.instance_count;
-            }
-
-            // Skinned casters, with the skinned depth shader so a character casts
-            // the shadow of its pose. The instance stream is the skinned one, built
-            // here for the shadow pass and reused by the main skinned pass below;
-            // building it once means the shadow pass and the lit pass agree on the
-            // model matrix without a second upload.
-            if (!frame_skinned_instances_.empty()) {
-                build_skinned_instance_stream();
-                ensure_skinned_instance_capacity(device, static_cast<u32>(frame_skinned_instance_data_.size()));
-                if (skinned_instance_buffer_ != nullptr) {
-                    skinned_instance_buffer_->update(
-                        std::span<const u8>(reinterpret_cast<const u8*>(frame_skinned_instance_data_.data()),
-                                            frame_skinned_instance_data_.size() * sizeof(Instance)));
-                    device.bind_shader(*skinned_shadow_shader_);
-                    skinned_shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
-                    for (usize i = 0; i < frame_skinned_instances_.size(); ++i) {
-                        const render::SkinnedInstance& instance = frame_skinned_instances_[i];
-                        if (instance.renderer != nullptr && !instance.renderer->casts_shadow) {
-                            continue; // Draws in the main pass, casts nothing.
-                        }
-                        auto gpu = acquire_skinned_mesh(device, *instance.mesh);
-                        if (!gpu) {
-                            continue;
-                        }
-                        const u32 joint_count =
-                            instance.palette != nullptr
-                                ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
-                                : 0;
-                        if (instance.palette != nullptr && instance.palette->size() > kMaxPaletteJoints) {
-                            report_oversized_palette(*instance.mesh, instance.palette->size());
-                        }
-                        if (joint_count > 0) {
-                            skinned_shadow_shader_->set_mat4_array("u_palette", instance.palette->data(), joint_count);
-                        } else {
-                            const Mat4 identity = Mat4::identity();
-                            skinned_shadow_shader_->set_mat4_array("u_palette", &identity, 1);
-                        }
-                        device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
-                        device.bind_instance_buffer(*skinned_instance_buffer_,
-                                                    static_cast<u32>(i) * static_cast<u32>(sizeof(Instance)));
-                        device.bind_index_buffer(*gpu.value()->index_buffer);
-                        device.draw_indexed_instanced(gpu.value()->index_count, 1);
-                        last_shadow_casters_ += 1;
-                    }
+                const u32 joint_count =
+                    instance.palette != nullptr
+                        ? std::min<u32>(static_cast<u32>(instance.palette->size()), kMaxPaletteJoints)
+                        : 0;
+                if (instance.palette != nullptr && instance.palette->size() > kMaxPaletteJoints) {
+                    report_oversized_palette(*instance.mesh, instance.palette->size());
                 }
+                if (joint_count > 0) {
+                    skinned_shadow_shader_->set_mat4_array("u_palette", instance.palette->data(), joint_count);
+                } else {
+                    const Mat4 identity = Mat4::identity();
+                    skinned_shadow_shader_->set_mat4_array("u_palette", &identity, 1);
+                }
+                device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+                device.bind_instance_buffer(*skinned_instance_buffer_,
+                                            static_cast<u32>(i) * static_cast<u32>(sizeof(Instance)));
+                device.bind_index_buffer(*gpu.value()->index_buffer);
+                device.draw_indexed_instanced(gpu.value()->index_count, 1);
+                last_shadow_casters_ += 1;
             }
-
-            // Restore whatever the caller had bound (the window, or an editor
-            // panel's target) so the main pass draws where it was meant to.
-            device.bind_render_target(previous_target);
-            lighting.shadows_enabled = true;
-            lighting.light_view_projection = light_view_projection;
         }
     }
+
+    // Restore whatever the caller had bound (the window, or an editor panel's
+    // target) so the main pass draws where it was meant to.
+    device.bind_render_target(previous_target);
+    lighting.shadows_enabled = true;
+    lighting.cascade_split = splits[1];
+    lighting.camera_forward = forward;
+    last_shadow_cascades_ = kShadowCascades;
+    last_cascade_split_ = splits[1];
 }
 
 Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_projection, const Vec3& camera_position,
@@ -1729,7 +1753,7 @@ Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, co
     Result<usize> drawn = usize{0};
     const Error error = graph.run([&](std::string_view pass) -> Error {
         if (pass == "shadow") {
-            draw_shadow_pass(device, instances, lighting);
+            draw_shadow_pass(device, view_projection, camera_position, instances, lighting);
             return Error::none();
         }
         if (pass == "main") {

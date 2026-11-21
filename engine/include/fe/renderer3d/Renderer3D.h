@@ -10,6 +10,7 @@
 #include "fe/render/RenderExtract.h"
 #include "fe/render/RenderGraph.h"
 #include "fe/renderer3d/PostProcess.h"
+#include "fe/renderer3d/ShadowCascades.h"
 #include "fe/rhi/Device.h"
 
 #include <array>
@@ -220,6 +221,16 @@ public:
     // prove the depth pass ran without inspecting GPU state.
     [[nodiscard]] u32 last_shadow_casters() const noexcept { return last_shadow_casters_; }
 
+    // The number of shadow cascades rendered in the last frame (0 without a
+    // directional light). Reported so a test can prove both bands of the atlas
+    // were filled without inspecting GPU state.
+    [[nodiscard]] u32 last_shadow_cascades() const noexcept { return last_shadow_cascades_; }
+
+    // The view depth at which the far cascade takes over, in world units, from
+    // the last frame. A test that places a caster on one side of it proves which
+    // cascade shaded the sample rather than assuming.
+    [[nodiscard]] f32 last_cascade_split() const noexcept { return last_cascade_split_; }
+
     // The number of skinned instances drawn in the last frame, and the number
     // culled. Skinned draws are counted separately from the static `last_draw_calls_`
     // because they are a separate pass with a separate shader, and a test proving
@@ -256,11 +267,23 @@ public:
     static constexpr u32 kMaxPointLights = 8;
     static constexpr u32 kMaxSpotLights = 8;
 
-    // The directional shadow map is square. 1024 is a deliberate middle ground:
-    // enough texel density for a scene of a few units to show a clean edge,
-    // small enough to keep the depth pass cheap. A fixed size keeps the first
-    // cut free of a quality setting; a resolution knob is a later addition.
+    // One shadow cascade is square. 1024 is a deliberate middle ground: enough
+    // texel density for a scene of a few units to show a clean edge, small
+    // enough to keep the depth pass cheap. The cascades share one atlas laid out
+    // side by side, so the texture is kShadowMapSize wide per cascade. A fixed
+    // size keeps this free of a quality setting; a resolution knob is a later
+    // addition.
     static constexpr u32 kShadowMapSize = 1024;
+
+    // The practical split scheme's blend (ADR-0161): 1 is a fully logarithmic
+    // partition, 0 fully uniform. 0.6 keeps the near band tight enough to
+    // resolve a character's shadow without starving the far band of coverage.
+    static constexpr f32 kShadowSplitLambda = 0.6f;
+
+    // The nearest view depth a cascade band can start at. The camera's own near
+    // plane is not visible here, and a band starting at zero would put half the
+    // atlas on the empty space between the eye and the first caster.
+    static constexpr f32 kShadowNearDepth = 0.05f;
 
     // Depth offset used when comparing a fragment against the shadow map, in
     // the map's normalised depth range. Tuned to remove acne on lit surfaces
@@ -382,7 +405,14 @@ private:
         Vec3 color{1.0f, 1.0f, 1.0f};
         f32 intensity = 1.0f;
         f32 ambient = 0.15f;
-        Mat4 light_view_projection = Mat4::identity();
+        // One light-space matrix per cascade. Identity until the shadow pass
+        // fills them, which keeps a fragment out of the map and therefore lit.
+        std::array<Mat4, kShadowCascades> light_space_matrix{Mat4::identity(), Mat4::identity()};
+        // The view depth where the far cascade takes over, and the camera's
+        // forward axis the shader measures that depth along. Both must be the
+        // ones the fit used, or a fragment samples the wrong cascade's box.
+        f32 cascade_split = 0.0f;
+        Vec3 camera_forward{0.0f, 0.0f, -1.0f};
         bool shadows_enabled = false;
     };
 
@@ -473,6 +503,8 @@ private:
     u32 last_point_lights_ = 0;
     u32 last_spot_lights_ = 0;
     u32 last_shadow_casters_ = 0;
+    u32 last_shadow_cascades_ = 0;
+    f32 last_cascade_split_ = 0.0f;
 
     // --- Static-geometry cull cache ----------------------------------------
     // The BVH over the instances' world AABBs, and the key list it was built
@@ -528,7 +560,8 @@ private:
     // bound. A no-op when the scene has no directional light, in which case
     // `lighting.shadows_enabled` stays false. Reports the light-space matrix the
     // main pass samples through `lighting`.
-    void draw_shadow_pass(rhi::Device& device, std::vector<render::MeshInstance>& instances, FrameLighting& lighting);
+    void draw_shadow_pass(rhi::Device& device, const Mat4& view_projection, const Vec3& camera_position,
+                          std::vector<render::MeshInstance>& instances, FrameLighting& lighting);
 
     // The `main` pass: the camera's gradient background (when `camera` is
     // non-null and has one enabled), then the lit static and skinned geometry,

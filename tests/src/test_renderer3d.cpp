@@ -165,6 +165,14 @@ void add_camera_and_key_light(Scene& scene) {
     return Pixel{pixels[0], pixels[1], pixels[2], pixels[3]};
 }
 
+// The same read as `render_and_sample_at`, through a renderer the caller keeps so
+// its per-frame counters (the cascade split, the caster count) can be asserted
+// after the frame.
+[[nodiscard]] Pixel render_pixel_with_renderer(GraphicsContext3D& context, renderer3d::Renderer3D& renderer,
+                                               const Scene& scene, u32 width, u32 height, u32 x, u32 y) {
+    return render_with_settings(context, renderer, scene, width, height, x, y, renderer3d::PostProcessSettings{});
+}
+
 } // namespace
 
 TEST_CASE("renderer3d draws a lit mesh covering the centre of the view") {
@@ -786,13 +794,13 @@ namespace {
 
 // A wide lit floor in the XZ plane and a camera above it looking down, so the
 // floor fills most of the view and a downward light casts shadows onto it.
-void add_floor_and_overhead_light(Scene& scene) {
+Camera3D* add_floor_and_overhead_light(Scene& scene) {
     Node* camera_node = scene.create_node("Camera");
     camera_node->transform().position = Vec3{0.0f, 4.0f, 4.0f};
     // Tilt the camera down to look at the floor. Rotating about X by -45 degrees
     // aims the local -Z at the origin from this position.
     camera_node->transform().rotation = Vec3{-0.78539816339f, 0.0f, 0.0f};
-    camera_node->add_component<Camera3D>();
+    Camera3D* camera = camera_node->add_component<Camera3D>();
 
     Node* light_node = scene.create_node("Sun");
     auto* light = light_node->add_component<DirectionalLight3D>();
@@ -806,6 +814,15 @@ void add_floor_and_overhead_light(Scene& scene) {
     floor_renderer->mesh = Mesh::make_plane(8.0f, 8.0f);
     floor_renderer->base_color = Vec4{1.0f, 1.0f, 1.0f, 1.0f}; // White.
     floor_renderer->specular = 0.0f;                           // Diffuse only, for a predictable value.
+    return camera;
+}
+
+// A slab floating above the floor, which casts a shadow onto the point below it.
+void add_occluder(Scene& scene, const Vec3& position) {
+    Node* node = scene.create_node("Occluder");
+    auto* renderer = node->add_component<MeshRenderer3D>();
+    renderer->mesh = Mesh::make_plane(1.5f, 1.5f);
+    node->transform().position = position;
 }
 
 } // namespace
@@ -825,8 +842,9 @@ TEST_CASE("renderer3d renders a depth pass when a directional light is present")
     REQUIRE_FALSE(renderer.initialize(*context.device));
     auto result = renderer.render(*context.device, scene, 64, 64);
     REQUIRE(result);
-    // The floor is the one caster, so the depth pass drew it exactly once.
-    CHECK(renderer.last_shadow_casters() == 1);
+    // The floor is the one caster, drawn once into each of the two cascades.
+    CHECK(renderer.last_shadow_casters() == 2);
+    CHECK(renderer.last_shadow_cascades() == 2);
     context.device->end_frame();
 }
 
@@ -904,6 +922,56 @@ TEST_CASE("an occluder darkens the floor beneath it") {
     CHECK(static_cast<int>(lit.r) - static_cast<int>(dark.r) > 40);
     CHECK(relit.r > 200);
     CHECK(static_cast<int>(relit.r) - static_cast<int>(dark.r) > 40);
+}
+
+TEST_CASE("the same shadow is shaded by either cascade") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    // The occluder's shadow falls on the centre of the view in both renders; only
+    // the camera's near plane changes, which moves the cascade split across that
+    // point. The shadow is therefore shaded by the near cascade in one render and
+    // by the far cascade in the other, so a tile mapping that read the wrong half
+    // of the atlas would darken one and leave the other lit.
+    constexpr f32 kNearPlaneForFarCascade = 0.1f;  // The default: the split lands past the sample.
+    constexpr f32 kNearPlaneForNearCascade = 4.5f; // The split lands before the sample.
+    u32 cascades_exercised = 0;
+    for (const f32 near_plane : {kNearPlaneForFarCascade, kNearPlaneForNearCascade}) {
+        Scene scene;
+        Camera3D* camera = add_floor_and_overhead_light(scene);
+        camera->near_plane = near_plane;
+        add_occluder(scene, Vec3{0.0f, 3.0f, 0.0f});
+
+        renderer3d::Renderer3D renderer;
+        const Pixel shadowed = render_pixel_with_renderer(context, renderer, scene, 64, 64, 32, 32);
+
+        // The same scene without the occluder: the centre pixel is lit floor.
+        Scene unshadowed;
+        Camera3D* plain_camera = add_floor_and_overhead_light(unshadowed);
+        plain_camera->near_plane = near_plane;
+        const Pixel lit = render_and_sample_at(context, unshadowed, 64, 64, 32, 32);
+
+        CHECK(lit.r > 200);
+        CHECK(static_cast<int>(lit.r) - static_cast<int>(shadowed.r) > 40);
+
+        // The sample's depth really is on the side of the split this iteration
+        // claims, so the read above is evidence about the cascade it names.
+        const Mat4 inverse_view_projection = inverse(camera->view_projection(64, 64));
+        const Vec3 forward = renderer3d::camera_forward(inverse_view_projection);
+        const f32 sample_depth = renderer3d::view_depth(Vec3{0.0f, 0.0f, 0.0f}, camera->eye(), forward);
+        const f32 split = renderer.last_cascade_split();
+        if (near_plane == kNearPlaneForNearCascade) {
+            CHECK(sample_depth < split);
+        } else {
+            CHECK(sample_depth > split);
+        }
+        CHECK(renderer.last_shadow_cascades() == 2);
+        ++cascades_exercised;
+    }
+    CHECK(cascades_exercised == 2);
 }
 
 TEST_CASE("renderer3d uses a mesh's imported material when the component has none") {

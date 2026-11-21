@@ -255,7 +255,10 @@ TEST_CASE("the 3D renderer runs its shadow pass against a null device") {
     // rather than nullptr. If that path were broken this would not reach here.
     CHECK(drawn.value() == 1);
     CHECK(renderer.last_draw_calls() == 1);
-    CHECK(renderer.last_shadow_casters() == 1);
+    // One caster, drawn once per cascade: the map is an atlas of two, and both
+    // bands are filled from the same instance stream (ADR-0161).
+    CHECK(renderer.last_shadow_casters() == 2);
+    CHECK(renderer.last_shadow_cascades() == 2);
     CHECK(renderer.cached_mesh_count() == 1);
 
     // The shadow pass restored the caller's target, so the main pass drew where
@@ -303,7 +306,8 @@ TEST_CASE("a non-casting mesh draws but does not cast a shadow") {
     // they disagree on the flag.
     CHECK(drawn.value() == 2);
     CHECK(renderer.last_draw_calls() == 2);
-    CHECK(renderer.last_shadow_casters() == 1);
+    // Only the prop casts, and it is drawn into both cascades.
+    CHECK(renderer.last_shadow_casters() == 2);
     device.end_frame();
 }
 
@@ -398,7 +402,7 @@ TEST_CASE("the 3D renderer runs its passes through the graph in order") {
     // draw and one shadow caster, and the post pass did not draw geometry.
     CHECK(drawn.value() == 1);
     CHECK(renderer.last_draw_calls() == 1);
-    CHECK(renderer.last_shadow_casters() == 1);
+    CHECK(renderer.last_shadow_casters() == 2);
 }
 
 // A material's texture is named by a reference string, not by a shared_ptr, and

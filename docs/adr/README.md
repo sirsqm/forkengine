@@ -166,6 +166,7 @@ rather than editing it.
 | [0158](0158-listener-velocity-from-camera.md) | The listener's Doppler velocity is derived, not authored | Accepted |
 | [0159](0159-audio-pan-smoothing.md) | Audio pan smoothing across the listener | Accepted |
 | [0160](0160-3d-transparency-and-particles.md) | 3D transparency and particle billboards | Accepted |
+| [0161](0161-cascaded-directional-shadows.md) | Cascaded directional shadows | Accepted |
 | [0162](0162-view-matrix-rows.md) | The view matrix's basis vectors are rows | Accepted |
 
 ## Format

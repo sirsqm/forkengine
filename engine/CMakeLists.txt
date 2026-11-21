@@ -227,6 +227,7 @@ set(FE_ENGINE_SOURCES
     src/renderer2d/Renderer2D.cpp
     src/renderer3d/PostProcess.cpp
     src/renderer3d/Renderer3D.cpp
+    src/renderer3d/ShadowCascades.cpp
     src/runtime/Engine.cpp
     src/runtime/Application.cpp
     src/runtime/AudioListenerSystem.cpp
