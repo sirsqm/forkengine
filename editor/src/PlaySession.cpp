@@ -13,6 +13,7 @@
 #include "fe/runtime/AudioListenerSystem.h"
 #include "fe/scene/Camera2D.h"
 #include "fe/systems/SpriteAnimationSystem.h"
+#include "fe/vfx/ParticleSystem.h"
 
 namespace fe::editor {
 
@@ -88,6 +89,14 @@ void PlaySession::register_default_systems() {
     }
     if (schedule_.find("NavigationSystem3D") == nullptr) {
         schedule_.add_system<nav::NavigationSystem3D>();
+    }
+
+    // Particles run after the motion systems, so an emitter on a moving node
+    // emits from where the node is this frame. The system is a no-op on a scene
+    // with no emitter, so play mode does not have to know whether the scene it is
+    // about to play uses one.
+    if (schedule_.find("ParticleSystem") == nullptr) {
+        schedule_.add_system<ParticleSystem>();
     }
 
     // Audio, last: the listener reads the camera *after* gameplay has moved it,

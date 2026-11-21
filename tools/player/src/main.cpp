@@ -55,6 +55,8 @@
 #include "fe/script/ScriptSystem.h"
 #include "fe/serialization/SceneSerializer.h"
 #include "fe/systems/SceneSchedule.h"
+#include "fe/vfx/ParticleEmitter3D.h"
+#include "fe/vfx/ParticleSystem.h"
 
 // A web build mounts its pack over HTTP and lets the browser own the frame
 // schedule, so it needs Emscripten's loop entry point instead of the blocking
@@ -316,6 +318,14 @@ protected:
         }
         if (scene_has_component<fe::nav::NavAgent3D>()) {
             schedule().add_system<fe::nav::NavigationSystem3D>();
+        }
+
+        // Particles run after the motion systems, so an emitter on a moving node
+        // emits from where the node is this frame rather than where it was. Added
+        // only when the scene has an emitter, for the same reason as physics and
+        // nav: a scene with none must not pay for the traversal every frame.
+        if (scene_has_component<fe::ParticleEmitter3D>()) {
+            schedule().add_system<fe::ParticleSystem>();
         }
 
         // Audio, last so a cue a script or a behaviour fired this frame is mixed
