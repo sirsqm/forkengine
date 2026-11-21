@@ -3509,6 +3509,61 @@ TEST_CASE("a 2D force through the centre adds no spin") {
     CHECK(body->angular_velocity == doctest::Approx(0.0f));
 }
 
+TEST_CASE("a 2D world-point force converts to the body-frame offset itself") {
+    // The body sits away from the origin and is turned a quarter turn, so a
+    // world point and a body-frame offset are genuinely different things: using
+    // one where the other is meant is the mistake this seam removes.
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{10.0f, 0.0f}, 0.5f, 2.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f}; // +90 degrees about Z
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+
+    // One unit along world +Y from the centre. A +90-degree Z turn maps body +X
+    // onto world +Y, so that point is +1 along the body's own X axis.
+    const Vec2 offset = body->local_offset_of(Vec2{10.0f, 1.0f});
+    CHECK(offset.x == doctest::Approx(1.0f).epsilon(0.001));
+    CHECK(offset.y == doctest::Approx(0.0f).epsilon(0.001));
+
+    // The world-point form and the hand-computed offset accumulate the same
+    // force and the same torque: 10 N along +Y at that point is a +10 N*m lever.
+    body->add_force_at_world_point(Vec2{0.0f, 10.0f}, Vec2{10.0f, 1.0f});
+    CHECK(body->force.x == doctest::Approx(0.0f));
+    CHECK(body->force.y == doctest::Approx(10.0f));
+    CHECK(body->applied_torque == doctest::Approx(10.0f).epsilon(0.001));
+
+    body->clear_forces();
+    body->add_force_at_offset(Vec2{0.0f, 10.0f}, offset);
+    CHECK(body->applied_torque == doctest::Approx(10.0f).epsilon(0.001));
+}
+
+TEST_CASE("a 2D force at the body's own centre is the centre force") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{10.0f, 0.0f}, 0.5f, 2.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f};
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+
+    // The world point coincident with the centre: no lever arm, so exactly the
+    // centre form.
+    body->add_force_at_world_point(Vec2{10.0f, 0.0f}, Vec2{10.0f, 0.0f});
+    CHECK(body->force.x == doctest::Approx(10.0f));
+    CHECK(body->force.y == doctest::Approx(0.0f));
+    CHECK(body->applied_torque == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 2D world-point impulse spins the body like the equivalent offset") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f};
+    auto* body = node->get_component<physics2d::RigidBody2D>();
+    body->inertia = 1.0f;
+
+    // World +Y from the centre is body +X, so a +Y impulse there spins it
+    // counter-clockwise by 4 rad/s (4 N*s at a lever of 1 m, unit inertia).
+    body->apply_impulse_at_world_point(Vec2{0.0f, 4.0f}, Vec2{0.0f, 6.0f});
+    CHECK(body->velocity.y == doctest::Approx(4.0f).epsilon(0.01));
+    CHECK(body->angular_velocity == doctest::Approx(4.0f).epsilon(0.01));
+}
+
 // ---------------------------------------------------------------------------
 // Impulses: a one-shot change to velocity, at the centre or off it.
 // ---------------------------------------------------------------------------

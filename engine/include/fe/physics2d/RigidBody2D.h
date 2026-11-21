@@ -5,6 +5,7 @@
 #include "fe/core/Math.h"
 #include "fe/core/Types.h"
 #include "fe/scene/Component.h"
+#include "fe/scene/Node.h"
 
 #include <cmath>
 
@@ -187,6 +188,38 @@ public:
         wake();
     }
 
+    // The offset of `world_point` from the body's centre of mass, expressed in
+    // the body's own axes. A caller that has a world-space point -- a contact, a
+    // raycast hit, a scripted push -- uses this to reach the offset-taking forms
+    // below without rotating by hand, and without the chance of passing a world
+    // point where a local offset is expected.
+    //
+    // The frame is the node's world rotation about the node's world position,
+    // projected onto the XY plane. Node scale is not divided out, matching how
+    // the solver treats a collider. A body whose component is not attached to a
+    // node has no frame, so its centre is the world origin and the world point is
+    // the offset.
+    [[nodiscard]] Vec2 local_offset_of(const Vec2& world_point) const noexcept {
+        const Node* owner = node();
+        if (owner == nullptr) {
+            return world_point;
+        }
+        const Mat4 world = owner->world_matrix();
+        const Vec2 delta = world_point - Vec2{world.m[12], world.m[13]};
+        // R^T * delta, with the world basis vectors as the matrix's first two
+        // columns, so each body axis is the delta projected onto that column.
+        return Vec2{delta.x * world.m[0] + delta.y * world.m[1], delta.x * world.m[4] + delta.y * world.m[5]};
+    }
+
+    // Adds `value` at `world_point`, converting the point to the body-frame
+    // offset itself: exactly `add_force_at_offset(value,
+    // local_offset_of(world_point))`, so a force at the body's centre is
+    // `add_force` and a force at an off-centre world point spins the body by the
+    // same torque the hand-computed local offset would.
+    void add_force_at_world_point(const Vec2& value, const Vec2& world_point) noexcept {
+        add_force_at_offset(value, local_offset_of(world_point));
+    }
+
     // Adds a torque in newton-metres about the Z axis for this step, and wakes
     // the body. Summed with the constant `torque`; cleared after the step.
     void add_torque(f32 value) noexcept {
@@ -222,6 +255,12 @@ public:
         velocity += impulse * inverse_mass();
         angular_velocity += (offset.x * impulse.y - offset.y * impulse.x) * inverse_inertia();
         wake();
+    }
+
+    // Applies `impulse` at `world_point`, converting the point to the body-frame
+    // offset itself: the impulse counterpart of `add_force_at_world_point`.
+    void apply_impulse_at_world_point(const Vec2& impulse, const Vec2& world_point) noexcept {
+        apply_impulse_at_offset(impulse, local_offset_of(world_point));
     }
 
     // True when the body's motion is slow enough to count as at rest: both the

@@ -1305,3 +1305,59 @@ TEST_CASE("a 3D gravity scale round-trips through the serializer") {
     REQUIRE(loaded_body != nullptr);
     CHECK(loaded_body->gravity_scale == doctest::Approx(0.25f));
 }
+
+// ---------------------------------------------------------------------------
+// Forces at a world point: the body converts the point to its own frame.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a 3D world-point force converts to the body-frame offset itself") {
+    // The body sits away from the origin and is turned a quarter turn about Z,
+    // so a world point and a body-frame offset are genuinely different things.
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec3{10.0f, 0.0f, 0.0f}, 0.5f, 2.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f}; // +90 degrees about Z
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+
+    // One unit along world +Y from the centre. A +90-degree Z turn maps body +X
+    // onto world +Y, so that point is +1 along the body's own X axis.
+    const Vec3 offset = body->local_offset_of(Vec3{10.0f, 1.0f, 0.0f});
+    CHECK(offset.x == doctest::Approx(1.0f).epsilon(0.001));
+    CHECK(offset.y == doctest::Approx(0.0f).epsilon(0.001));
+    CHECK(offset.z == doctest::Approx(0.0f).epsilon(0.001));
+
+    // The world-point form and the hand-computed offset accumulate the same
+    // force and the same torque: cross((1,0,0), (0,10,0)) is +10 N*m about Z.
+    body->add_force_at_world_point(Vec3{0.0f, 10.0f, 0.0f}, Vec3{10.0f, 1.0f, 0.0f});
+    CHECK(body->force.y == doctest::Approx(10.0f));
+    CHECK(body->applied_torque.z == doctest::Approx(10.0f).epsilon(0.001));
+    CHECK(body->applied_torque.x == doctest::Approx(0.0f).epsilon(0.001));
+
+    body->clear_forces();
+    body->add_force_at_offset(Vec3{0.0f, 10.0f, 0.0f}, offset);
+    CHECK(body->applied_torque.z == doctest::Approx(10.0f).epsilon(0.001));
+}
+
+TEST_CASE("a 3D force at the body's own centre is the centre force") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec3{10.0f, 0.0f, 0.0f}, 0.5f, 2.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f};
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+
+    body->add_force_at_world_point(Vec3{10.0f, 0.0f, 0.0f}, Vec3{10.0f, 0.0f, 0.0f});
+    CHECK(body->force.x == doctest::Approx(10.0f));
+    CHECK(body->applied_torque.length_squared() == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a 3D world-point impulse spins the body like the equivalent offset") {
+    Scene scene;
+    Node* node = add_dynamic_box(scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+    node->transform().rotation = Vec3{0.0f, 0.0f, 1.5707963f};
+    auto* body = node->get_component<physics3d::RigidBody3D>();
+    body->inertia = 1.0f;
+
+    // World +Y from the centre is body +X, so a +Y impulse there spins it +4
+    // rad/s about Z (4 N*s at a lever of 1 m, unit inertia).
+    body->apply_impulse_at_world_point(Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 6.0f, 0.0f});
+    CHECK(body->velocity.y == doctest::Approx(4.0f).epsilon(0.01));
+    CHECK(body->angular_velocity.z == doctest::Approx(4.0f).epsilon(0.01));
+}
