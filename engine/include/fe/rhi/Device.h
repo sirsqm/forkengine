@@ -81,6 +81,14 @@ public:
     virtual void set_blend_mode(BlendMode mode) = 0;
     virtual void set_depth_test(bool enabled) = 0;
 
+    // Whether subsequent fragments write depth. Testing and writing are
+    // separate on purpose: a transparent pass tests against the opaque
+    // geometry's depth, so a nearer opaque surface still occludes it, but must
+    // not write depth -- otherwise a farther transparent surface drawn later in
+    // the same pass is rejected by the nearer one's depth and vanishes. Writing
+    // is the default, so a pass that never calls this behaves exactly as before.
+    virtual void set_depth_write(bool enabled) = 0;
+
     // How the next indexed draw assembles its indices. Defaults to Triangles, so
     // a pass that never calls this is unaffected. A debug-line pass binds Lines;
     // it is the caller's job to set it back.

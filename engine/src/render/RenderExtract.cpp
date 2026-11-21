@@ -18,6 +18,7 @@
 #include "fe/scene3d/MeshRenderer3D.h"
 #include "fe/ui/UiElement.h"
 #include "fe/ui/UiLayout.h"
+#include "fe/vfx/ParticleEmitter3D.h"
 
 #include <algorithm>
 #include <array>
@@ -148,6 +149,7 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     out.mesh = mesh;
     out.model = model;
     expand_to_world_aabb(mesh->bounds_min(), mesh->bounds_max(), model, out.world_min, out.world_max);
+    out.transparent = renderer->resolve_surface().material.base_color.w < 1.0f;
     return true;
 }
 
@@ -1085,6 +1087,46 @@ usize cull_skinned_meshes(std::vector<SkinnedInstance>& instances, const Frustum
     }
     instances.resize(write);
     return before - write;
+}
+
+void extract_particles(const Scene& scene, std::vector<ParticleInstance>& out) {
+    out.clear();
+    scene.for_each_node([&out](const Node& node) {
+        const auto* emitter = node.get_component<ParticleEmitter3D>();
+        if (emitter == nullptr) {
+            return;
+        }
+        for (const Particle& particle : emitter->particles) {
+            const f32 t = particle.lifetime > 0.0f ? std::clamp(particle.age / particle.lifetime, 0.0f, 1.0f) : 1.0f;
+            ParticleInstance instance;
+            instance.position = particle.position;
+            instance.size = particle.start_size + (particle.end_size - particle.start_size) * t;
+            instance.color = Vec4{
+                particle.start_color.x + (particle.end_color.x - particle.start_color.x) * t,
+                particle.start_color.y + (particle.end_color.y - particle.start_color.y) * t,
+                particle.start_color.z + (particle.end_color.z - particle.start_color.z) * t,
+                particle.start_color.w + (particle.end_color.w - particle.start_color.w) * t,
+            };
+            // A particle that is already invisible would rasterise nothing; skip it
+            // so the draw count means "billboards that could be seen".
+            if (instance.size <= 0.0f || instance.color.w <= 0.0f) {
+                continue;
+            }
+            out.push_back(instance);
+        }
+    });
+}
+
+usize cull_particles(std::vector<ParticleInstance>& out, const Frustum* frustum) {
+    if (frustum == nullptr) {
+        return 0;
+    }
+    const auto first_removed = std::remove_if(out.begin(), out.end(), [frustum](const ParticleInstance& instance) {
+        return !frustum->contains_point(instance.position);
+    });
+    const usize removed = static_cast<usize>(std::distance(first_removed, out.end()));
+    out.erase(first_removed, out.end());
+    return removed;
 }
 
 } // namespace fe::render

@@ -365,6 +365,67 @@ void main() {
 }
 )glsl";
 
+// Particle billboards. The vertex stage takes a shared unit quad (location 0) and
+// one instance record per particle, and expands the quad into a world-space
+// square that faces the camera: the quad's corner offsets are scaled by the
+// particle's diameter and placed along the camera's right and up axes, so no
+// per-particle rotation is stored and a billboard turns with the view for free.
+// The fragment stage turns the square into a soft circle, because a hard-edged
+// quad reads as a flat square no matter how it is blended.
+constexpr const char* kParticleVertexShaderSource = R"glsl(
+#version 330 core
+
+layout(location = 0) in vec2 a_corner;
+layout(location = 1) in vec4 a_position_size;
+layout(location = 2) in vec4 a_color;
+
+uniform mat4 u_view_projection;
+uniform vec3 u_camera_right;
+uniform vec3 u_camera_up;
+
+out vec2 v_uv;
+out vec4 v_color;
+
+void main() {
+    vec3 world = a_position_size.xyz
+               + u_camera_right * (a_corner.x * a_position_size.w)
+               + u_camera_up * (a_corner.y * a_position_size.w);
+    v_uv = a_corner;
+    v_color = a_color;
+    gl_Position = u_view_projection * vec4(world, 1.0);
+}
+)glsl";
+
+constexpr const char* kParticleFragmentShaderSource = R"glsl(
+#version 330 core
+
+in vec2 v_uv;
+in vec4 v_color;
+
+out vec4 frag_color;
+
+void main() {
+    // v_uv is the corner in [-0.5, 0.5]; the radial distance is 0 at the centre
+    // and 1 at the circle inscribed in the quad. Squaring the falloff keeps the
+    // core solid and the rim soft, which is what reads as a particle rather than
+    // a flat disc.
+    float radius = length(v_uv) * 2.0;
+    float falloff = clamp(1.0 - radius, 0.0, 1.0);
+    float alpha = v_color.a * falloff * falloff;
+    if (alpha <= 0.002) {
+        discard;
+    }
+    frag_color = vec4(v_color.rgb, alpha);
+}
+)glsl";
+
+// The shared per-vertex corners: a unit quad in [-0.5, 0.5], expanded per
+// instance. Two triangles, counter-clockwise; the pass never culls, so a
+// particle seen from behind is drawn too.
+constexpr std::array<f32, 8> kParticleQuadVertices = {-0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f};
+
+constexpr std::array<u32, 6> kParticleQuadIndices = {0, 1, 2, 0, 2, 3};
+
 // The environment background: a full-screen quad whose fragment colour is a
 // vertical gradient from `u_bottom_color` at the bottom of the frame to
 // `u_top_color` at the top. The quad's position is already in clip space, so no
@@ -891,6 +952,8 @@ Result<usize> Renderer3D::render_frame(rhi::Device& device, const Scene& scene, 
     last_shadow_casters_ = 0;
     last_skinned_draw_calls_ = 0;
     last_skinned_culled_ = 0;
+    last_transparent_draw_calls_ = 0;
+    last_particles_ = 0;
 
     const Camera3D* camera = find_active_camera(scene);
     if (camera == nullptr) {
@@ -927,6 +990,14 @@ Result<usize> Renderer3D::render_frame(rhi::Device& device, const Scene& scene, 
         skinned_seen.push_back(instance.mesh);
     }
     last_skinned_culled_ = static_cast<u32>(render::cull_skinned_meshes(skinned, &frustum, jobs));
+
+    // --- 2c. Extract and cull particle billboards --------------------------
+    // The simulation belongs to ParticleSystem; this step only reads its output.
+    // Culling is by each billboard's centre, so a particle straddling the frame
+    // edge can vanish a frame early -- cheaper than carrying a radius through the
+    // cull, and invisible at any particle size worth drawing.
+    render::extract_particles(scene, frame_particles_);
+    static_cast<void>(render::cull_particles(frame_particles_, &frustum));
 
     // --- 3. Draw -----------------------------------------------------------
     // The camera's background gradient and the post-processing chain are handled
@@ -1002,20 +1073,49 @@ void Renderer3D::build_batches(const std::vector<render::MeshInstance>& instance
         const BatchState state{surface.material.base_color, surface.specular, surface.shininess,
                                surface.material.emissive};
         const bool casts_shadow = instance.renderer->casts_shadow;
+        const bool transparent = instance.transparent;
 
         // Extend the open batch when this instance matches it in every per-batch
         // field and is contiguous in the instance stream, so the run is one draw.
         if (!frame_batches_.empty()) {
             Batch& open = frame_batches_.back();
             if (open.mesh == instance.mesh && open.base_texture == base_texture &&
-                open.emissive_texture == emissive_texture && open.state == state && open.casts_shadow == casts_shadow) {
+                open.emissive_texture == emissive_texture && open.state == state && open.casts_shadow == casts_shadow &&
+                open.transparent == transparent) {
                 open.instance_count += 1;
                 continue;
             }
         }
-        frame_batches_.push_back(Batch{instance.mesh, base_texture, emissive_texture, state, casts_shadow,
+        frame_batches_.push_back(Batch{instance.mesh, base_texture, emissive_texture, state, casts_shadow, transparent,
                                        static_cast<u32>(frame_instance_data_.size() - 1), 1});
     }
+}
+
+void Renderer3D::sort_for_transparency(std::vector<render::MeshInstance>& instances, const Vec3& camera_position) {
+    // Opaque first, so their batches form one contiguous run, then the translucent
+    // tail. A stable partition leaves the extraction order inside each group
+    // untouched, so a scene with nothing translucent keeps exactly the array it
+    // had before this pass existed -- which is what makes the change additive for
+    // every existing scene and every existing test.
+    const auto first_translucent = std::stable_partition(
+        instances.begin(), instances.end(), [](const render::MeshInstance& instance) { return !instance.transparent; });
+    if (first_translucent == instances.end()) {
+        return;
+    }
+
+    // Back to front: a translucent surface blends over what is already in the
+    // frame, so the one behind it must be drawn first. The key is the squared
+    // distance from the camera to the instance's world-bounds centre, a cheap
+    // proxy for depth that needs no per-instance projection. A tie keeps
+    // extraction order, which is why the sort is stable.
+    const auto distance_squared = [&camera_position](const render::MeshInstance& instance) {
+        const Vec3 centre = (instance.world_min + instance.world_max) * 0.5f;
+        return (centre - camera_position).length_squared();
+    };
+    std::stable_sort(first_translucent, instances.end(),
+                     [&distance_squared](const render::MeshInstance& a, const render::MeshInstance& b) {
+                         return distance_squared(a) > distance_squared(b);
+                     });
 }
 
 void Renderer3D::set_lighting_uniforms(rhi::Shader& shader, const Vec3& camera_position,
@@ -1064,7 +1164,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
                                const Vec3& camera_position, std::vector<render::MeshInstance>& instances,
                                const std::vector<const Mesh*>& meshes_seen) {
     FrameLighting lighting;
-    prepare_frame(device, scene, instances, lighting);
+    prepare_frame(device, scene, instances, camera_position, lighting);
     if (instances.empty() && frame_skinned_instances_.empty()) {
         return usize{0};
     }
@@ -1081,7 +1181,7 @@ Result<usize> Renderer3D::draw(rhi::Device& device, const Scene& scene, const Ma
 }
 
 usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::vector<render::MeshInstance>& instances,
-                                FrameLighting& lighting) {
+                                const Vec3& camera_position, FrameLighting& lighting) {
     FE_CHECK(shader_ != nullptr);
 
     last_draw_calls_ = 0;
@@ -1186,6 +1286,8 @@ usize Renderer3D::prepare_frame(rhi::Device& device, const Scene& scene, std::ve
     // the same batches from the same upload. The count is every instance that
     // resolved to a drawable record, so it matches the pre-instancing per-instance
     // loop; a batch whose mesh fails to acquire is subtracted below.
+    sort_for_transparency(instances, camera_position);
+
     build_batches(instances);
     u32 drawn = static_cast<u32>(frame_instance_data_.size());
     if (drawn > 0) {
@@ -1231,7 +1333,7 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
         // otherwise stretch the map over the whole world and starve the objects
         // whose shadows are actually seen, which is the reason the flag exists.
         for (const render::MeshInstance& instance : instances) {
-            if (instance.renderer == nullptr || !instance.renderer->casts_shadow) {
+            if (instance.renderer == nullptr || !instance.renderer->casts_shadow || instance.transparent) {
                 continue;
             }
             // The world AABB was computed once at extraction; the shadow fit
@@ -1285,7 +1387,7 @@ void Renderer3D::draw_shadow_pass(rhi::Device& device, std::vector<render::MeshI
             shadow_shader_->set_mat4("u_light_view_projection", light_view_projection);
 
             for (const Batch& batch : frame_batches_) {
-                if (!batch.casts_shadow) {
+                if (!batch.casts_shadow || batch.transparent) {
                     continue; // Draws in the main pass, casts nothing.
                 }
                 auto gpu = acquire_mesh(device, *batch.mesh);
@@ -1372,16 +1474,23 @@ Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_p
     }
 
     // --- 4. Pass state ------------------------------------------------------
-    // The 3D pass is opaque and depth-tested. Blending is disabled so draws do
-    // not depend on order.
+    // The opaque pass is depth-tested and writes depth. Blending is disabled so
+    // draws do not depend on order; the transparent pass below turns it on and
+    // depth writing off.
     device.set_blend_mode(rhi::BlendMode::None);
     device.set_depth_test(true);
+    device.set_depth_write(true);
+    last_transparent_draw_calls_ = 0;
+    last_particles_ = 0;
 
     const bool shadows_enabled = lighting.shadows_enabled;
     const bool instancing_ready = !frame_batches_.empty() && instance_buffer_ != nullptr;
     u32 drawn = static_cast<u32>(frame_instance_data_.size());
 
-    if (!instances.empty()) {
+    // Binds the lit static shader and every frame-level uniform it needs. Called
+    // once before the opaque batches and again before the translucent ones,
+    // because the skinned pass in between rebinds its own shader.
+    const auto bind_static_pass = [&]() {
         device.bind_shader(*shader_);
         shader_->set_mat4("u_view_projection", view_projection);
         set_lighting_uniforms(*shader_, camera_position, lighting);
@@ -1391,6 +1500,10 @@ Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_p
                             (shadows_enabled && shadow_target_ != nullptr && shadow_target_->depth_texture() != nullptr)
                                 ? *shadow_target_->depth_texture()
                                 : *default_texture_);
+    };
+
+    if (!instances.empty()) {
+        bind_static_pass();
     }
 
     // --- 5. Draw ------------------------------------------------------------
@@ -1399,6 +1512,9 @@ Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_p
     // stream, so nothing below varies per instance.
     if (instancing_ready) {
         for (const Batch& batch : frame_batches_) {
+            if (batch.transparent) {
+                continue; // Drawn after the opaque surfaces, in 5c.
+            }
             auto gpu = acquire_mesh(device, *batch.mesh);
             if (!gpu) {
                 FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());
@@ -1437,6 +1553,68 @@ Result<usize> Renderer3D::draw_main_pass(rhi::Device& device, const Mat4& view_p
         if (!skinned_drawn) {
             FE_LOG_ERROR("renderer3d: skinned pass failed: %s", skinned_drawn.error().message().c_str());
         }
+    }
+
+    // --- 5c. Transparent pass ----------------------------------------------
+    // Drawn after every opaque surface, static and skinned, with blending on and
+    // depth writing off. The batches arrive farthest-first because
+    // `sort_for_transparency` ordered the instances, so the run order is the
+    // blend order: the surface behind is already in the frame before the one in
+    // front composites over it. Depth *testing* stays on, so an opaque wall in
+    // front still hides a translucent surface behind it; depth *writing* is off
+    // so a farther translucent surface drawn later in the same run is not
+    // rejected by a nearer one.
+    bool transparent_state = false;
+    if (instancing_ready) {
+        for (const Batch& batch : frame_batches_) {
+            if (!batch.transparent) {
+                continue;
+            }
+            if (!transparent_state) {
+                // The skinned pass above rebound its own shader and uniforms, so
+                // the lit static pass is bound again here.
+                bind_static_pass();
+                device.set_blend_mode(rhi::BlendMode::Alpha);
+                device.set_depth_write(false);
+                transparent_state = true;
+            }
+            auto gpu = acquire_mesh(device, *batch.mesh);
+            if (!gpu) {
+                FE_LOG_ERROR("renderer3d: %s", gpu.error().message().c_str());
+                drawn -= batch.instance_count;
+                continue;
+            }
+
+            shader_->set_vec4("u_base_color", batch.state.base_color);
+            shader_->set_float("u_specular", batch.state.specular);
+            shader_->set_float("u_shininess", batch.state.shininess);
+            shader_->set_vec3("u_emissive", batch.state.emissive);
+
+            device.bind_texture(0, batch.base_texture != nullptr ? batch.base_texture->texture() : *default_texture_);
+            shader_->set_float("u_emissive_map_enabled", batch.emissive_texture != nullptr ? 1.0f : 0.0f);
+            device.bind_texture(2, batch.emissive_texture != nullptr ? batch.emissive_texture->texture()
+                                                                     : *default_texture_);
+
+            device.bind_vertex_buffer(*gpu.value()->vertex_buffer);
+            device.bind_instance_buffer(*instance_buffer_, batch.instance_offset * static_cast<u32>(sizeof(Instance)));
+            device.bind_index_buffer(*gpu.value()->index_buffer);
+            device.draw_indexed_instanced(gpu.value()->index_count, batch.instance_count);
+            ++last_draw_calls_;
+            last_transparent_draw_calls_ += batch.instance_count;
+        }
+    }
+    if (transparent_state) {
+        device.set_blend_mode(rhi::BlendMode::None);
+        device.set_depth_write(true);
+    }
+
+    // --- 5d. Particle pass --------------------------------------------------
+    // The frame's particle billboards, on the same transparent state: blending
+    // on, depth writing off, depth testing against the opaque geometry so a
+    // particle behind a wall is hidden. They draw last because a particle is
+    // translucent content that composites over everything opaque.
+    if (camera != nullptr) {
+        draw_particles(device, view_projection, *camera);
     }
 
     return static_cast<usize>(drawn);
@@ -1547,7 +1725,7 @@ Result<usize> Renderer3D::draw_chain(rhi::Device& device, const Scene& scene, co
     }
 
     FrameLighting lighting;
-    prepare_frame(device, scene, instances, lighting);
+    prepare_frame(device, scene, instances, camera_position, lighting);
     Result<usize> drawn = usize{0};
     const Error error = graph.run([&](std::string_view pass) -> Error {
         if (pass == "shadow") {
@@ -1660,6 +1838,126 @@ void Renderer3D::draw_background(rhi::Device& device, const Camera3D& camera) {
     device.bind_index_buffer(*background_quad_index_buffer_);
     device.draw_indexed(static_cast<u32>(kBackgroundQuadIndices.size()));
     ++background_draws_;
+}
+
+Error Renderer3D::ensure_particles(rhi::Device& device) {
+    if (particle_shader_ != nullptr) {
+        return Error::none();
+    }
+    if (particle_attempted_) {
+        // A previous attempt failed; do not retry every frame.
+        return Error("particle pass unavailable");
+    }
+    particle_attempted_ = true;
+
+    rhi::ShaderDesc desc;
+    desc.name = "renderer3d_particles";
+    desc.vertex_source = kParticleVertexShaderSource;
+    desc.fragment_source = kParticleFragmentShaderSource;
+    auto shader = device.create_shader(desc);
+    if (!shader) {
+        return shader.error();
+    }
+    particle_shader_ = shader.value();
+
+    auto vertex_buffer = device.create_vertex_buffer(rhi::VertexLayout::sprite_quad(),
+                                                     static_cast<u32>(kParticleQuadVertices.size() * sizeof(f32)));
+    if (!vertex_buffer) {
+        return vertex_buffer.error();
+    }
+    particle_quad_vertex_buffer_ = vertex_buffer.value();
+    particle_quad_vertex_buffer_->update(std::span<const u8>(reinterpret_cast<const u8*>(kParticleQuadVertices.data()),
+                                                             kParticleQuadVertices.size() * sizeof(f32)));
+
+    auto index_buffer = device.create_index_buffer(static_cast<u32>(kParticleQuadIndices.size()));
+    if (!index_buffer) {
+        return index_buffer.error();
+    }
+    particle_quad_index_buffer_ = index_buffer.value();
+    particle_quad_index_buffer_->update(std::span<const u8>(reinterpret_cast<const u8*>(kParticleQuadIndices.data()),
+                                                            kParticleQuadIndices.size() * sizeof(u32)));
+
+    return Error::none();
+}
+
+void Renderer3D::ensure_particle_capacity(rhi::Device& device, u32 count) {
+    // The record uploaded per particle must match the instance layout's stride
+    // exactly, or the GPU reads each record shifted by the difference.
+    static_assert(sizeof(ParticleRecord) == 2 * 16, "ParticleRecord must match VertexLayout::particle_instance()");
+
+    if (count <= particle_instance_capacity_) {
+        return;
+    }
+    const u32 new_capacity = std::max(count, particle_instance_capacity_ * 2);
+    auto buffer = device.create_vertex_buffer(rhi::VertexLayout::particle_instance(),
+                                              new_capacity * static_cast<u32>(sizeof(ParticleRecord)));
+    if (!buffer) {
+        FE_LOG_ERROR("renderer3d: could not grow particle instance buffer: %s", buffer.error().message().c_str());
+        return;
+    }
+    particle_instance_buffer_ = buffer.value();
+    particle_instance_capacity_ = new_capacity;
+}
+
+void Renderer3D::draw_particles(rhi::Device& device, const Mat4& view_projection, const Camera3D& camera) {
+    if (frame_particles_.empty()) {
+        return;
+    }
+    if (Error error = ensure_particles(device); error) {
+        FE_LOG_ERROR("renderer3d: particle pass unavailable: %s", error.message().c_str());
+        return;
+    }
+
+    // Back to front, the same rule as the translucent mesh pass: a billboard
+    // blends over what is already in the frame, so the one behind must be drawn
+    // first. A stable sort keeps emission order among equal distances, so a burst
+    // does not reshuffle frame to frame.
+    const Vec3 eye = camera.eye();
+    std::stable_sort(frame_particles_.begin(), frame_particles_.end(),
+                     [&eye](const render::ParticleInstance& a, const render::ParticleInstance& b) {
+                         return (a.position - eye).length_squared() > (b.position - eye).length_squared();
+                     });
+
+    ensure_particle_capacity(device, static_cast<u32>(frame_particles_.size()));
+    if (particle_instance_buffer_ == nullptr) {
+        return;
+    }
+
+    frame_particle_records_.clear();
+    frame_particle_records_.reserve(frame_particles_.size());
+    for (const render::ParticleInstance& particle : frame_particles_) {
+        frame_particle_records_.push_back(ParticleRecord{
+            Vec4{particle.position.x, particle.position.y, particle.position.z, particle.size}, particle.color});
+    }
+    particle_instance_buffer_->update(std::span<const u8>(reinterpret_cast<const u8*>(frame_particle_records_.data()),
+                                                          frame_particle_records_.size() * sizeof(ParticleRecord)));
+
+    // Transparent state: blend, test depth against the opaque geometry, do not
+    // write depth. Restored afterwards so the next frame starts from the opaque
+    // default rather than from this pass's state.
+    device.set_blend_mode(rhi::BlendMode::Alpha);
+    device.set_depth_test(true);
+    device.set_depth_write(false);
+
+    const Vec3 up = camera.up();
+    Vec3 right = camera.forward().cross(up);
+    // A camera looking straight along its own up axis has no defined right; fall
+    // back to +X rather than normalising a zero vector into NaNs.
+    right = right.length_squared() > 1e-8f ? right.normalized() : Vec3{1.0f, 0.0f, 0.0f};
+
+    device.bind_shader(*particle_shader_);
+    particle_shader_->set_mat4("u_view_projection", view_projection);
+    particle_shader_->set_vec3("u_camera_right", right);
+    particle_shader_->set_vec3("u_camera_up", up);
+    device.bind_vertex_buffer(*particle_quad_vertex_buffer_);
+    device.bind_instance_buffer(*particle_instance_buffer_);
+    device.bind_index_buffer(*particle_quad_index_buffer_);
+    device.draw_indexed_instanced(static_cast<u32>(kParticleQuadIndices.size()),
+                                  static_cast<u32>(frame_particle_records_.size()));
+    last_particles_ = static_cast<u32>(frame_particle_records_.size());
+
+    device.set_blend_mode(rhi::BlendMode::None);
+    device.set_depth_write(true);
 }
 
 } // namespace fe::renderer3d

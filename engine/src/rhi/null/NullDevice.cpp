@@ -165,6 +165,7 @@ public:
     void set_viewport(u32, u32, u32, u32) override {}
     void set_blend_mode(BlendMode) override {}
     void set_depth_test(bool) override {}
+    void set_depth_write(bool) override {}
     void set_primitive_topology(PrimitiveTopology) override {}
 
     // The null device rasterises nothing, so there is no scissor state to set; the

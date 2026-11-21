@@ -193,6 +193,7 @@ public:
     void set_viewport(u32, u32, u32, u32) override {}
     void set_blend_mode(rhi::BlendMode) override {}
     void set_depth_test(bool) override {}
+    void set_depth_write(bool) override {}
     void set_primitive_topology(rhi::PrimitiveTopology) override {}
     void set_scissor(const rhi::ScissorRect&) override {}
     void bind_shader(rhi::Shader&) override {}

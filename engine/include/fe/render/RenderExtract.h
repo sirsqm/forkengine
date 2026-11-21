@@ -136,6 +136,13 @@ struct MeshInstance {
     Vec3 world_min{};
     Vec3 world_max{};
 
+    // Whether the surface is translucent (`Material::base_color.a < 1`), which
+    // sends the instance to the renderer's sorted transparent pass instead of the
+    // opaque one. Resolved at extraction so the sort and the batch key read a
+    // field: the alternative is resolving the material a second time for every
+    // instance every frame.
+    bool transparent = false;
+
     // Exact field equality, for the same reason `SpriteInstance` has it: a
     // parallel extraction must reproduce the serial array exactly.
     [[nodiscard]] constexpr bool operator==(const MeshInstance&) const noexcept = default;
@@ -193,6 +200,23 @@ struct SkinnedInstance {
     Vec3 world_max{};
 
     [[nodiscard]] constexpr bool operator==(const SkinnedInstance&) const noexcept = default;
+};
+
+// One particle billboard's resolved draw state.
+//
+// The emitter's live particles are the simulation's output; this is what the
+// renderer needs to draw one, with the age-dependent size and colour already
+// interpolated. Resolved at extraction so the draw step reads final values and
+// never has to know how a particle ages.
+struct ParticleInstance {
+    Vec3 position{};
+    // World-space diameter, interpolated between the particle's start and end
+    // size.
+    f32 size = 0.0f;
+    // Colour and alpha, interpolated between the particle's start and end colour.
+    Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
+
+    [[nodiscard]] constexpr bool operator==(const ParticleInstance&) const noexcept = default;
 };
 
 // Builds the key for `instance`.
@@ -411,6 +435,25 @@ usize cull_sprites_in_place(FrameArena& arena, std::span<SpriteInstance> instanc
 
 // Culls meshes using each instance's precomputed world AABB.
 usize cull_meshes(std::vector<MeshInstance>& instances, const Frustum* frustum, JobSystem* jobs = nullptr);
+
+// Collects one billboard per live particle of every `ParticleEmitter3D` in
+// `scene` into `out` (cleared first), with size and colour interpolated by the
+// particle's age. A particle whose size is zero or whose colour is fully
+// transparent contributes nothing, because it would draw no pixels; the emitter's
+// own parameters are not consulted, so a particle keeps the size and colour it
+// was born with even if the emitter changed since.
+//
+// No GPU work and no randomness: extraction is a pure read of the simulation's
+// output, which is why the tests can assert on it directly.
+void extract_particles(const Scene& scene, std::vector<ParticleInstance>& out);
+
+// Drops billboards whose centre lies outside `frustum`; a null frustum keeps
+// everything. A billboard is culled by its centre rather than by its extent, so a
+// large particle straddling the frame edge can disappear a frame early -- the
+// conservative alternative would need every particle's radius, which is what the
+// renderer already has and the cull deliberately does not. Returns the number
+// dropped.
+usize cull_particles(std::vector<ParticleInstance>& out, const Frustum* frustum);
 
 // --- Parallel thresholds ---------------------------------------------------
 //

@@ -20,6 +20,7 @@
 #include "fe/scene3d/MeshRenderer3D.h"
 #include "fe/scene3d/PointLight3D.h"
 #include "fe/scene3d/SpotLight3D.h"
+#include "fe/vfx/ParticleEmitter3D.h"
 
 #include <memory>
 #include <span>
@@ -991,4 +992,125 @@ TEST_CASE("renderer3d adds a material's emissive colour in the dark") {
     CHECK(centre.b > 100);
     CHECK(centre.r < 40);
     CHECK(centre.g < 40);
+}
+
+TEST_CASE("a translucent mesh blends over the opaque mesh behind it") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    // Flat planes rather than cubes: a plane is one surface, so the centre pixel
+    // is blended exactly once. A closed mesh would also draw its unlit back face
+    // through the front one (the renderer never culls), which is a real property
+    // of the pass but not what this test is about.
+    Node* behind = scene.create_node("Behind");
+    auto* behind_renderer = behind->add_component<MeshRenderer3D>();
+    behind_renderer->mesh = Mesh::make_plane(0.5f, 0.5f);
+    behind_renderer->base_color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // Opaque red.
+    behind->transform().position = Vec3{0.0f, 0.0f, -2.0f};
+    // A quarter turn about X stands the plane up to face the camera.
+    behind->transform().rotation = Vec3{3.14159265f * 0.5f, 0.0f, 0.0f};
+
+    Node* front = scene.create_node("Front");
+    auto* front_renderer = front->add_component<MeshRenderer3D>();
+    front_renderer->mesh = Mesh::make_plane(0.5f, 0.5f);
+    front_renderer->base_color = Vec4{0.0f, 0.0f, 1.0f, 0.5f}; // Half-transparent blue.
+    front->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+    front->transform().rotation = Vec3{3.14159265f * 0.5f, 0.0f, 0.0f};
+
+    renderer3d::Renderer3D renderer;
+    const Pixel blended =
+        render_with_settings(context, renderer, scene, 64, 64, 32, 32, renderer3d::PostProcessSettings{});
+    INFO("blended pixel: " << int(blended.r) << ", " << int(blended.g) << ", " << int(blended.b));
+    // The translucent surface reaches the transparent pass, not the opaque one.
+    CHECK(renderer.last_transparent_draw_calls() == 1);
+    // It blends: half the red behind shows through half the blue in front.
+    CHECK(blended.r > 60);
+    CHECK(blended.b > 60);
+
+    // Control: the same surface, fully opaque, hides the red entirely. Without
+    // this the check above could pass on a scene that drew blue twice.
+    front_renderer->base_color = Vec4{0.0f, 0.0f, 1.0f, 1.0f};
+    renderer3d::Renderer3D opaque_renderer;
+    const Pixel opaque =
+        render_with_settings(context, opaque_renderer, scene, 64, 64, 32, 32, renderer3d::PostProcessSettings{});
+    CHECK(opaque_renderer.last_transparent_draw_calls() == 0);
+    CHECK(opaque.b > 200);
+    CHECK(opaque.r < 30);
+}
+
+TEST_CASE("a particle billboard draws its colour at its position") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* emitter_node = scene.create_node("Emitter");
+    auto* emitter = emitter_node->add_component<ParticleEmitter3D>();
+    Particle particle;
+    particle.position = Vec3{0.0f, 0.0f, 0.0f};
+    particle.age = 0.0f;
+    particle.lifetime = 10.0f;
+    particle.start_size = 2.0f;
+    particle.end_size = 2.0f;
+    particle.start_color = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+    particle.end_color = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+    emitter->particles.push_back(particle);
+
+    renderer3d::Renderer3D renderer;
+    const Pixel centre =
+        render_with_settings(context, renderer, scene, 64, 64, 32, 32, renderer3d::PostProcessSettings{});
+    CHECK(renderer.last_particles() == 1);
+    // The billboard is unlit, so its colour is the particle's own: a green frame
+    // centre with no red or blue can only come from the particle pass.
+    CHECK(centre.g > 150);
+    CHECK(centre.r < 60);
+    CHECK(centre.b < 60);
+}
+
+TEST_CASE("a particle behind an opaque mesh is hidden by it") {
+    GraphicsContext3D context;
+    if (!context.available) {
+        MESSAGE("skipping: no graphics context");
+        return;
+    }
+
+    Scene scene;
+    add_camera_and_key_light(scene);
+
+    Node* wall = scene.create_node("Wall");
+    auto* wall_renderer = wall->add_component<MeshRenderer3D>();
+    wall_renderer->mesh = Mesh::make_cube();
+    wall_renderer->base_color = Vec4{1.0f, 0.0f, 0.0f, 1.0f}; // Opaque red, at the origin.
+    wall->transform().position = Vec3{0.0f, 0.0f, 0.0f};
+
+    Node* emitter_node = scene.create_node("Emitter");
+    auto* emitter = emitter_node->add_component<ParticleEmitter3D>();
+    Particle particle;
+    particle.position = Vec3{0.0f, 0.0f, -2.0f}; // Behind the wall from the camera.
+    particle.age = 0.0f;
+    particle.lifetime = 10.0f;
+    particle.start_size = 4.0f; // Large enough to cover the wall if depth did not hide it.
+    particle.end_size = 4.0f;
+    particle.start_color = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+    particle.end_color = Vec4{0.0f, 1.0f, 0.0f, 1.0f};
+    emitter->particles.push_back(particle);
+
+    renderer3d::Renderer3D renderer;
+    const Pixel centre =
+        render_with_settings(context, renderer, scene, 64, 64, 32, 32, renderer3d::PostProcessSettings{});
+    // The billboard drew, but the opaque wall in front of it still wins the depth
+    // test: the centre is red, not green.
+    CHECK(renderer.last_particles() == 1);
+    CHECK(centre.r > 150);
+    CHECK(centre.g < 60);
 }

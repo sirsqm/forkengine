@@ -127,6 +127,13 @@ public:
     // both are reported so a test can assert culling happened without guessing.
     [[nodiscard]] u32 last_culled() const noexcept { return last_culled_; }
 
+    // The number of translucent mesh instances drawn in the last frame, and the
+    // number of particle billboards drawn with them. Reported separately so a
+    // test can prove the transparent pass ran without reading pixels, and so
+    // "particles drew" cannot be satisfied by an opaque mesh.
+    [[nodiscard]] u32 last_transparent_draw_calls() const noexcept { return last_transparent_draw_calls_; }
+    [[nodiscard]] u32 last_particles() const noexcept { return last_particles_; }
+
     // The number of times the cull BVH was rebuilt from scratch over the
     // lifetime of this renderer. A rebuild is triggered by a change in the
     // instances' world bounds, so a static scene under a moving camera reports a
@@ -302,6 +309,11 @@ private:
         // draws a whole batch or skips it, and the main pass ignores this. See
         // `MeshRenderer3D::casts_shadow`.
         bool casts_shadow = true;
+        // Whether the run is translucent. Part of the merge key, so an opaque and
+        // a translucent instance never share a batch: the two need different
+        // blend and depth-write state, and the shadow pass skips the translucent
+        // ones. See `render::MeshInstance::transparent`.
+        bool transparent = false;
         u32 instance_offset = 0;
         u32 instance_count = 0;
     };
@@ -456,6 +468,8 @@ private:
 
     u32 last_draw_calls_ = 0;
     u32 last_culled_ = 0;
+    u32 last_transparent_draw_calls_ = 0;
+    u32 last_particles_ = 0;
     u32 last_point_lights_ = 0;
     u32 last_spot_lights_ = 0;
     u32 last_shadow_casters_ = 0;
@@ -499,7 +513,15 @@ private:
     // `shadows_enabled` false and an identity light matrix until the shadow pass
     // runs).
     usize prepare_frame(rhi::Device& device, const Scene& scene, std::vector<render::MeshInstance>& instances,
-                        FrameLighting& lighting);
+                        const Vec3& camera_position, FrameLighting& lighting);
+
+    // Partitions `instances` into the opaque run followed by the translucent run,
+    // and sorts the translucent run back to front by distance from
+    // `camera_position`. The batch builder reads the result, so the opaque batches
+    // are one contiguous run and the translucent batches are in blend order. A
+    // scene with no translucent instance is left exactly as extraction produced
+    // it, so every existing scene is byte-for-byte unchanged.
+    static void sort_for_transparency(std::vector<render::MeshInstance>& instances, const Vec3& camera_position);
 
     // The `shadow` pass: fits the light frustum to the visible instances, renders
     // their depth into the shadow map, and restores the target the pass found
@@ -540,6 +562,33 @@ private:
     rhi::BufferRef background_quad_vertex_buffer_;
     rhi::BufferRef background_quad_index_buffer_;
     bool background_attempted_ = false;
+
+    // --- Particle pass ------------------------------------------------------
+    // The frame's extracted billboards, the shader that expands a shared unit
+    // quad into a camera-facing square, and the per-instance stream of
+    // (centre, size, colour) it reads. Created lazily, so a scene with no emitter
+    // never pays for them.
+    //
+    // The per-instance record is `ParticleRecord` below; its size must equal
+    // `VertexLayout::particle_instance()`'s stride, which the static_assert at its
+    // definition pins.
+    struct ParticleRecord {
+        Vec4 position_size; // xyz = world centre, w = world diameter.
+        Vec4 color;
+    };
+
+    [[nodiscard]] Error ensure_particles(rhi::Device& device);
+    void draw_particles(rhi::Device& device, const Mat4& view_projection, const Camera3D& camera);
+    void ensure_particle_capacity(rhi::Device& device, u32 count);
+
+    std::vector<render::ParticleInstance> frame_particles_;
+    std::vector<ParticleRecord> frame_particle_records_;
+    rhi::ShaderRef particle_shader_;
+    rhi::BufferRef particle_quad_vertex_buffer_;
+    rhi::BufferRef particle_quad_index_buffer_;
+    rhi::BufferRef particle_instance_buffer_;
+    u32 particle_instance_capacity_ = 0;
+    bool particle_attempted_ = false;
 
     // The post-processing chain, and the off-screen target the 3D pass renders
     // into when the chain is enabled.

@@ -72,16 +72,24 @@ struct ShaderLiteral {
         if (end == std::string_view::npos) {
             break;
         }
-        // The name is the last identifier before `= R"glsl(`.
+        // The name is the last identifier before `= R"glsl(`, skipping the
+        // whitespace between the identifier and the `=`. Skipping it matters:
+        // without that step the scan stops at the space, every literal is called
+        // "shader", and every one of them is compiled as a vertex shader -- which
+        // is how a `discard` in a fragment shader went unnoticed.
         std::string name = "shader";
         const std::size_t eq = text.rfind('=', at);
         if (eq != std::string_view::npos) {
-            std::size_t b = eq;
+            std::size_t name_end = eq;
+            while (name_end > 0 && std::isspace(static_cast<unsigned char>(text[name_end - 1]))) {
+                --name_end;
+            }
+            std::size_t b = name_end;
             while (b > 0 && (std::isalnum(static_cast<unsigned char>(text[b - 1])) || text[b - 1] == '_')) {
                 --b;
             }
-            if (b < eq) {
-                name = std::string(text.substr(b, eq - b));
+            if (b < name_end) {
+                name = std::string(text.substr(b, name_end - b));
             }
         }
         ShaderLiteral lit;

@@ -165,6 +165,7 @@ rather than editing it.
 | [0157](0157-positional-audio-in-the-3d-slice.md) | Positional audio in the shipped 3D slice | Accepted |
 | [0158](0158-listener-velocity-from-camera.md) | The listener's Doppler velocity is derived, not authored | Accepted |
 | [0159](0159-audio-pan-smoothing.md) | Audio pan smoothing across the listener | Accepted |
+| [0160](0160-3d-transparency-and-particles.md) | 3D transparency and particle billboards | Accepted |
 
 ## Format
 

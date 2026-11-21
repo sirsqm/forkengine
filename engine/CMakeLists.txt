@@ -18,6 +18,9 @@
 #     module can be loaded — see ADR-0078)
 #   core, scene, systems, reflect  <-  physics2d
 #   core, scene, systems, reflect  <-  physics3d
+#   core, scene, systems, reflect  <-  vfx (particle emitters and the system
+#     that simulates them; the 3D renderer draws the result through its
+#     transparent pass, see ADR-0160)
 #   core, scene, systems, physics2d, physics3d  <-  nav (navigation grids, A*,
 #     steering, and the agent systems; see ADR-0156)
 #   core  <-  physics (the shared, pure island graph; see ADR-0111)
@@ -187,6 +190,8 @@ set(FE_ENGINE_SOURCES
     src/mesh/GltfScene.cpp
     src/scene3d/Camera3D.cpp
     src/scene3d/Scene3DTypes.cpp
+    src/vfx/ParticleSystem.cpp
+    src/vfx/VfxTypes.cpp
     src/debugdraw/DebugDraw.cpp
     src/audio/AudioDevice.cpp
     src/audio/AudioMixer.cpp

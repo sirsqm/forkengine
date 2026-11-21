@@ -643,6 +643,8 @@ public:
         }
     }
 
+    void set_depth_write(bool enabled) override { glDepthMask(enabled ? GL_TRUE : GL_FALSE); }
+
     void set_primitive_topology(PrimitiveTopology topology) override { topology_ = topology; }
 
     void set_scissor(const ScissorRect& scissor) override {

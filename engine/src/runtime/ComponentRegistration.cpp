@@ -13,6 +13,7 @@
 #include "fe/scene/TilemapTypes.h"
 #include "fe/scene3d/Scene3DTypes.h"
 #include "fe/ui/UiTypesReflect.h"
+#include "fe/vfx/VfxTypes.h"
 
 namespace fe::runtime {
 
@@ -28,6 +29,7 @@ void register_all_component_types() {
     reflect::register_nav_types();
     reflect::register_scene3d_types();
     reflect::register_audio_types();
+    reflect::register_vfx_types();
 }
 
 } // namespace fe::runtime

@@ -211,6 +211,23 @@ struct VertexLayout {
         return layout;
     }
 
+    // The per-instance stream for a particle billboard: the world-space centre
+    // and diameter in one vec4, then the colour. It pairs with `sprite_quad()`
+    // (location 0) for the shared per-vertex corners, so a particle pass needs no
+    // per-vertex data of its own -- the quad is four points in [-0.5, 0.5] and the
+    // shader expands each into a camera-facing square of `position_size.w` world
+    // units. Locations 1 and 2 are free here: the sprite instance stream owns
+    // 1-5, but the two are never bound in the same draw.
+    [[nodiscard]] static VertexLayout particle_instance() {
+        VertexLayout layout;
+        layout.stride = 2 * 16;
+        layout.attributes = {
+            {1, VertexFormat::Float4, 0, 1},  // world centre.xyz, diameter in .w
+            {2, VertexFormat::Float4, 16, 1}, // colour + alpha
+        };
+        return layout;
+    }
+
     [[nodiscard]] static VertexLayout position_uv() {
         // vec2 clip-space position, vec2 uv - the full-screen quad format used
         // by a background or post-processing pass. The position is already in
