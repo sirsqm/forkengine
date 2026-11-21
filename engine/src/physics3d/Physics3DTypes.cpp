@@ -60,6 +60,11 @@ void register_collider3d(Registry& registry) {
         make_scalar<physics3d::Collider3D, f32>("radius", &physics3d::Collider3D::radius, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::Collider3D, f32>(
         "restitution", &physics3d::Collider3D::restitution, ValueKind::Float, &defaults));
+    // The per-collider bounce cutoff. The default is negative, which means "use
+    // the world's", so a document written before this refinement reads back
+    // unchanged.
+    desc.properties.push_back(make_scalar<physics3d::Collider3D, f32>(
+        "restitution_threshold", &physics3d::Collider3D::restitution_threshold, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics3d::Collider3D, f32>("friction", &physics3d::Collider3D::friction,
                                                                       ValueKind::Float, &defaults));
 

@@ -62,6 +62,11 @@ void register_collider2d(Registry& registry) {
         make_vector_group<physics2d::Collider2D, Vec2>("offset", &physics2d::Collider2D::offset, "Vec2", {"x", "y"}));
     desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>(
         "restitution", &physics2d::Collider2D::restitution, ValueKind::Float, &defaults));
+    // The per-collider bounce cutoff. The default is negative, which means "use
+    // the world's", so a document written before this refinement reads back
+    // unchanged.
+    desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>(
+        "restitution_threshold", &physics2d::Collider2D::restitution_threshold, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<physics2d::Collider2D, f32>("friction", &physics2d::Collider2D::friction,
                                                                       ValueKind::Float, &defaults));
 

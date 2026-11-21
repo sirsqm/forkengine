@@ -51,6 +51,14 @@ public:
     // inject energy.
     f32 restitution = 0.0f;
 
+    // Relative approach speed below which this collider's bounce is suppressed,
+    // in world units per second. A negative value (the default) means "use the
+    // world's": Physics2DSystem::restitution_threshold. A material that wants its
+    // own cutoff -- a rubber ball that must not buzz, a marble that must keep its
+    // bounce -- sets one here. A contact uses the larger of the two colliders'
+    // resolved thresholds, so a collider that asks for more suppression gets it.
+    f32 restitution_threshold = -1.0f;
+
     // Coulomb friction coefficient, >= 0. Ignored in this cut beyond slowing
     // sliding along a contact, because there is no rotational dynamics yet.
     f32 friction = 0.5f;

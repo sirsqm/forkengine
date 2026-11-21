@@ -264,6 +264,9 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
         entry.angular_velocity = body != nullptr ? body->angular_velocity : 0.0f;
         entry.inv_mass = body != nullptr ? body->inverse_mass() : 0.0f;
         entry.restitution = collider != nullptr ? clamp_unit(collider->restitution) : 0.0f;
+        entry.restitution_threshold = collider != nullptr && collider->restitution_threshold >= 0.0f
+                                          ? collider->restitution_threshold
+                                          : restitution_threshold;
         entry.friction = collider != nullptr ? std::max(collider->friction, 0.0f) : 0.0f;
         entry.fixed_rotation = body != nullptr && body->fixed_rotation;
 
@@ -621,8 +624,8 @@ void Physics2DSystem::update(const FrameContext& context, Scene& scene) {
             // dead floor. It is suppressed below the threshold speed: a body
             // that is barely approaching (a resting pile, re-approaching by the
             // gravity re-applied each step) must not bounce a hair forever.
-            const f32 restitution =
-                -normal_speed > restitution_threshold ? std::max(a.restitution, b.restitution) : 0.0f;
+            const f32 threshold = std::max(a.restitution_threshold, b.restitution_threshold);
+            const f32 restitution = -normal_speed > threshold ? std::max(a.restitution, b.restitution) : 0.0f;
             const f32 impulse_magnitude = -(1.0f + restitution) * normal_speed / effective_mass;
             const Vec2 impulse = contact.normal * impulse_magnitude;
 

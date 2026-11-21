@@ -605,6 +605,7 @@ TEST_CASE("a collider and rigid body round-trip through the serializer") {
     collider->shape = physics2d::ShapeType::Circle;
     collider->radius = 1.25f;
     collider->restitution = 0.4f;
+    collider->restitution_threshold = 0.75f;
     collider->friction = 0.2f;
     auto* body = node->add_component<physics2d::RigidBody2D>();
     body->velocity = Vec2{3.0f, -2.0f};
@@ -626,6 +627,7 @@ TEST_CASE("a collider and rigid body round-trip through the serializer") {
     CHECK(loaded_collider->shape == physics2d::ShapeType::Circle);
     CHECK(loaded_collider->radius == doctest::Approx(1.25f));
     CHECK(loaded_collider->restitution == doctest::Approx(0.4f));
+    CHECK(loaded_collider->restitution_threshold == doctest::Approx(0.75f));
     CHECK(loaded_collider->friction == doctest::Approx(0.2f));
 
     const auto* loaded_body = loaded_node->get_component<physics2d::RigidBody2D>();
@@ -3685,6 +3687,49 @@ TEST_CASE("a perfectly bouncy 2D body resting on the floor settles instead of bu
     // that back every step and the body buzzes forever at that speed; with it,
     // the approach is under the threshold and the body comes to rest.
     CHECK(peak_speed < 0.05f);
+}
+
+TEST_CASE("a per-collider restitution threshold suppresses a bounce the default allows") {
+    // One body per scene: each run differs only in the cutoff its collider
+    // authors, so the comparison is not entangled with how a second body
+    // perturbs the pair solve.
+    auto peak_upward = [](f32 threshold) {
+        Scene scene;
+        add_floor(scene, 20.0f);
+        Node* node = add_dynamic_box(scene, Vec2{0.0f, 4.0f}, 0.5f, 1.0f);
+        auto* collider = node->get_component<physics2d::Collider2D>();
+        collider->restitution = 1.0f;
+        collider->restitution_threshold = threshold;
+
+        physics2d::Physics2DSystem system;
+        f32 peak = 0.0f;
+        for (int i = 0; i < 300; ++i) {
+            system.update(step(1.0f / 60.0f), scene);
+            peak = std::max(peak, node->get_component<physics2d::RigidBody2D>()->velocity.y);
+        }
+        return peak;
+    };
+
+    // The default cutoff lets the impact bounce; a cutoff no impact here can
+    // reach lands the body dead.
+    CHECK(peak_upward(-1.0f) > 2.0f);
+    CHECK(peak_upward(100.0f) < 0.5f);
+}
+
+TEST_CASE("a collider that sets no restitution threshold falls back to the world's") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* node = add_dynamic_box(scene, Vec2{0.0f, 4.0f}, 0.5f, 1.0f);
+    node->get_component<physics2d::Collider2D>()->restitution = 1.0f; // cutoff left unset
+
+    physics2d::Physics2DSystem system;
+    system.restitution_threshold = 100.0f; // the world's, which no impact here reaches
+    f32 peak_upward = 0.0f;
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+        peak_upward = std::max(peak_upward, node->get_component<physics2d::RigidBody2D>()->velocity.y);
+    }
+    CHECK(peak_upward < 0.5f);
 }
 
 TEST_CASE("a real 2D impact still bounces with restitution") {

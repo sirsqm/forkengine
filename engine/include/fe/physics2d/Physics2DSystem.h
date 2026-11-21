@@ -258,6 +258,9 @@ private:
         f32 inv_mass;
         f32 inv_inertia;
         f32 restitution;
+        // The collider's own restitution cutoff, resolved against the world value
+        // when the collider does not set one.
+        f32 restitution_threshold;
         f32 friction;
         bool fixed_rotation;
 
