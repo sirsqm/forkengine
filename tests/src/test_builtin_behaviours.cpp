@@ -569,6 +569,122 @@ TEST_CASE("a jump after the coyote window has lapsed is ignored") {
     CHECK(body->velocity.y < 0.0f);
 }
 
+TEST_CASE("a jump pressed just before landing fires on the landing frame") {
+    // The player pressed jump a couple of frames early: they meant to jump, and a
+    // platformer that throws the press away feels precise rather than fair.
+    Scene scene;
+    add_floor(scene);
+    Node& character = *scene.create_node("Player");
+    character.transform().position = Vec3{0.0f, 3.0f, 0.0f};
+    add_body(character);
+
+    ScriptHost host;
+    auto* controller = attach_behaviour<player::CharacterController3D>(host, character);
+    // The coyote window is off, so only the jump buffer can make this press fire.
+    controller->coyote_time = 0.0f;
+    physics3d::Physics3DSystem physics;
+    Fixture fixture;
+    auto* body = character.get_component<physics3d::RigidBody3D>();
+    REQUIRE(body != nullptr);
+
+    // Fall to just above the floor, still airborne.
+    int steps = 0;
+    while (character.transform().position.y > 0.8f && steps < 240) {
+        CHECK(controller->update(fixture.context).ok());
+        physics.update(fixture.context, scene);
+        fixture.tick();
+        ++steps;
+    }
+    REQUIRE_FALSE(controller->grounded());
+
+    fixture.press(Key::Space);
+    // The jump consumes the grounded state, so a landing frame that jumps reports
+    // itself airborne; the upward velocity is what proves the press fired.
+    bool fired = false;
+    f32 fired_at_height = 0.0f;
+    for (int i = 0; i < 20 && !fired; ++i) {
+        CHECK(controller->update(fixture.context).ok());
+        if (body->velocity.y > 0.0f) {
+            fired = true;
+            fired_at_height = character.transform().position.y;
+            break;
+        }
+        physics.update(fixture.context, scene);
+        fixture.tick();
+    }
+    REQUIRE(fired);
+    // It fired at the floor rather than in mid-air: the press was remembered until
+    // the ground came underfoot.
+    CHECK(fired_at_height < 0.65f);
+}
+
+TEST_CASE("a jump press is forgotten once the buffer window closes") {
+    // The buffer is a window, not a queue: a press well before landing is stale by
+    // the time the character touches down.
+    Scene scene;
+    add_floor(scene);
+    Node& character = *scene.create_node("Player");
+    character.transform().position = Vec3{0.0f, 3.0f, 0.0f};
+    add_body(character);
+
+    ScriptHost host;
+    auto* controller = attach_behaviour<player::CharacterController3D>(host, character);
+    controller->coyote_time = 0.0f;
+    physics3d::Physics3DSystem physics;
+    Fixture fixture;
+    auto* body = character.get_component<physics3d::RigidBody3D>();
+    REQUIRE(body != nullptr);
+
+    // Press at the top of the fall: far more than the 0.1 s window before landing.
+    fixture.press(Key::Space);
+    bool fired = false;
+    for (int i = 0; i < 240 && !fired; ++i) {
+        CHECK(controller->update(fixture.context).ok());
+        fired = body->velocity.y > 0.0f;
+        physics.update(fixture.context, scene);
+        fixture.tick();
+    }
+    CHECK_FALSE(fired);
+}
+
+TEST_CASE("a zero jump buffer needs the press and the ground in the same frame") {
+    Scene scene;
+    add_floor(scene);
+    Node& character = *scene.create_node("Player");
+    character.transform().position = Vec3{0.0f, 3.0f, 0.0f};
+    add_body(character);
+
+    ScriptHost host;
+    auto* controller = attach_behaviour<player::CharacterController3D>(host, character);
+    controller->coyote_time = 0.0f;
+    controller->jump_buffer = 0.0f;
+    physics3d::Physics3DSystem physics;
+    Fixture fixture;
+    auto* body = character.get_component<physics3d::RigidBody3D>();
+    REQUIRE(body != nullptr);
+
+    // The same early press that fires with the default window does not with the
+    // buffer turned off.
+    int steps = 0;
+    while (character.transform().position.y > 0.8f && steps < 240) {
+        CHECK(controller->update(fixture.context).ok());
+        physics.update(fixture.context, scene);
+        fixture.tick();
+        ++steps;
+    }
+    REQUIRE_FALSE(controller->grounded());
+
+    fixture.press(Key::Space);
+    bool fired = false;
+    for (int i = 0; i < 20 && !fired; ++i) {
+        CHECK(controller->update(fixture.context).ok());
+        fired = body->velocity.y > 0.0f;
+        physics.update(fixture.context, scene);
+        fixture.tick();
+    }
+    CHECK_FALSE(fired);
+}
+
 TEST_CASE("a jump is a press, not a held key") {
     // The edge semantics that make a jump a jump: holding Space must not be a
     // continuous thrust. Space is pressed once and held down for a whole arc, and

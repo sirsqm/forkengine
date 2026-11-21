@@ -269,6 +269,15 @@ public:
     // that frame. The value is read on every jump, so it can be changed live.
     f32 coyote_time = 0.1f;
 
+    // Window, in seconds, that a jump press is remembered for while the character
+    // cannot jump yet. A player who presses jump a few frames before touching down
+    // means to jump on landing, and punishing that is what makes a platformer feel
+    // precise rather than fair: the press is held and fires on the first frame the
+    // ground is underfoot. Zero disables it, so a jump then needs the press and
+    // the ground in the same frame. The value is read on every press, so it can be
+    // changed live.
+    f32 jump_buffer = 0.1f;
+
     // Whether the character was on the ground at the end of the last update. Read
     // by a test and by a follow camera that wants to know when to steady itself.
     [[nodiscard]] bool grounded() const noexcept { return grounded_; }
@@ -287,6 +296,9 @@ private:
     // than teleporting. It is separate from the body's velocity, which the solver
     // also writes; the script's value is authoritative for Y.
     f32 vertical_velocity_ = 0.0f;
+    // Seconds left on a remembered jump press, counted down each frame. Zero means
+    // no press is pending.
+    f32 jump_buffer_timer_ = 0.0f;
 };
 
 // A camera that trails a named node, looking at it from behind and above.

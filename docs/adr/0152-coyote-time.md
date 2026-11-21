@@ -68,9 +68,13 @@ and track `air_time_` -- the seconds since the character was last grounded.
   well below the ledge's lip. That is the standard behaviour and is bounded by
   the short window, but a distance-bounded window is a later refinement if a game
   asks for it.
-- There is no jump *buffer* (a press made just *before* landing is remembered and
-  fired on the landing frame), the mirror of coyote time. It is a separate
-  feature and is not added here.
+- The jump *buffer* (a press made just *before* landing is remembered and fired
+  on the landing frame), the mirror of coyote time, was not part of this record
+  when it was written. It has since been added as `jump_buffer` on the same
+  controller: a press is remembered for that many seconds and fires on the first
+  frame the character is grounded, and zero disables it. It is kept separate from
+  `coyote_time` because the two answer opposite mistakes — too late off a ledge,
+  too early into a landing — and a game may want one without the other.
 - The window does not distinguish a deliberate step off from a knockback: a
   character shoved off a ledge by a collision gets the same grace. That is
   harmless for a jump and is the usual trade.

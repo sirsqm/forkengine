@@ -551,17 +551,28 @@ Error CharacterController3D::update(const FrameContext& context) {
     if (grounded_ && vertical_velocity_ <= 0.0f) {
         vertical_velocity_ = 0.0f;
     }
+    // A press that arrives before the character can jump is remembered for the
+    // buffer window, so a jump pressed a few frames before touchdown fires on the
+    // landing frame instead of being thrown away.
+    if (context.actions != nullptr && context.actions->was_pressed(ids.jump)) {
+        jump_buffer_timer_ = jump_buffer;
+    }
+    const bool jump_pressed = context.actions != nullptr && context.actions->was_pressed(ids.jump);
+
     // A jump is allowed on the ground or within the coyote window after leaving
     // it, so a jump pressed a moment too late still fires. The body must not be
     // rising already, or a held jump would re-fire every frame.
     const bool can_jump = grounded_ || air_time_ <= coyote_time;
-    if (can_jump && vertical_velocity_ <= 0.0f && context.actions != nullptr &&
-        context.actions->was_pressed(ids.jump)) {
+    if (can_jump && vertical_velocity_ <= 0.0f && (jump_pressed || jump_buffer_timer_ > 0.0f)) {
         vertical_velocity_ = jump_speed;
         grounded_ = false;
-        // Consume the window so a second press in the air is ignored.
+        // Consume both windows so a second press in the air is ignored.
         air_time_ = coyote_time + 1.0f;
+        jump_buffer_timer_ = 0.0f;
     }
+    // Counted down after the check, so a press is live on the frame it is made even
+    // when the buffer is zero.
+    jump_buffer_timer_ = std::max(0.0f, jump_buffer_timer_ - delta);
     vertical_velocity_ -= gravity * delta;
 
     // Hand the motion to the physics body as a velocity, so the solver does the
