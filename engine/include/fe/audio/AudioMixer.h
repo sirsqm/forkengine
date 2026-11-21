@@ -15,6 +15,22 @@ namespace fe::audio {
 // alone, not by any group gain.
 inline constexpr u32 kNoBus = 0xFFFFFFFFu;
 
+// The shape a positional voice's gain follows between min_distance and
+// max_distance. Every model is 1 at and inside the reference distance and
+// exactly 0 at and beyond the cutoff; they differ in how they get there.
+enum class DistanceModel : u8 {
+    // The physical 1/d falloff, rescaled so it reaches silence at the cutoff
+    // rather than a floor. This is the mixer's default and the shape most
+    // engines call "inverse distance clamped".
+    InverseClamped = 0,
+    // A straight line from full gain to silence. Cheapest to reason about, and
+    // the shape a designer usually means by "a linear falloff".
+    Linear = 1,
+    // An exponential decay, rescaled to reach silence at the cutoff. Falls fast
+    // close to the source and levels off, the shape a distant ambience wants.
+    Exponential = 2,
+};
+
 // One currently playing instance of a clip.
 //
 // A voice is the runtime counterpart of an AudioSource: the source says "this
@@ -58,6 +74,12 @@ struct Voice {
     // which it has fallen to silence. See distance_attenuation() for the curve.
     f32 min_distance = 1.0f;
     f32 max_distance = 20.0f;
+
+    // The shape of the falloff between those two distances, and how fast it
+    // falls. The default is the inverse-distance curve this mixer has always
+    // applied, so a voice that sets neither sounds exactly as before.
+    DistanceModel distance_model = DistanceModel::InverseClamped;
+    f32 rolloff = 1.0f;
 
     // The distance attenuation the mixer applied on the last call, for
     // diagnostics and metering. 1 when the voice is non-positional.
@@ -148,23 +170,34 @@ struct Voice {
 
 // Distance attenuation for a positional voice.
 //
-// The model is **inverse distance with a cutoff at max_distance**: gain is 1
-// within min_distance, falls monotonically to exactly 0 at max_distance, and is
-// 0 beyond. Between the two it follows
+// All three models share their endpoints: gain is 1 within min_distance, falls
+// monotonically to exactly 0 at max_distance, and is 0 beyond. Writing x for
+// distance/min_distance and M for max_distance/min_distance, the interior is
+//
+//     inverse:     (x^-r - M^-r) / (1 - M^-r)
+//     linear:      1 - r * (x - 1) / (M - 1)          (clamped to [0, 1])
+//     exponential: (e^-rx - e^-rM) / (e^-r - e^-rM)
+//
+// where `rolloff` is r. The inverse curve at r = 1 is
 //
 //     gain(d) = (1/d - 1/max_distance) / (1/min_distance - 1/max_distance)
 //
 // which is the physical 1/d falloff rescaled so it reaches silence at the
-// cutoff, rather than the constant floor a plain clamped 1/d curve leaves. It is
-// the shape most engines call "inverse distance clamped", with the clamp turned
-// into a true cutoff.
+// cutoff, rather than the constant floor a plain clamped 1/d curve leaves. That
+// is why it is the default: an existing scene, which sets no model, is
+// unchanged.
+//
+// A larger rolloff makes the curve fall faster; a rolloff at or below zero means
+// "use the default", so the function never divides by zero.
 //
 // Degenerate inputs disable the falloff instead of dividing by zero: when
 // max_distance <= min_distance, or min_distance <= 0, there is no interior
 // region and the curve becomes a step at min_distance - full gain inside it,
 // silence at or beyond it. The function is total - it never returns NaN - and
 // pure, so it is called directly by the tests.
-[[nodiscard]] f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept;
+[[nodiscard]] f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance,
+                                       DistanceModel model = DistanceModel::InverseClamped,
+                                       f32 rolloff = 1.0f) noexcept;
 
 // Directivity attenuation for a cone source.
 //

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include <doctest/doctest.h>
 
+#include "fe/audio/AudioSource.h"
 #include "fe/core/FileSystem.h"
 #include "fe/resources/Resource.h"
 #include "fe/resources/ResourceManager.h"
@@ -86,6 +87,37 @@ TEST_CASE("a scene round-trips through JSON without losing structure") {
     const auto* camera = camera_node->get_component<Camera2D>();
     REQUIRE(camera != nullptr);
     CHECK(camera->zoom == doctest::Approx(1.5f));
+}
+
+TEST_CASE("an audio source's distance model and rolloff round-trip") {
+    runtime::register_all_component_types();
+
+    Scene original;
+    Node* node = original.create_node("Speaker");
+    auto* source = node->add_component<audio::AudioSource>();
+    source->spatial = true;
+    source->min_distance = 2.0f;
+    source->max_distance = 40.0f;
+    source->distance_model = audio::DistanceModel::Exponential;
+    source->rolloff = 2.5f;
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+
+    Node* reloaded_node = restored.find_node_by_name("Speaker");
+    REQUIRE(reloaded_node != nullptr);
+    const auto* reloaded = reloaded_node->get_component<audio::AudioSource>();
+    REQUIRE(reloaded != nullptr);
+    CHECK(reloaded->spatial);
+    CHECK(reloaded->min_distance == doctest::Approx(2.0f));
+    CHECK(reloaded->max_distance == doctest::Approx(40.0f));
+    // Compared as integers: an enum class has no stream operator for doctest to
+    // stringify, which MSVC rejects.
+    CHECK(static_cast<int>(reloaded->distance_model) == static_cast<int>(audio::DistanceModel::Exponential));
+    CHECK(reloaded->rolloff == doctest::Approx(2.5f));
 }
 
 TEST_CASE("node identity survives a round trip") {

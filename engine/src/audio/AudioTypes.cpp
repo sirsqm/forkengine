@@ -19,6 +19,30 @@
 namespace fe::reflect {
 namespace {
 
+// An int-backed property for an enum member of `Class`, rejecting a value
+// outside [0, count). The audio components' enums are stored as `u8`, so the
+// serializer sees a plain integer and an out-of-range document value is refused
+// rather than cast.
+template <typename Class, typename Enum>
+[[nodiscard]] Property make_enum_property(std::string name, Enum Class::* field, i64 default_value, i64 count) {
+    Property property;
+    property.name = std::move(name);
+    property.value_kind = ValueKind::Int;
+    property.getter = [field](const void* object) -> Value {
+        return static_cast<i64>(static_cast<const Class*>(object)->*field);
+    };
+    property.setter = [field, count](void* object, const Value& value) -> bool {
+        const auto* as_int = std::get_if<i64>(&value);
+        if (as_int == nullptr || *as_int < 0 || *as_int >= count) {
+            return false;
+        }
+        static_cast<Class*>(object)->*field = static_cast<Enum>(*as_int);
+        return true;
+    };
+    property.default_value = default_value;
+    return property;
+}
+
 void register_audio_source(Registry& registry) {
     audio::AudioSource defaults;
 
@@ -53,6 +77,14 @@ void register_audio_source(Registry& registry) {
                                                                    ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<audio::AudioSource, f32>("max_distance", &audio::AudioSource::max_distance,
                                                                    ValueKind::Float, &defaults));
+    // The falloff's shape and rate. The model is an enum stored as an integer so
+    // a document carries 0/1/2 and an unknown value is refused; the default 0 is
+    // the inverse-distance curve, so a document written before this refinement
+    // reads back as it played.
+    desc.properties.push_back(make_enum_property<audio::AudioSource, audio::DistanceModel>(
+        "distance_model", &audio::AudioSource::distance_model, 0, 3));
+    desc.properties.push_back(
+        make_scalar<audio::AudioSource, f32>("rolloff", &audio::AudioSource::rolloff, ValueKind::Float, &defaults));
     // The directivity cone. The axis is the node's own forward, so it is aimed by
     // rotating the node and has no property of its own; the three numbers below
     // describe the cone's shape. The defaults make the source omnidirectional.

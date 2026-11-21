@@ -129,9 +129,9 @@ f32 head_shadow_coefficient(f32 cutoff_hz, u32 sample_rate) noexcept {
     return std::clamp(coefficient, 0.0f, 1.0f);
 }
 
-f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexcept {
+f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance, DistanceModel model, f32 rolloff) noexcept {
     // Full gain at or inside min_distance, silence at or past max_distance. The
-    // curve in between is the inverse-distance falloff rescaled so it reaches
+    // curve in between is one of the three models, each rescaled so it reaches
     // exactly zero at the cutoff.
     if (distance <= min_distance) {
         return 1.0f;
@@ -141,11 +141,40 @@ f32 distance_attenuation(f32 distance, f32 min_distance, f32 max_distance) noexc
     }
     // A degenerate span (min <= 0, or max <= min) has no interior: the two
     // branches above already returned, so reach here only with a usable span.
-    const f32 span = (1.0f / min_distance) - (1.0f / max_distance);
-    if (span <= 0.0f) {
+    if (min_distance <= 0.0f) {
         return 0.0f;
     }
-    return ((1.0f / distance) - (1.0f / max_distance)) / span;
+    // A non-positive rolloff means "the default": it keeps every model total,
+    // since each formula divides by a function of r.
+    const f32 exponent = rolloff > 0.0f ? rolloff : 1.0f;
+    const f32 x = distance / min_distance;
+    const f32 m = max_distance / min_distance;
+    switch (model) {
+    case DistanceModel::Linear: {
+        const f32 gain = 1.0f - (exponent * (x - 1.0f)) / (m - 1.0f);
+        return gain < 0.0f ? 0.0f : gain;
+    }
+    case DistanceModel::Exponential: {
+        const f32 far_term = std::exp(-exponent * m);
+        const f32 span = std::exp(-exponent) - far_term;
+        if (span <= 0.0f) {
+            return 0.0f;
+        }
+        return (std::exp(-exponent * x) - far_term) / span;
+    }
+    case DistanceModel::InverseClamped:
+    default: {
+        // The inverse-distance falloff: (x^-r - m^-r) / (1 - m^-r), which at
+        // r = 1 is the (1/d - 1/max) / (1/min - 1/max) this mixer has always
+        // applied.
+        const f32 far_term = std::pow(m, -exponent);
+        const f32 span = 1.0f - far_term;
+        if (span <= 0.0f) {
+            return 0.0f;
+        }
+        return (std::pow(x, -exponent) - far_term) / span;
+    }
+    }
 }
 
 f32 block_sample(const f32* samples, u32 source_channels, u64 frame, u32 out_channel) noexcept {
@@ -166,7 +195,8 @@ f32 voice_level(Voice& voice, const MixParams& params, f32 elapsed_seconds) noex
     voice.shadow = 0.0f;
     if (voice.spatial) {
         const Vec3 offset = voice.world_position - params.listener_position;
-        voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance);
+        voice.attenuation = distance_attenuation(offset.length(), voice.min_distance, voice.max_distance,
+                                                 voice.distance_model, voice.rolloff);
         voice.pan = smoothed_pan(previous_pan, voice_pan(voice, params), elapsed_seconds, params.pan_smoothing_seconds);
         voice.shadow = shadow_strength(voice, params);
 

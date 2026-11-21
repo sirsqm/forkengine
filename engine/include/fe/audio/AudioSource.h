@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "fe/audio/AudioMixer.h"
 #include "fe/core/Types.h"
 #include "fe/resources/Resource.h"
 #include "fe/scene/Component.h"
@@ -76,6 +77,12 @@ public:
     // which it has fallen to silence. Ignored while `spatial` is false.
     f32 min_distance = 1.0f;
     f32 max_distance = 20.0f;
+
+    // How the gain falls between those two distances, and how fast. The default
+    // is the inverse-distance curve the mixer has always applied, so a source
+    // that authors neither is unchanged. Ignored while `spatial` is false.
+    DistanceModel distance_model = DistanceModel::InverseClamped;
+    f32 rolloff = 1.0f;
 
     // --- Directivity cone --------------------------------------------------
     // A spatial source projects its sound along an axis: a loudspeaker, a

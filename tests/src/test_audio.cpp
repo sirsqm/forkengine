@@ -379,6 +379,73 @@ TEST_CASE("the attenuation curve is monotonically non-increasing with distance")
           audio::distance_attenuation(2.0f, min_distance, max_distance));
 }
 
+TEST_CASE("each distance model is unity at the reference distance and silent at the cutoff") {
+    const f32 min_distance = 1.0f;
+    const f32 max_distance = 20.0f;
+    const audio::DistanceModel models[] = {audio::DistanceModel::InverseClamped, audio::DistanceModel::Linear,
+                                           audio::DistanceModel::Exponential};
+    for (const audio::DistanceModel model : models) {
+        // The endpoints are shared: full gain inside the reference distance,
+        // exactly silence at and past the cutoff.
+        CHECK(audio::distance_attenuation(0.0f, min_distance, max_distance, model) == doctest::Approx(1.0f));
+        CHECK(audio::distance_attenuation(min_distance, min_distance, max_distance, model) == doctest::Approx(1.0f));
+        CHECK(audio::distance_attenuation(max_distance, min_distance, max_distance, model) == doctest::Approx(0.0f));
+        CHECK(audio::distance_attenuation(100.0f, min_distance, max_distance, model) == doctest::Approx(0.0f));
+
+        // Monotonic across the interior, and really falling rather than flat.
+        f32 previous = 1.0f;
+        for (f32 d = min_distance; d <= max_distance; d += 0.5f) {
+            const f32 gain = audio::distance_attenuation(d, min_distance, max_distance, model);
+            CHECK(gain <= previous + 1e-6f);
+            previous = gain;
+        }
+        CHECK(audio::distance_attenuation(10.0f, min_distance, max_distance, model) <
+              audio::distance_attenuation(2.0f, min_distance, max_distance, model));
+    }
+
+    // The models are genuinely different curves, not three names for one.
+    CHECK(audio::distance_attenuation(5.0f, min_distance, max_distance, audio::DistanceModel::Linear) !=
+          doctest::Approx(
+              audio::distance_attenuation(5.0f, min_distance, max_distance, audio::DistanceModel::Exponential)));
+}
+
+TEST_CASE("a larger rolloff falls faster and a non-positive one is the default") {
+    const f32 min_distance = 1.0f;
+    const f32 max_distance = 20.0f;
+    const audio::DistanceModel models[] = {audio::DistanceModel::InverseClamped, audio::DistanceModel::Linear,
+                                           audio::DistanceModel::Exponential};
+    for (const audio::DistanceModel model : models) {
+        const f32 gentle = audio::distance_attenuation(5.0f, min_distance, max_distance, model, 1.0f);
+        const f32 steep = audio::distance_attenuation(5.0f, min_distance, max_distance, model, 4.0f);
+        CHECK(steep < gentle);
+        // A rolloff at or below zero means "use the default", so it can never
+        // divide by zero or produce a NaN.
+        CHECK(audio::distance_attenuation(5.0f, min_distance, max_distance, model, 0.0f) == doctest::Approx(gentle));
+        CHECK(std::isfinite(audio::distance_attenuation(5.0f, min_distance, max_distance, model, -2.0f)));
+    }
+}
+
+TEST_CASE("a positional voice is scaled by its authored distance model") {
+    auto clip = mono_clip(8000, {1.0f});
+    audio::Voice voice;
+    voice.clip = clip.get();
+    voice.spatial = true;
+    voice.world_position = Vec3{2.0f, 0.0f, 0.0f};
+    voice.min_distance = 1.0f;
+    voice.max_distance = 20.0f;
+    voice.distance_model = audio::DistanceModel::Linear;
+
+    audio::MixParams params;
+    params.listener_position = Vec3{0.0f, 0.0f, 0.0f};
+
+    f32 output[1] = {};
+    static_cast<void>(audio::mix_voices(&voice, 1, output, 1, 1, 8000, params));
+
+    // Linear at d = 2 with min 1, max 20: 1 - (2 - 1) / (20 - 1) = 18/19.
+    CHECK(voice.attenuation == doctest::Approx(18.0f / 19.0f));
+    CHECK(output[0] == doctest::Approx(18.0f / 19.0f));
+}
+
 TEST_CASE("a degenerate attenuation span is total, never NaN") {
     // min_distance 0 has no 1/d term; the curve must still be defined.
     CHECK(audio::distance_attenuation(0.0f, 0.0f, 20.0f) == doctest::Approx(1.0f));

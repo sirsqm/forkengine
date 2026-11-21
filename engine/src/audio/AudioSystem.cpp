@@ -220,6 +220,8 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         entry.voice.spatial = source->spatial;
         entry.voice.min_distance = source->min_distance;
         entry.voice.max_distance = source->max_distance;
+        entry.voice.distance_model = source->distance_model;
+        entry.voice.rolloff = source->rolloff;
         entry.voice.cone_inner_degrees = source->cone_inner_degrees;
         entry.voice.cone_outer_degrees = source->cone_outer_degrees;
         entry.voice.cone_outer_gain = source->cone_outer_gain;
