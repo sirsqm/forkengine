@@ -468,15 +468,20 @@ struct Quat {
     const Vec3 right = forward.cross(up).normalized();
     const Vec3 true_up = right.cross(forward);
 
+    // The basis vectors are the matrix's *rows*, matching how `at()` indexes and
+    // how a shader multiplies a matrix by a column vector. Written into the
+    // columns instead, the rotation comes out transposed: the camera aims the
+    // inverse of its rotation, which is invisible to a camera with no pitch and
+    // wrong for every other one.
     Mat4 r = Mat4::identity();
     r.at(0, 0) = right.x;
-    r.at(1, 0) = right.y;
-    r.at(2, 0) = right.z;
-    r.at(0, 1) = true_up.x;
+    r.at(0, 1) = right.y;
+    r.at(0, 2) = right.z;
+    r.at(1, 0) = true_up.x;
     r.at(1, 1) = true_up.y;
-    r.at(2, 1) = true_up.z;
-    r.at(0, 2) = -forward.x;
-    r.at(1, 2) = -forward.y;
+    r.at(1, 2) = true_up.z;
+    r.at(2, 0) = -forward.x;
+    r.at(2, 1) = -forward.y;
     r.at(2, 2) = -forward.z;
     r.at(0, 3) = -right.dot(eye);
     r.at(1, 3) = -true_up.dot(eye);

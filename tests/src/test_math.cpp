@@ -119,6 +119,39 @@ TEST_CASE("look_at places the target down the camera's negative z axis") {
     CHECK(right_point.x == doctest::Approx(2.0f));
 }
 
+TEST_CASE("look_at pitches a camera the way its eye and target ask for") {
+    // The test above cannot catch a transposed rotation: an axis-aligned camera's
+    // basis is the identity, and the transpose of the identity is the identity.
+    // A pitched camera can. The camera here looks down at the origin, so the
+    // floor point *under* it is below the view axis and a point above the target
+    // is above it. With the basis written into the matrix's columns, the camera
+    // aims the inverse of its pitch and both come out swapped.
+    const Vec3 eye{0.0f, 4.0f, 4.0f};
+    const Mat4 view = look_at(eye, Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 1.0f, 0.0f});
+
+    // The target projects to the centre, sqrt(32) units in front.
+    const Vec3 target = transform_point(view, Vec3{0.0f, 0.0f, 0.0f});
+    CHECK(target.x == doctest::Approx(0.0f));
+    CHECK(target.y == doctest::Approx(0.0f));
+    CHECK(target.z == doctest::Approx(-5.656854f));
+
+    const Vec3 below = transform_point(view, Vec3{0.0f, 0.0f, 4.0f});
+    CHECK(below.y < 0.0f);
+    CHECK(below.z < 0.0f); // In front of the camera, not behind it.
+
+    const Vec3 above = transform_point(view, Vec3{0.0f, 3.0f, 0.0f});
+    CHECK(above.y > 0.0f);
+
+    // The view matrix and the projection agree: the same point that is below the
+    // axis in view space lands below the centre of the frame. Only the z term and
+    // the translation survive, because the point is on the x = 0, y = 0 line.
+    const Mat4 view_projection = perspective(1.0471975512f, 1.0f, 0.1f, 100.0f) * view;
+    const f32 clip_y = view_projection.at(1, 2) * 4.0f + view_projection.at(1, 3);
+    const f32 clip_w = view_projection.at(3, 2) * 4.0f + view_projection.at(3, 3);
+    CHECK(clip_w > 0.0f);
+    CHECK(clip_y / clip_w < 0.0f);
+}
+
 TEST_CASE("inverse undoes a transform") {
     const Mat4 transform =
         Mat4::translation(Vec3{3.0f, -1.0f, 2.0f}) * Mat4::rotation_y(0.7f) * Mat4::scale(Vec3{2.0f, 2.0f, 2.0f});
