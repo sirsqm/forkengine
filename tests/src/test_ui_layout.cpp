@@ -758,6 +758,11 @@ TEST_CASE("a scroll offsets a clipping container's children but not the containe
                                    ui::UiAnchor::TopLeft, Vec2{0.0f, 60.0f});
     const auto* child = child_node->get_component<ui::UiElement>();
 
+    // A second row below the window, so the content is taller than the panel and a
+    // scroll of 40 is inside the legal range.
+    add_element(panel_node, "Tail", ui::UiSize::fixed(50.0f), ui::UiSize::fixed(30.0f), ui::UiAnchor::TopLeft,
+                Vec2{0.0f, 160.0f});
+
     ui::UiLayoutResult result;
     ui::layout(scene, 1280, 720, result);
 
@@ -792,15 +797,98 @@ TEST_CASE("scrolling a child into view keeps it and scrolling it out culls it") 
     ui::layout(scene, 1280, 720, result);
     CHECK(find_resolved(result, row) == nullptr);
 
+    // 180 of content in a 100-tall window: the furthest legal scroll is 80, so the
+    // row comes to y = 70 and no further. A scroll past the end is clamped to it,
+    // which is what keeps a list from scrolling into blank space.
     panel->scroll = Vec2{0.0f, 100.0f};
     ui::layout(scene, 1280, 720, result);
     const ui::UiResolved* revealed = find_resolved(result, row);
     REQUIRE(revealed != nullptr);
-    CHECK(revealed->design_rect.position.y == doctest::Approx(50.0f));
+    CHECK(revealed->design_rect.position.y == doctest::Approx(70.0f));
 
     panel->scroll = Vec2{0.0f, 200.0f};
     ui::layout(scene, 1280, 720, result);
-    CHECK(find_resolved(result, row) == nullptr);
+    const ui::UiResolved* clamped = find_resolved(result, row);
+    REQUIRE(clamped != nullptr);
+    CHECK(clamped->design_rect.position.y == doctest::Approx(70.0f));
+}
+
+TEST_CASE("a list scrolled past its end clamps to its last item") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    // Five 40-tall rows stacked from the panel's top edge: 200 of content in a
+    // 100-tall window, so the furthest legal scroll is 100.
+    const ui::UiElement* first = nullptr;
+    const ui::UiElement* last = nullptr;
+    for (int i = 0; i < 5; ++i) {
+        Node* row_node = add_element(panel_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f),
+                                     ui::UiAnchor::TopLeft, Vec2{0.0f, static_cast<f32>(i) * 40.0f});
+        if (i == 0) {
+            first = row_node->get_component<ui::UiElement>();
+        }
+        last = row_node->get_component<ui::UiElement>();
+    }
+
+    panel->scroll = Vec2{0.0f, 1000.0f};
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    // The last row's bottom sits exactly on the panel's bottom edge, rather than the
+    // list sliding off into blank space.
+    const ui::UiResolved* resolved_last = find_resolved(result, last);
+    REQUIRE(resolved_last != nullptr);
+    CHECK(resolved_last->design_rect.position.y == doctest::Approx(60.0f));
+    CHECK(resolved_last->design_rect.position.y + resolved_last->design_rect.size.y == doctest::Approx(100.0f));
+    // And the first row is scrolled out rather than the whole list left behind.
+    CHECK(find_resolved(result, first) == nullptr);
+}
+
+TEST_CASE("a negative scroll clamps to zero") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    Node* row_node = add_element(panel_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    const auto* row = row_node->get_component<ui::UiElement>();
+
+    // Scrolling up from the top would show blank space above the first row, so the
+    // offset stops at zero and the row stays on the panel's top edge.
+    panel->scroll = Vec2{-40.0f, -40.0f};
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    const ui::UiResolved* resolved = find_resolved(result, row);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->design_rect.position.x == doctest::Approx(0.0f));
+    CHECK(resolved->design_rect.position.y == doctest::Approx(0.0f));
+}
+
+TEST_CASE("a list shorter than its viewport does not scroll at all") {
+    Scene scene;
+    Node* canvas_node = add_canvas(scene);
+    Node* panel_node = add_element(canvas_node, "Panel", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(100.0f));
+    auto* panel = panel_node->get_component<ui::UiElement>();
+    panel->clip = true;
+
+    // One 40-tall row in a 100-tall window: nothing to reveal, so any scroll is
+    // refused and the row keeps its authored place.
+    Node* row_node = add_element(panel_node, "Row", ui::UiSize::fixed(200.0f), ui::UiSize::fixed(40.0f));
+    const auto* row = row_node->get_component<ui::UiElement>();
+
+    panel->scroll = Vec2{50.0f, 50.0f};
+    ui::UiLayoutResult result;
+    ui::layout(scene, 1280, 720, result);
+
+    const ui::UiResolved* resolved = find_resolved(result, row);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->design_rect.position.x == doctest::Approx(0.0f));
+    CHECK(resolved->design_rect.position.y == doctest::Approx(0.0f));
 }
 
 TEST_CASE("a scroll is ignored by a container that does not clip") {
@@ -894,10 +982,12 @@ TEST_CASE("a clipped child is not hit tested when it is scrolled out of view") {
     // The button is below the panel, so a click where it *would* be hits nothing.
     CHECK(ui::hit_test(result, Vec2{10.0f, 160.0f}) == nullptr);
 
-    // Scrolling it into view makes it hittable again, at its new position.
+    // Scrolling it into view makes it hittable again, at the position the clamped
+    // scroll puts it in: 180 of content in a 100-tall window clamps a scroll of 100
+    // to 80, so the button lands at y = 70 and the hit test follows the drawing.
     panel->scroll = Vec2{0.0f, 100.0f};
     ui::layout(scene, 1280, 720, result);
-    const ui::UiResolved* hit = ui::hit_test(result, Vec2{10.0f, 60.0f});
+    const ui::UiResolved* hit = ui::hit_test(result, Vec2{10.0f, 80.0f});
     REQUIRE(hit != nullptr);
     CHECK(hit->node == button_node);
 }

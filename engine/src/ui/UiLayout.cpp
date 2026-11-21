@@ -267,43 +267,19 @@ struct ClipContext {
     return ClipContext{Rect::intersect(context.rect, element_box), true};
 }
 
-// Writes one resolved element and lays out its children.
-//
-// The parent calls this with the element's final design-space rectangle, so
-// positioning is decided by whoever knows the parent's flow mode and this
-// function only has to place the children. Emitting the parent before recursing
-// is what makes the result array's order a valid draw order: a parent is always
-// behind its children, and siblings keep tree order.
-//
-// `clip` is the region this element must be visible inside, in design space. A
-// child wholly outside it is culled (not emitted, subtree included), and a child
-// that partly overlaps is kept whole with the region recorded so the draw step
-// scissors it. The element's own box narrows the region for its children when it
-// sets `clip`, which is what a scroll panel does.
-void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, const UiCanvasTransform& transform,
-          const Rect& design_rect, i32 canvas_layer, u32 depth, const ClipContext& clip, UiLayoutResult& out) {
-    out.push_back(UiResolved{&element, &canvas, &node, transform.to_viewport(design_rect), design_rect,
-                             canvas_layer + element.layer, depth, transform.to_viewport(clip.rect), clip.active});
+// A child of a container, placed in design space before any scroll is applied.
+struct Placed {
+    const Node* node = nullptr;
+    const UiElement* element = nullptr;
+    Rect rect{};
+};
 
-    // The children are laid out inside the padding, so a panel's border is never
-    // covered by its contents. A clipping container additionally shifts its
-    // children by the scroll offset (content moves, the window does not) and
-    // narrows the clip region to its own box.
-    Rect content_box = element.padding.inset(design_rect);
-    ClipContext child_clip = clip;
-    if (element.clip) {
-        child_clip = narrow_clip(clip, design_rect);
-        content_box.position.x -= element.scroll.x;
-        content_box.position.y -= element.scroll.y;
-    }
-
-    // Whether `child_rect` is visible inside `child_clip`: always true when
-    // nothing clips, else only when the two overlap. A wholly-outside child is
-    // culled with its subtree; a partly-visible one is kept and scissored at draw.
-    const auto visible = [&child_clip](const Rect& child_rect) noexcept {
-        return !child_clip.active || Rect::overlaps(child_rect, child_clip.rect);
-    };
-
+// Places every layout child of `node` inside `content_box`, in tree order, with
+// no scroll applied. Placement is decided by the parent's flow mode: a `None`
+// direction anchors each child independently, and a row or column stacks them
+// along the main axis with the justify and align rules.
+void place_children(const Node& node, const UiElement& element, const UiCanvas& canvas, const Rect& content_box,
+                    std::vector<Placed>& out) {
     const UiDirection direction = element.direction;
 
     if (direction == UiDirection::None) {
@@ -314,11 +290,7 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             }
             const auto* child_element = child.get_component<UiElement>();
             const Vec2 size = element_size(child, *child_element, canvas, content_box.size);
-            const Rect child_rect = anchored_rect(*child_element, size, content_box);
-            if (!visible(child_rect)) {
-                continue;
-            }
-            emit(child, *child_element, canvas, transform, child_rect, canvas_layer, depth + 1, child_clip, out);
+            out.push_back(Placed{&child, child_element, anchored_rect(*child_element, size, content_box)});
         }
         return;
     }
@@ -345,7 +317,7 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             continue;
         }
         const auto* child_element = child.get_component<UiElement>();
-        Vec2 size = element_size(child, *child_element, canvas, content_box.size);
+        const Vec2 size = element_size(child, *child_element, canvas, content_box.size);
         const f32 outer = direction == UiDirection::Row ? size.x + child_element->margin.horizontal()
                                                         : size.y + child_element->margin.vertical();
         main_total += outer;
@@ -386,10 +358,83 @@ void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, co
             cursor += entry.size.y + margin.vertical() + element.gap + extra_gap;
         }
 
+        out.push_back(Placed{entry.node, entry.element, child_rect});
+    }
+}
+
+// Clamps a scroll to what it can actually reveal: from zero to the content extent
+// minus the viewport, and zero when the content fits. A negative scroll shows blank
+// space before the content and a scroll past the end shows it after, so both are
+// refused here rather than left to every caller. `placed` is the children at scroll
+// zero, so the extent is measured before the scroll moves anything.
+[[nodiscard]] Vec2 clamped_scroll(const Vec2& scroll, const Rect& content_box,
+                                  const std::vector<Placed>& placed) noexcept {
+    Vec2 content_extent{};
+    for (const Placed& entry : placed) {
+        content_extent.x =
+            std::max(content_extent.x, entry.rect.position.x + entry.rect.size.x - content_box.position.x);
+        content_extent.y =
+            std::max(content_extent.y, entry.rect.position.y + entry.rect.size.y - content_box.position.y);
+    }
+    const Vec2 max_scroll{std::max(content_extent.x - content_box.size.x, 0.0f),
+                          std::max(content_extent.y - content_box.size.y, 0.0f)};
+    return Vec2{std::clamp(scroll.x, 0.0f, max_scroll.x), std::clamp(scroll.y, 0.0f, max_scroll.y)};
+}
+
+// Writes one resolved element and lays out its children.
+//
+// The parent calls this with the element's final design-space rectangle, so
+// positioning is decided by whoever knows the parent's flow mode and this
+// function only has to place the children. Emitting the parent before recursing
+// is what makes the result array's order a valid draw order: a parent is always
+// behind its children, and siblings keep tree order.
+//
+// `clip` is the region this element must be visible inside, in design space. A
+// child wholly outside it is culled (not emitted, subtree included), and a child
+// that partly overlaps is kept whole with the region recorded so the draw step
+// scissors it. The element's own box narrows the region for its children when it
+// sets `clip`, which is what a scroll panel does.
+void emit(const Node& node, const UiElement& element, const UiCanvas& canvas, const UiCanvasTransform& transform,
+          const Rect& design_rect, i32 canvas_layer, u32 depth, const ClipContext& clip, UiLayoutResult& out) {
+    out.push_back(UiResolved{&element, &canvas, &node, transform.to_viewport(design_rect), design_rect,
+                             canvas_layer + element.layer, depth, transform.to_viewport(clip.rect), clip.active});
+
+    // The children are laid out inside the padding, so a panel's border is never
+    // covered by its contents. A clipping container narrows the clip region to its
+    // own box; its scroll is resolved below, against the extent the children cover.
+    const Rect content_box = element.padding.inset(design_rect);
+    ClipContext child_clip = clip;
+    if (element.clip) {
+        child_clip = narrow_clip(clip, design_rect);
+    }
+
+    std::vector<Placed> placed;
+    place_children(node, element, canvas, content_box, placed);
+
+    // The scroll moves the content inside the window, and is clamped to the extent
+    // the content covers so a list scrolled past its end shows its last item rather
+    // than blank space. The clamp is resolved here, before the children are
+    // emitted, so the rectangles a hit test walks are the ones that were drawn.
+    Vec2 scroll{};
+    if (element.clip) {
+        scroll = clamped_scroll(element.scroll, content_box, placed);
+    }
+
+    // Whether `child_rect` is visible inside `child_clip`: always true when
+    // nothing clips, else only when the two overlap. A wholly-outside child is
+    // culled with its subtree; a partly-visible one is kept and scissored at draw.
+    const auto visible = [&child_clip](const Rect& child_rect) noexcept {
+        return !child_clip.active || Rect::overlaps(child_rect, child_clip.rect);
+    };
+
+    for (const Placed& entry : placed) {
+        Rect child_rect = entry.rect;
+        child_rect.position.x -= scroll.x;
+        child_rect.position.y -= scroll.y;
         if (!visible(child_rect)) {
             continue;
         }
-        emit(*entry.node, child_element, canvas, transform, child_rect, canvas_layer, depth + 1, child_clip, out);
+        emit(*entry.node, *entry.element, canvas, transform, child_rect, canvas_layer, depth + 1, child_clip, out);
     }
 }
 
