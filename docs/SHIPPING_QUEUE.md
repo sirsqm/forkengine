@@ -1401,6 +1401,118 @@ proving two targets whose lifetimes do not overlap are reported as sharing one
 slot, two whose lifetimes *do* overlap are given separate slots, and a resize
 that re-describes one target re-aliases (or un-aliases) it correctly.
 
+### `ui-focus-navigation-wrap`
+
+Directional focus navigation stops dead at the edge of the focus set:
+`UiFocusSystem::next_stop` returns -1 when nothing lies ahead, so a short menu
+forces the player to reverse direction and a d-pad on a two-item pause menu feels
+broken.
+
+**Done when** `set_wrap_navigation(true)` makes a direction pressed at an edge
+move focus to the stop at the opposite edge (Down on the last stop moves to the
+first, Up on the first moves to the last), the default stays non-wrapping, and a
+test proves both cases for a three-button column.
+
+### `ui-focus-repeat-tuning`
+
+The auto-repeat cadence for a held direction is a private 0.25 s constant with no
+way to change it and no way to turn repeat off, so a caller cannot tune a menu to
+its own feel or make a list that moves once per press.
+
+**Done when** `UiFocusSystem` exposes the repeat interval, a positive value
+repeats focus movement at that cadence, zero disables repeat while the initial
+press still moves once, and tests assert both against a held Down key.
+
+### `sprite2d-flip`
+
+A `Sprite2D` can select a sub-rectangle of its texture but cannot mirror it, so a
+character walking left has to carry a second texture or a script has to author a
+flipped UV rect by hand.
+
+**Done when** `Sprite2D` carries `flip_x`/`flip_y`, extraction swaps the U (or V)
+endpoints of the emitted instance's uv rect, a flipped sprite draws the same quad
+with mirrored sampling, the defaults are false and leave existing output
+unchanged, and a test asserts the four uv endpoints.
+
+### `camera2d-pixel-snap`
+
+A 2D camera that moves by fractional world units makes pixel art shimmer, because
+`view_projection` translates by whatever the node position is and there is no way
+to ask it to land on whole pixels.
+
+**Done when** `Camera2D` has an opt-in snap flag, when set the view translation is
+rounded to the nearest whole pixel at the target viewport (rotation and zoom
+unchanged), the default is off and existing matrices are unchanged, and a test
+asserts an integral translation for a fractional position.
+
+### `text-label-tracking`
+
+`TextLabel` lays glyphs out at their font advances with no letter-spacing control,
+so a title or a HUD caption cannot be tightened or opened up without editing the
+atlas metrics.
+
+**Done when** `TextLabel` has a `tracking` value in world units added after each
+glyph's advance, `measured_width()` includes it, extraction offsets each glyph by
+the accumulated tracking, zero is the default and existing output is unchanged,
+and a test asserts a two-glyph label's second glyph and measured width at a
+non-zero tracking.
+
+### `render-graph-pass-disable`
+
+A pass can only be removed by rebuilding the graph, so a feature that wants to
+turn a pass off for one frame (an effect toggle, a debug view) has to reconstruct
+its declarations and loses the stable order.
+
+**Done when** `RenderGraph` can mark a declared pass disabled and re-enable it,
+the run order omits disabled passes while leaving the order of the rest
+unchanged, a disabled pass's resource accesses stop creating dependencies (so its
+producer and consumer re-derive), and a test proves both the omission and the
+re-derived order.
+
+### `collider-enabled-flag`
+
+`Collider2D` and `Collider3D` are always active once attached, so disabling a
+hitbox (a dead enemy, a door that opens) requires removing the component and
+remembering how to rebuild it.
+
+**Done when** both collider components carry `enabled` (default true), the 2D and
+3D broadphase and solver skip a disabled collider entirely (no contacts, no
+triggers, no response), re-enabling restores collisions on the next step, and a
+test proves a disabled collider passes through a body that an enabled one stops.
+
+### `input-text-events`
+
+`InputState` reports key edges but no text, so a game cannot read what the player
+typed for a name entry or a cheat code; a key code is not a character once
+modifiers and layouts are involved.
+
+**Done when** `InputState` accepts a codepoint text event, exposes the frame's
+accumulated text in order, clears it on `begin_frame`, the GLFW backend forwards
+character callbacks, and a test proves two codepoints arrive in order and are
+gone the next frame.
+
+### `audio-source-start-offset`
+
+An `AudioSource` always starts at sample zero, so a game cannot resume a sound,
+start a music loop at a downbeat, or randomise an impact's entry point.
+
+**Done when** `AudioSource` carries a start offset in seconds (clamped to the
+clip length), a play request begins reading there, an offset past the end is
+documented and handled rather than reading out of bounds, the default zero leaves
+playback unchanged, and a test asserts the first mixed sample for a non-zero
+offset.
+
+### `scene-node-reparent-preserve-world`
+
+A node moved under a new parent keeps its local transform, so it jumps in world
+space; `add_child` detaches and reattaches without a way to preserve where it
+was.
+
+**Done when** `Node` exposes a reparent that preserves world position, rotation,
+and scale by rewriting the local transform against the new parent, the old and
+new parents' child lists are updated, a reparent to the same parent is a no-op,
+and a test asserts the world matrix is unchanged.
+
 ---
 ## Backlog — not yet ordered
 

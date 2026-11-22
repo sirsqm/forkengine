@@ -78,11 +78,16 @@ i32 UiFocusSystem::index_of(const std::vector<const UiResolved*>& stops, const U
 }
 
 i32 UiFocusSystem::next_stop(const std::vector<const UiResolved*>& stops, const UiResolved& origin,
-                             const Vec2& delta) noexcept {
+                             const Vec2& delta, bool wrap) noexcept {
     const Vec2 centre{origin.rect.position.x + origin.rect.size.x * 0.5f,
                       origin.rect.position.y + origin.rect.size.y * 0.5f};
     i32 best = -1;
     f32 best_score = 0.0f;
+    // The farthest candidate *behind* the origin, used only when wrapping. For a
+    // column, a press of "down" at the bottom reaches the topmost stop.
+    i32 behind = -1;
+    f32 behind_along = 0.0f;
+    f32 behind_across = 0.0f;
     for (usize i = 0; i < stops.size(); ++i) {
         const UiResolved& candidate = *stops[i];
         if (candidate.element == origin.element) {
@@ -94,10 +99,15 @@ i32 UiFocusSystem::next_stop(const std::vector<const UiResolved*>& stops, const 
         // The distance along the requested direction, and across it. A candidate
         // behind the origin (a negative projection) is not in that direction.
         const f32 along = to.x * delta.x + to.y * delta.y;
+        const f32 across = std::fabs(to.x * delta.y - to.y * delta.x);
         if (along <= 0.0f) {
+            if (wrap && (behind < 0 || along < behind_along || (along == behind_along && across < behind_across))) {
+                behind = static_cast<i32>(i);
+                behind_along = along;
+                behind_across = across;
+            }
             continue;
         }
-        const f32 across = std::fabs(to.x * delta.y - to.y * delta.x);
         // Prefer what is most in the requested direction and least off to the
         // side: the cross-axis distance dominates, so a press of "down" goes to
         // the button directly below and not to a nearer one far to the side. The
@@ -108,7 +118,7 @@ i32 UiFocusSystem::next_stop(const std::vector<const UiResolved*>& stops, const 
             best_score = score;
         }
     }
-    return best;
+    return best >= 0 ? best : behind;
 }
 
 void UiFocusSystem::apply(const FrameContext& context, const UiLayoutResult& layout) {
@@ -180,7 +190,7 @@ void UiFocusSystem::apply(const FrameContext& context, const UiLayoutResult& lay
     }
 
     if (delta.x != 0.0f || delta.y != 0.0f) {
-        const i32 next = next_stop(stops, *stops[static_cast<usize>(index)], delta);
+        const i32 next = next_stop(stops, *stops[static_cast<usize>(index)], delta, wrap_navigation_);
         if (next >= 0) {
             index = next;
         }

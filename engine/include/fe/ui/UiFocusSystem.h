@@ -51,6 +51,14 @@ public:
     void set_navigation_actions(ActionMap::Id up, ActionMap::Id down, ActionMap::Id left, ActionMap::Id right) noexcept;
     void set_confirm_action(ActionMap::Id confirm) noexcept { confirm_ = confirm; }
 
+    // Whether a direction pressed at the edge of the focus set wraps to the
+    // opposite edge. Off by default, so a menu that wants to stop at its ends
+    // is unchanged. On, a press of "down" on the last stop moves to the first
+    // and a press of "up" on the first moves to the last, which is what a
+    // gamepad player expects from a short list.
+    void set_wrap_navigation(bool wrap) noexcept { wrap_navigation_ = wrap; }
+    [[nodiscard]] bool wrap_navigation() const noexcept { return wrap_navigation_; }
+
     // The focused element's node, or nullptr when nothing is focused. Exposed so
     // a game can read the selection without walking the layout itself.
     [[nodiscard]] const Node* focused_node() const noexcept { return focused_node_; }
@@ -75,9 +83,10 @@ private:
     [[nodiscard]] static i32 index_of(const std::vector<const UiResolved*>& stops, const UiElement* current) noexcept;
 
     // The index of the stop nearest `origin` in direction `delta` (a unit-ish
-    // vector), or -1 when there is none in that direction.
+    // vector), or -1 when there is none in that direction. When `wrap` is true
+    // and nothing lies ahead, the stop farthest behind is returned instead.
     [[nodiscard]] static i32 next_stop(const std::vector<const UiResolved*>& stops, const UiResolved& origin,
-                                       const Vec2& delta) noexcept;
+                                       const Vec2& delta, bool wrap) noexcept;
 
     // Applies the frame's focus to `layout`, writing `focused` and `activated`.
     void apply(const FrameContext& context, const UiLayoutResult& layout);
@@ -99,6 +108,7 @@ private:
     // last moved focus, and how long it must be held to move again.
     f32 repeat_timer_ = 0.0f;
     f32 repeat_interval_ = 0.25f;
+    bool wrap_navigation_ = false;
 };
 
 } // namespace fe::ui

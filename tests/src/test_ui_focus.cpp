@@ -328,3 +328,62 @@ TEST_CASE("a frame with no input clears the focus ring") {
     system.update(empty, scene);
     CHECK_FALSE(focused(first));
 }
+
+TEST_CASE("navigation stops at the ends by default") {
+    Scene scene;
+    Node* canvas = add_canvas(scene);
+    add_button(canvas, "One", {0.0f, 0.0f});
+    add_button(canvas, "Two", {0.0f, 60.0f});
+    Node* last = add_button(canvas, "Three", {0.0f, 120.0f});
+
+    InputState input;
+    UiFocusSystem system;
+    input.begin_frame();
+    FrameContext context = make_context(input);
+    system.update(context, scene);
+
+    for (int i = 0; i < 2; ++i) {
+        input.begin_frame();
+        input.on_key(Key::Down, true);
+        system.update(context, scene);
+        input.on_key(Key::Down, false);
+    }
+    CHECK(focused(last));
+    CHECK_FALSE(system.wrap_navigation());
+
+    // One more Down at the bottom has nowhere to go, so focus stays put.
+    input.begin_frame();
+    input.on_key(Key::Down, true);
+    system.update(context, scene);
+    CHECK(focused(last));
+}
+
+TEST_CASE("wrap navigation moves from an end to the opposite end") {
+    Scene scene;
+    Node* canvas = add_canvas(scene);
+    Node* first = add_button(canvas, "One", {0.0f, 0.0f});
+    add_button(canvas, "Two", {0.0f, 60.0f});
+    Node* last = add_button(canvas, "Three", {0.0f, 120.0f});
+
+    InputState input;
+    UiFocusSystem system;
+    system.set_wrap_navigation(true);
+    CHECK(system.wrap_navigation());
+
+    input.begin_frame();
+    FrameContext context = make_context(input);
+    system.update(context, scene);
+    CHECK(focused(first));
+
+    // Up from the first stop wraps to the last.
+    input.begin_frame();
+    input.on_key(Key::Up, true);
+    system.update(context, scene);
+    CHECK(focused(last));
+
+    // Down from the last stop wraps back to the first.
+    input.begin_frame();
+    input.on_key(Key::Down, true);
+    system.update(context, scene);
+    CHECK(focused(first));
+}
