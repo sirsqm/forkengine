@@ -51,6 +51,10 @@ void UiFocusSystem::set_navigation_actions(ActionMap::Id up, ActionMap::Id down,
     right_ = right;
 }
 
+void UiFocusSystem::set_repeat_interval(f32 seconds) noexcept {
+    repeat_interval_ = seconds > 0.0f ? seconds : 0.0f;
+}
+
 void UiFocusSystem::clear_focus() noexcept {
     focused_ = nullptr;
     focused_node_ = nullptr;
@@ -77,8 +81,8 @@ i32 UiFocusSystem::index_of(const std::vector<const UiResolved*>& stops, const U
     return -1;
 }
 
-i32 UiFocusSystem::next_stop(const std::vector<const UiResolved*>& stops, const UiResolved& origin,
-                             const Vec2& delta, bool wrap) noexcept {
+i32 UiFocusSystem::next_stop(const std::vector<const UiResolved*>& stops, const UiResolved& origin, const Vec2& delta,
+                             bool wrap) noexcept {
     const Vec2 centre{origin.rect.position.x + origin.rect.size.x * 0.5f,
                       origin.rect.position.y + origin.rect.size.y * 0.5f};
     i32 best = -1;
@@ -176,13 +180,18 @@ void UiFocusSystem::apply(const FrameContext& context, const UiLayoutResult& lay
 
     Vec2 delta = direction_pressed();
     if (delta.x == 0.0f && delta.y == 0.0f) {
-        if (const Vec2 hold = direction_held(); hold.x != 0.0f || hold.y != 0.0f) {
+        const Vec2 hold = direction_held();
+        if (hold.x == 0.0f && hold.y == 0.0f) {
+            repeat_timer_ = 0.0f;
+        } else if (repeat_interval_ > 0.0f) {
             repeat_timer_ += context.delta_time;
             if (repeat_timer_ >= repeat_interval_) {
                 repeat_timer_ = 0.0f;
                 delta = hold;
             }
         } else {
+            // Repeat disabled: a held direction moved focus on its press edge and
+            // does not move again until it is released and pressed anew.
             repeat_timer_ = 0.0f;
         }
     } else {

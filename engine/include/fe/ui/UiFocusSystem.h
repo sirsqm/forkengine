@@ -59,6 +59,14 @@ public:
     void set_wrap_navigation(bool wrap) noexcept { wrap_navigation_ = wrap; }
     [[nodiscard]] bool wrap_navigation() const noexcept { return wrap_navigation_; }
 
+    // The auto-repeat cadence for a held direction, in seconds. A positive value
+    // moves focus once per interval while the direction stays held; zero disables
+    // repeat, so a held direction moves focus only on its press edge, which is
+    // what a list that advances once per press wants. Negative values are
+    // treated as zero. The default is 0.25 s.
+    void set_repeat_interval(f32 seconds) noexcept;
+    [[nodiscard]] f32 repeat_interval() const noexcept { return repeat_interval_; }
+
     // The focused element's node, or nullptr when nothing is focused. Exposed so
     // a game can read the selection without walking the layout itself.
     [[nodiscard]] const Node* focused_node() const noexcept { return focused_node_; }

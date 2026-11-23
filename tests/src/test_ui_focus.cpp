@@ -287,6 +287,89 @@ TEST_CASE("a held direction repeats focus on a steady cadence") {
     CHECK(focused(third));
 }
 
+TEST_CASE("the repeat interval is exposed and defaults to a quarter second") {
+    UiFocusSystem system;
+    CHECK(system.repeat_interval() == doctest::Approx(0.25f));
+
+    system.set_repeat_interval(0.5f);
+    CHECK(system.repeat_interval() == doctest::Approx(0.5f));
+
+    // A negative interval is not a cadence: it clamps to "no repeat".
+    system.set_repeat_interval(-1.0f);
+    CHECK(system.repeat_interval() == 0.0f);
+}
+
+TEST_CASE("a tuned repeat interval sets the cadence of a held direction") {
+    Scene scene;
+    Node* canvas = add_canvas(scene);
+    Node* first = add_button(canvas, "One", {0.0f, 0.0f});
+    Node* second = add_button(canvas, "Two", {0.0f, 60.0f});
+    Node* third = add_button(canvas, "Three", {0.0f, 120.0f});
+    add_button(canvas, "Four", {0.0f, 180.0f});
+
+    InputState input;
+    UiFocusSystem system;
+    system.set_repeat_interval(0.5f);
+
+    FrameContext context = make_context(input);
+    input.begin_frame();
+    system.update(context, scene);
+    CHECK(focused(first));
+
+    // The press edge moves once, regardless of the cadence.
+    input.begin_frame();
+    input.on_key(Key::Down, true);
+    system.update(context, scene);
+    CHECK(focused(second));
+
+    // Twenty frames at 1/60 s is 0.33 s, short of the 0.5 s cadence, so the held
+    // direction has not repeated yet.
+    for (int i = 0; i < 20; ++i) {
+        input.begin_frame();
+        input.on_key(Key::Down, true);
+        system.update(context, scene);
+    }
+    CHECK(focused(second));
+
+    // Past 0.5 s of holding, focus repeats once.
+    for (int i = 0; i < 15; ++i) {
+        input.begin_frame();
+        input.on_key(Key::Down, true);
+        system.update(context, scene);
+    }
+    CHECK(focused(third));
+}
+
+TEST_CASE("a zero repeat interval moves a held direction once") {
+    Scene scene;
+    Node* canvas = add_canvas(scene);
+    Node* first = add_button(canvas, "One", {0.0f, 0.0f});
+    Node* second = add_button(canvas, "Two", {0.0f, 60.0f});
+    add_button(canvas, "Three", {0.0f, 120.0f});
+
+    InputState input;
+    UiFocusSystem system;
+    system.set_repeat_interval(0.0f);
+
+    FrameContext context = make_context(input);
+    input.begin_frame();
+    system.update(context, scene);
+    CHECK(focused(first));
+
+    input.begin_frame();
+    input.on_key(Key::Down, true);
+    system.update(context, scene);
+    CHECK(focused(second));
+
+    // Held for two seconds: with repeat off, focus stays where the press put it.
+    for (int i = 0; i < 120; ++i) {
+        input.begin_frame();
+        input.on_key(Key::Down, true);
+        system.update(context, scene);
+    }
+    CHECK(focused(second));
+}
+
 TEST_CASE("clearing focus restarts on the first stop") {
     Scene scene;
     Node* canvas = add_canvas(scene);
