@@ -79,7 +79,16 @@ void expand_to_world_aabb(const Vec3& local_min, const Vec3& local_max, const Ma
     out.sprite = sprite;
     out.world = node.world_matrix();
     out.size = size;
+    // A flipped sprite samples the same sub-rectangle mirrored about its centre:
+    // swapping the U endpoints mirrors horizontally, the V endpoints vertically,
+    // and both mirrors both. The quad is untouched, so only the sampling changes.
     out.uv = sprite->uv;
+    if (sprite->flip_x) {
+        std::swap(out.uv.x, out.uv.z);
+    }
+    if (sprite->flip_y) {
+        std::swap(out.uv.y, out.uv.w);
+    }
     out.color = sprite->color;
     out.layer = sprite->layer;
     return true;

@@ -38,6 +38,8 @@ void register_sprite2d(Registry& registry) {
     desc.properties.push_back(
         with_color(make_vector_group<Sprite2D, Vec4>("color", &Sprite2D::color, "Vec4", {"r", "g", "b", "a"})));
     desc.properties.push_back(make_vector_group<Sprite2D, Vec4>("uv", &Sprite2D::uv, "Vec4", {"u0", "v0", "u1", "v1"}));
+    desc.properties.push_back(make_scalar<Sprite2D, bool>("flip_x", &Sprite2D::flip_x, ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<Sprite2D, bool>("flip_y", &Sprite2D::flip_y, ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<Sprite2D, i32>("layer", &Sprite2D::layer, ValueKind::Int, &defaults));
     desc.properties.push_back(make_resource_ref<Sprite2D, std::shared_ptr<Resource>>(
         "texture", &Sprite2D::texture, "Texture2D",

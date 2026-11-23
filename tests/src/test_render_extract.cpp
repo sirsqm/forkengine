@@ -128,6 +128,57 @@ TEST_CASE("a sprite with no explicit size takes its size from the texture") {
     CHECK(instances[0].size.y == doctest::Approx(16.0f));
 }
 
+TEST_CASE("a flipped sprite mirrors its uv sub-rectangle and keeps the quad") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+    auto texture = make_solid_texture(device, 8, 8);
+
+    Scene scene;
+    scene.create_node("Camera")->add_component<Camera2D>();
+    Node* node = scene.create_node("Sprite");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = texture;
+    sprite->size = Vec2{8.0f, 8.0f};
+    node->transform().position = Vec3{3.0f, 4.0f, 0.0f};
+
+    // A sub-rectangle that is not symmetric about either axis, so a swapped
+    // endpoint is visible on each of the four values.
+    sprite->uv = Vec4{0.1f, 0.2f, 0.3f, 0.4f};
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    std::vector<render::SpriteInstance> instances;
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    const Vec4 unflipped = instances[0].uv;
+    const Mat4 world = instances[0].world;
+    CHECK(unflipped == Vec4{0.1f, 0.2f, 0.3f, 0.4f});
+
+    sprite->flip_x = true;
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    CHECK(instances[0].uv == Vec4{0.3f, 0.2f, 0.1f, 0.4f});
+
+    sprite->flip_y = true;
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    CHECK(instances[0].uv == Vec4{0.3f, 0.4f, 0.1f, 0.2f});
+
+    sprite->flip_x = false;
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    CHECK(instances[0].uv == Vec4{0.1f, 0.4f, 0.3f, 0.2f});
+
+    // Mirroring the sampling must not move or resize the quad.
+    CHECK(instances[0].world == world);
+    CHECK(instances[0].size == Vec2{8.0f, 8.0f});
+}
+
 TEST_CASE("extracting a 3D scene bakes each mesh's world AABB into its instance") {
     Scene scene;
     scene.create_node("Camera")->add_component<Camera3D>();

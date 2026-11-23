@@ -34,6 +34,15 @@ public:
     // UV sub-rectangle (u0, v0, u1, v1) for atlas and sprite-sheet use.
     Vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
 
+    // Mirror the sampled sub-rectangle about its own centre. A character walking
+    // left can reuse the one texture drawn walking right, and an author does not
+    // have to hand-write the reversed UV rect. Extraction swaps the U endpoints
+    // (or the V ones), so the quad keeps its position and size and only the
+    // sampling is mirrored; the defaults are false, so an existing sprite's
+    // output is unchanged.
+    bool flip_x = false;
+    bool flip_y = false;
+
     // Render order within the 2D pass. Higher values draw on top.
     i32 layer = 0;
 
