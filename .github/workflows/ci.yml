@@ -6,17 +6,16 @@ on:
   pull_request:
     branches: [main]
 
-# A push to main is the record of what shipped, so its run has to finish: a
-# superseded run cancels whatever is still building, and those jobs die with
-# exit 143 and a "runner has received a shutdown signal" that reads like a runner
-# fault, leaving the commit with no complete run at all. That is what kept main
-# from ever being green while the daily automation pushed a few commits in a row:
-# the two slowest jobs (sanitizers, warnings-as-errors) were always the ones
-# still building when the next push arrived. A pull request is the opposite --
-# only the newest push matters -- so cancellation is limited to those.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# No `concurrency` block on purpose. Cancelling a superseded run kills the jobs
+# that are still building, and a killed job reports exit 143 with "the runner has
+# received a shutdown signal" -- indistinguishable from a defect in the log, and
+# it leaves that commit with no complete run at all. That is what made main look
+# permanently red: the daily automation pushes a few commits in a row, and the
+# two slowest jobs (sanitizers, warnings-as-errors) were always the ones still
+# building when the next push arrived. Queuing instead of cancelling has the
+# mirror-image cost: one slow macOS run holds the group and the newest commit
+# gets no verdict until it finishes. Every commit therefore gets its own run,
+# and a run that hangs is bounded by its `timeout-minutes`.
 
 permissions:
   contents: read
