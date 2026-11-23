@@ -271,8 +271,13 @@ usize append_label(const TextLabel& label, const Mat4& node_world, const Font& f
             out.push_back(instance);
         }
         // The pen advances whether or not the glyph drew, so a missing glyph is
-        // a gap in a line of the right length rather than a shifted one.
+        // a gap in a line of the right length rather than a shifted one. The
+        // tracking goes in between glyphs, never after the last, so the line ends
+        // where `measured_width()` says it does.
         pen_x += font.advance(code) * label.size;
+        if (&raw != &label.text.back()) {
+            pen_x += label.tracking;
+        }
     }
     return out.size() - before;
 }
@@ -703,6 +708,9 @@ usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteI
                 ++written;
             }
             pen_x += font->advance(code) * label->size;
+            if (&raw != &label->text.back()) {
+                pen_x += label->tracking;
+            }
         }
     });
     return written;

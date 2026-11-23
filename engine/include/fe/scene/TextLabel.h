@@ -67,6 +67,13 @@ public:
     // Horizontal placement of the line about the node origin.
     Align align = Align::Left;
 
+    // Extra space between glyphs, in world units, added after each glyph's
+    // advance. Zero (the default) keeps the font's own spacing, so an existing
+    // label's output is unchanged; a positive value opens a title up and a
+    // negative one tightens it. It is added between glyphs, not after the last,
+    // so a centred or right-aligned line does not carry a trailing gap.
+    f32 tracking = 0.0f;
+
     // Render order within the 2D pass, on the same scale as Sprite2D::layer, so
     // a HUD draws over the game and under a menu.
     i32 layer = 0;

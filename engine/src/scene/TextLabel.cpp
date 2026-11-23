@@ -15,7 +15,9 @@ f32 TextLabel::measured_width() const noexcept {
     // measured advance is scaled the same way the quads are. Without a nominal
     // size in the metrics the scale is the identity, which is what a font
     // generated at one pixel size wants.
-    return as_font->measure(text) * size;
+    // The tracking sits between glyphs, so a line of N glyphs has N - 1 gaps.
+    const f32 gaps = text.size() > 1 ? static_cast<f32>(text.size() - 1) : 0.0f;
+    return as_font->measure(text) * size + tracking * gaps;
 }
 
 } // namespace fe

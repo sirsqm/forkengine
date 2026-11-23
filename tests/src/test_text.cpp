@@ -295,6 +295,30 @@ TEST_CASE("size scales the layout and the measured width") {
     CHECK((translation_x(instances[1].world) - translation_x(instances[0].world)) == doctest::Approx(1.0f));
 }
 
+TEST_CASE("tracking opens the gap between glyphs and is measured") {
+    rhi::Device& device = null_device();
+    Scene scene;
+    auto font = make_font(make_atlas(device));
+    Node* node = add_label(scene, font, "AB");
+    auto* label = node->get_component<TextLabel>();
+
+    // Zero is the default and leaves the font's own spacing alone.
+    CHECK(label->tracking == doctest::Approx(0.0f));
+    CHECK(label->measured_width() == doctest::Approx(1.0f));
+
+    label->tracking = 0.25f;
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_text(scene, instances);
+    REQUIRE(instances.size() == 2);
+
+    // 'A' still starts at the pen; 'B' is one advance plus the tracking later.
+    CHECK(translation_x(instances[0].world) == doctest::Approx(0.25f));
+    CHECK(translation_x(instances[1].world) == doctest::Approx(1.0f));
+    // One gap between two glyphs, so the width grows by exactly one tracking.
+    CHECK(label->measured_width() == doctest::Approx(1.25f));
+}
+
 TEST_CASE("a label with no font or no text draws nothing") {
     rhi::Device& device = null_device();
     auto font = make_font(make_atlas(device));

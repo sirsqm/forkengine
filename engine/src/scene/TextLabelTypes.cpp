@@ -64,6 +64,8 @@ void register_text(Registry& registry) {
     desc.properties.push_back(
         with_color(make_vector_group<TextLabel, Vec4>("color", &TextLabel::color, "Vec4", {"r", "g", "b", "a"})));
     desc.properties.push_back(make_align_property());
+    desc.properties.push_back(
+        make_scalar<TextLabel, f32>("tracking", &TextLabel::tracking, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<TextLabel, i32>("layer", &TextLabel::layer, ValueKind::Int, &defaults));
     desc.properties.push_back(make_resource_ref<TextLabel, std::shared_ptr<Resource>>(
         "font", &TextLabel::font, "Font",
