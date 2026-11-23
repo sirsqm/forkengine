@@ -6,6 +6,7 @@
 #include "fe/scene/Node.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace fe {
 
@@ -33,7 +34,19 @@ Mat4 Camera2D::view_projection(u32 viewport_width, u32 viewport_height) const no
     const f32 half_width = static_cast<f32>(viewport_width) * 0.5f / effective_zoom;
     const f32 half_height = static_cast<f32>(viewport_height) * 0.5f / effective_zoom;
 
-    const Mat4 view = Mat4::translation(Vec3{-centre.x, -centre.y, 0.0f});
+    // Snap the centre to the pixel grid when asked. One pixel is
+    // 1 / effective_zoom world units, so rounding the centre to a multiple of
+    // that makes the view translation a whole number of pixels and every texel
+    // sample stable from frame to frame. The zoom and the projection are
+    // untouched, so only the translation moves.
+    Vec3 snapped = centre;
+    if (snap_to_pixel) {
+        const f32 pixel = 1.0f / effective_zoom;
+        snapped.x = std::round(centre.x / pixel) * pixel;
+        snapped.y = std::round(centre.y / pixel) * pixel;
+    }
+
+    const Mat4 view = Mat4::translation(Vec3{-snapped.x, -snapped.y, 0.0f});
     const Mat4 projection = Mat4::orthographic(-half_width, half_width, -half_height, half_height, -1.0f, 1.0f);
     return projection * view;
 }

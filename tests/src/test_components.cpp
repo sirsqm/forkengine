@@ -8,6 +8,8 @@
 #include "fe/scene/Scene.h"
 #include "fe/scene/Sprite2D.h"
 
+#include <cmath>
+
 using namespace fe;
 
 namespace {
@@ -131,6 +133,40 @@ TEST_CASE("a camera builds a view-projection matrix centred on its node") {
     // edge of the view.
     const Vec3 right_edge = transform_point(view_projection, Vec3{500.0f, 50.0f, 0.0f});
     CHECK(right_edge.x == doctest::Approx(1.0f).epsilon(1e-4));
+}
+
+TEST_CASE("a snapping camera lands its view translation on whole pixels") {
+    Scene scene;
+    Node* node = scene.create_node("Camera");
+    auto* camera = node->add_component<Camera2D>();
+    camera->zoom = 2.0f;
+    node->transform().position = Vec3{10.37f, 5.62f, 0.0f};
+
+    // The combined matrix maps world to clip space, so its translation column is
+    // the camera offset in clip units; multiplying by half the viewport turns it
+    // back into pixels.
+    constexpr f32 kHalfWidth = 160.0f;
+    constexpr f32 kHalfHeight = 90.0f;
+
+    // Off by default: the sub-pixel position reaches the matrix unchanged.
+    CHECK_FALSE(camera->snap_to_pixel);
+    const Mat4 smooth = camera->view_projection(320, 180);
+    CHECK((smooth.m[12] * kHalfWidth) == doctest::Approx(-20.74f).epsilon(1e-4));
+
+    camera->snap_to_pixel = true;
+    const Mat4 snapped = camera->view_projection(320, 180);
+
+    // The view translation, expressed in pixels, is a whole number: 10.37 * 2 =
+    // 20.74 rounds to 21, so the camera lands on the pixel grid.
+    const f32 x_pixels = snapped.m[12] * kHalfWidth;
+    const f32 y_pixels = snapped.m[13] * kHalfHeight;
+    CHECK(x_pixels == doctest::Approx(std::round(x_pixels)).epsilon(1e-4));
+    CHECK(y_pixels == doctest::Approx(std::round(y_pixels)).epsilon(1e-4));
+    CHECK(x_pixels == doctest::Approx(-21.0f).epsilon(1e-4));
+    CHECK(y_pixels == doctest::Approx(-11.0f).epsilon(1e-4));
+    // Snapping moves the view by less than half a pixel, so the scene does not
+    // jump; it only stops shimmering.
+    CHECK(std::abs(x_pixels - (-20.74f)) <= 0.5f + 1e-4f);
 }
 
 TEST_CASE("zooming in narrows the visible world extent") {

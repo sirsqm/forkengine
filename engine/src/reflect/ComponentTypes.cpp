@@ -74,6 +74,8 @@ void register_camera2d(Registry& registry) {
                          {float_setter<Camera2D>(&Camera2D::clear_r), float_setter<Camera2D>(&Camera2D::clear_g),
                           float_setter<Camera2D>(&Camera2D::clear_b), float_setter<Camera2D>(&Camera2D::clear_a)})));
     desc.properties.push_back(make_scalar<Camera2D, bool>("primary", &Camera2D::primary, ValueKind::Bool, &defaults));
+    desc.properties.push_back(
+        make_scalar<Camera2D, bool>("snap_to_pixel", &Camera2D::snap_to_pixel, ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }

@@ -47,6 +47,15 @@ public:
     // When several cameras exist, the renderer uses the first primary one.
     bool primary = true;
 
+    // Round the view translation to whole pixels at the target viewport. A camera
+    // that follows a body moving by fractional world units samples every texel
+    // from a slightly different offset each frame, so pixel art shimmers and
+    // thin lines crawl. With this set the visible box's origin lands on the pixel
+    // grid, and a still scene is drawn from the same samples every frame. Off by
+    // default, because snapping changes the matrix and a smooth-scrolling game
+    // wants the sub-pixel position.
+    bool snap_to_pixel = false;
+
     // Builds the view-projection matrix for a viewport of the given pixel size.
     // The visible world box is centred on the owning node's world position and
     // spans viewport_size / zoom world units, or, when reference_width and
