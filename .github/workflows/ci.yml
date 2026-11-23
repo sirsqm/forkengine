@@ -503,15 +503,8 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
-      # Bounded parallelism: this is the heaviest build in the workflow (every
-      # translation unit is instrumented) and the runner has 16 GB, so an
-      # unbounded `--parallel` starts four multi-gigabyte compiler processes at
-      # once. When that peak exceeds the runner's memory the job dies with exit
-      # 143 and "the runner has received a shutdown signal", with no compiler
-      # diagnostic and every child Terminated at the same instant -- which reads
-      # as a runner recycle. Two at a time keeps the peak inside the box.
       - name: Build
-        run: cmake --build build-asan --parallel 2
+        run: cmake --build build-asan --parallel
 
       # Leak detection is left on for the engine and editor tests, where it is
       # clean and meaningful, and off for the full run that includes the GL
@@ -649,11 +642,8 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
-      # Bounded parallelism, for the same reason as the sanitizer job: -O2 with
-      # debug info is the other multi-gigabyte-per-process build here, and it is
-      # the only other job that dies with a shutdown signal and no diagnostic.
       - name: Build
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel
 
       - name: ccache stats
         if: always()
