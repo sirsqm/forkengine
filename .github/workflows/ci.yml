@@ -6,10 +6,17 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel superseded runs on the same ref; only the latest push matters.
+# A push to main is the record of what shipped, so its run has to finish: a
+# superseded run cancels whatever is still building, and those jobs die with
+# exit 143 and a "runner has received a shutdown signal" that reads like a runner
+# fault, leaving the commit with no complete run at all. That is what kept main
+# from ever being green while the daily automation pushed a few commits in a row:
+# the two slowest jobs (sanitizers, warnings-as-errors) were always the ones
+# still building when the next push arrived. A pull request is the opposite --
+# only the newest push matters -- so cancellation is limited to those.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
