@@ -68,12 +68,14 @@ namespace fe::render {
 class RenderGraph {
 public:
     // One pass: a name, the names of passes it must run after, and the resources
-    // it reads and writes (empty for a pass that declares none).
+    // it reads and writes (empty for a pass that declares none). `disabled` is
+    // set through `set_pass_disabled`, not at declaration.
     struct Pass {
         std::string name;
         std::vector<std::string> after;
         std::vector<std::string> reads;
         std::vector<std::string> writes;
+        bool disabled = false;
     };
 
     RenderGraph() = default;
@@ -100,6 +102,20 @@ public:
     // culled. Fails if the name is empty. Idempotent.
     [[nodiscard]] Result<void> mark_output(std::string_view resource);
 
+    // Turns a declared pass off (`true`) or back on (`false`) without removing
+    // it. A disabled pass is absent from `order()` and so from `run()`, and its
+    // resource declarations stop creating edges, so the passes that remain
+    // re-derive their producer and consumer roles -- disabling a middle pass can
+    // make an earlier writer the producer, or leave a later consumer with nothing
+    // to read. The declaration, its declared dependencies, and its place in
+    // declaration order are kept, so re-enabling restores exactly the frame it
+    // had. Fails if the pass is unknown. Idempotent.
+    [[nodiscard]] Result<void> set_pass_disabled(std::string_view pass, bool disabled);
+
+    // True when `pass` is declared and currently disabled. Fails if the pass is
+    // unknown.
+    [[nodiscard]] Result<bool> pass_disabled(std::string_view pass) const;
+
     // A pass's declared name, in declaration order. Fails if out of range.
     [[nodiscard]] Result<std::string_view> pass_name(usize index) const;
 
@@ -125,10 +141,11 @@ public:
     // naming the passes left unresolved.
     [[nodiscard]] Result<std::vector<std::string>> order() const;
 
-    // The names of the passes the culling rule drops, in declaration order. A
-    // pass is culled when it declares writes and none of them is live (read by
-    // another live pass, or marked as an output). Exposed so a test can assert
-    // what was dropped without reading the run order.
+    // The names of the passes the run omits, in declaration order: a pass the
+    // culling rule drops, and a pass a caller disabled. A pass is culled when it
+    // declares writes and none of them is live (read by another live pass, or
+    // marked as an output). Exposed so a test can assert what was dropped without
+    // reading the run order.
     [[nodiscard]] std::vector<std::string> culled() const;
 
     // --- Render-target ownership (ADR-0100) --------------------------------

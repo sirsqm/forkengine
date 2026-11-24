@@ -329,6 +329,87 @@ TEST_CASE("a pass with no resource declarations is never culled") {
     CHECK(run_order(graph) == std::vector<std::string>{"world", "ui"});
 }
 
+TEST_CASE("a disabled pass is omitted from the run order and leaves the rest alone") {
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("shadow").ok());
+    REQUIRE(graph.add_pass("main").ok());
+    REQUIRE(graph.add_pass("post").ok());
+    REQUIRE(graph.add_dependency("post", "main").ok());
+    REQUIRE(graph.add_dependency("main", "shadow").ok());
+    CHECK(run_order(graph) == std::vector<std::string>{"shadow", "main", "post"});
+
+    REQUIRE(graph.set_pass_disabled("main", true).ok());
+    const auto disabled = graph.pass_disabled("main");
+    REQUIRE(disabled.ok());
+    CHECK(disabled.value());
+    // `main` is gone; `post`'s dependency on it is dropped rather than an error,
+    // and the two survivors keep their declared order.
+    CHECK(graph.culled() == std::vector<std::string>{"main"});
+    CHECK(run_order(graph) == std::vector<std::string>{"shadow", "post"});
+
+    // Re-enabling restores the frame exactly: the declaration was never removed.
+    REQUIRE(graph.set_pass_disabled("main", false).ok());
+    const auto enabled = graph.pass_disabled("main");
+    REQUIRE(enabled.ok());
+    CHECK_FALSE(enabled.value());
+    CHECK(graph.culled().empty());
+    CHECK(run_order(graph) == std::vector<std::string>{"shadow", "main", "post"});
+}
+
+TEST_CASE("disabling a producer re-derives the resource edge to the next writer") {
+    RenderGraph graph;
+    // The consumer is declared first, so only the derived edges order it after a
+    // writer; it runs as early as those allow, right after the producer. Two
+    // passes write the same resource, so the first declared is the producer.
+    REQUIRE(graph.add_pass("present").ok());
+    REQUIRE(graph.add_pass("first").ok());
+    REQUIRE(graph.add_pass("second").ok());
+    REQUIRE(graph.add_read("present", "hdr").ok());
+    REQUIRE(graph.add_write("first", "hdr").ok());
+    REQUIRE(graph.add_write("second", "hdr").ok());
+    CHECK(run_order(graph) == std::vector<std::string>{"first", "present", "second"});
+
+    // `first` produces nothing now, so `second` becomes the producer and the
+    // consumer is still ordered after it.
+    REQUIRE(graph.set_pass_disabled("first", true).ok());
+    CHECK(run_order(graph) == std::vector<std::string>{"second", "present"});
+}
+
+TEST_CASE("disabling a middle pass re-derives what its producer and consumer become") {
+    RenderGraph graph;
+    // a -> b -> c by resource access alone: b is the only reader of a's output
+    // and the only producer of what c reads.
+    REQUIRE(graph.add_pass("a").ok());
+    REQUIRE(graph.add_pass("b").ok());
+    REQUIRE(graph.add_pass("c").ok());
+    REQUIRE(graph.add_write("a", "x").ok());
+    REQUIRE(graph.add_read("b", "x").ok());
+    REQUIRE(graph.add_write("b", "y").ok());
+    REQUIRE(graph.add_read("c", "y").ok());
+    CHECK(graph.culled().empty());
+    CHECK(run_order(graph) == std::vector<std::string>{"a", "b", "c"});
+
+    // Nobody reads "x" any more, so `a` is culled; `c` declares no writes, so it
+    // still presents and runs.
+    REQUIRE(graph.set_pass_disabled("b", true).ok());
+    CHECK(graph.culled() == std::vector<std::string>{"a", "b"});
+    CHECK(run_order(graph) == std::vector<std::string>{"c"});
+}
+
+TEST_CASE("disabling validates the pass name and is idempotent") {
+    RenderGraph graph;
+    REQUIRE(graph.add_pass("main").ok());
+    CHECK_FALSE(graph.set_pass_disabled("missing", true).ok());
+    CHECK_FALSE(graph.pass_disabled("missing").ok());
+
+    for (int i = 0; i < 2; ++i) {
+        REQUIRE(graph.set_pass_disabled("main", true).ok());
+    }
+    CHECK(run_order(graph).empty());
+    REQUIRE(graph.set_pass_disabled("main", false).ok());
+    CHECK(run_order(graph) == std::vector<std::string>{"main"});
+}
+
 TEST_CASE("a dependency on a culled pass is dropped, not an error") {
     RenderGraph graph;
     REQUIRE(graph.add_pass("shadow").ok());

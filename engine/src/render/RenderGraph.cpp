@@ -114,6 +114,23 @@ Result<void> RenderGraph::mark_output(std::string_view resource) {
     return {};
 }
 
+Result<void> RenderGraph::set_pass_disabled(std::string_view pass, bool disabled) {
+    const u32 index = find(pass);
+    if (index == kInvalid) {
+        return Error{"render graph: unknown pass '" + std::string{pass} + "'"};
+    }
+    passes_[index].disabled = disabled;
+    return {};
+}
+
+Result<bool> RenderGraph::pass_disabled(std::string_view pass) const {
+    const u32 index = find(pass);
+    if (index == kInvalid) {
+        return Error{"render graph: unknown pass '" + std::string{pass} + "'"};
+    }
+    return passes_[index].disabled;
+}
+
 bool RenderGraph::is_output(std::string_view resource) const noexcept {
     return std::find(outputs_.begin(), outputs_.end(), resource) != outputs_.end();
 }
@@ -126,6 +143,11 @@ std::vector<u32> RenderGraph::live_pass_indices() const {
     // fixed point is required because culling a consumer makes its producer's
     // write dead too.
     std::vector<bool> live(count, true);
+    // A disabled pass is dropped before the culling rule runs: it is not live, so
+    // its writes count for nobody and its reads consume nothing.
+    for (usize i = 0; i < count; ++i) {
+        live[i] = !passes_[i].disabled;
+    }
     bool changed = true;
     while (changed) {
         changed = false;
@@ -249,10 +271,13 @@ bool RenderGraph::has_declared_path(u32 from, u32 to) const {
             return true;
         }
         // `at` runs after each pass in `passes_[at].after`; walk to those and, to
-        // reach a downstream pass, through the passes that declared `at`.
+        // reach a downstream pass, through the passes that declared `at`. A
+        // disabled pass is not on any path the frame actually runs, so it must not
+        // be walked through: a redundant edge it alone would justify is not
+        // redundant when the pass sits out the frame.
         for (const std::string& dependency : passes_[at].after) {
             const u32 after = find(dependency);
-            if (after != kInvalid && !seen[after]) {
+            if (after != kInvalid && !seen[after] && !passes_[after].disabled) {
                 seen[after] = true;
                 stack.push_back(after);
             }
@@ -261,7 +286,7 @@ bool RenderGraph::has_declared_path(u32 from, u32 to) const {
             for (const std::string& dependency : pass.after) {
                 if (dependency == passes_[at].name) {
                     const u32 dependent = find(pass.name);
-                    if (dependent != kInvalid && !seen[dependent]) {
+                    if (dependent != kInvalid && !seen[dependent] && !pass.disabled) {
                         seen[dependent] = true;
                         stack.push_back(dependent);
                     }
@@ -314,19 +339,26 @@ Result<std::vector<std::string>> RenderGraph::order() const {
     // is when the caller's *declared* order already contradicts it: an explicit
     // dependency says the frame is meant to run in that order, and a declaration
     // outranks an inference.
-    const usize declared_edge_count = edges.size();
-    collect_resource_edges(live, edges);
+    //
+    // `collect_resource_edges` speaks in pass indices, while `edges` here is in
+    // live slots. The two coincide only when nothing is culled, so each derived
+    // edge is converted through `position_of` -- a pass index used as a slot
+    // orders the wrong pass, and a culled or disabled pass made that reachable.
     {
-        usize kept = declared_edge_count;
-        for (usize e = declared_edge_count; e < edges.size(); ++e) {
-            const Edge edge = edges[e];
+        std::vector<Edge> derived;
+        collect_resource_edges(live, derived);
+        for (const Edge& edge : derived) {
+            const u32 pass_slot = position_of[edge.pass];
+            const u32 after_slot = position_of[edge.after];
+            if (pass_slot == kInvalid || after_slot == kInvalid) {
+                continue; // both ends are live by construction; a guard, not a path
+            }
             if (has_declared_path(edge.pass, edge.after)) {
                 continue;
             }
-            edges[kept++] = edge;
-            ++remaining[edge.pass];
+            edges.push_back(Edge{pass_slot, after_slot});
+            ++remaining[pass_slot];
         }
-        edges.resize(kept);
     }
 
     std::vector<std::string> result;
