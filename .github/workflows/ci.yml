@@ -28,7 +28,14 @@ jobs:
     # job is bounded here and each test gets its own ctest timeout below, so a
     # stuck test is named by `--output-on-failure` rather than silently running
     # until the workflow is cancelled.
-    timeout-minutes: 45
+    #
+    # The bound is per runner, because the runners are not equally fast. A
+    # from-scratch macOS Debug build of this tree takes ~23 minutes on a healthy
+    # arm64 runner and has been seen at 50+ on a throttled one, where a 45-minute
+    # bound cancelled the job mid-build and reported as a red run with no defect
+    # in it. 75 keeps a hang bounded and still names it, without turning runner
+    # speed into a failing check.
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,18 +51,22 @@ jobs:
             os: ubuntu-24.04
             compiler: gcc
             build_type: Debug
+            timeout: 45
           - name: Linux / GCC / Release
             os: ubuntu-24.04
             compiler: gcc
             build_type: Release
+            timeout: 45
           - name: macOS / Clang / Debug
             os: macos-latest
             compiler: clang
             build_type: Debug
+            timeout: 75
           - name: Windows / MSVC / Debug
             os: windows-latest
             compiler: msvc
             build_type: Debug
+            timeout: 45
 
     steps:
       - uses: actions/checkout@v4

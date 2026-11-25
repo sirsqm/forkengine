@@ -367,6 +367,12 @@ defect, not noise.
   run, so a hanging test looks like an infrastructure stall. CI passes
   `--timeout 300` to every `ctest` and bounds the job with `timeout-minutes`, so
   a hang fails and is named well inside a job.
+- That job bound is per runner, not one number for the matrix. A from-scratch
+  macOS Debug build takes ~23 minutes on a healthy arm64 runner and has been
+  seen at 50+ on a throttled one; under a single 45-minute bound the job was
+  cancelled mid-build at 85% and the run went red with nothing wrong in the
+  tree. The matrix carries `timeout` per entry (45 for Linux and Windows, 75 for
+  macOS) and the job reads `${{ matrix.timeout }}`.
 - A GL scissor rectangle is bottom-left origin and its width/height are
   unsigned, so a top-left-origin clip has to be flipped against the *current*
   framebuffer's height (a render target's, not the window's) and clamped, not
