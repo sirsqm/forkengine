@@ -67,6 +67,45 @@ TEST_CASE("scroll delta is reported per frame and then cleared") {
     CHECK(input.scroll_delta() == Vec2{0.0f, 0.0f});
 }
 
+TEST_CASE("text events accumulate in order and are cleared next frame") {
+    InputState input;
+    input.on_text('A');
+    input.on_text(0x00E9); // e-acute, two UTF-8 bytes
+    CHECK(input.text() == "A\xC3\xA9");
+
+    // The text is a per-frame delta, exactly like the mouse and scroll deltas.
+    input.begin_frame();
+    CHECK(input.text().empty());
+
+    input.on_text('B');
+    CHECK(input.text() == "B");
+}
+
+TEST_CASE("a text event that is not a character is dropped") {
+    InputState input;
+    input.on_text(0);        // NUL
+    input.on_text(0xD800);   // a lone surrogate
+    input.on_text(0x110000); // past the last codepoint
+    CHECK(input.text().empty());
+
+    input.on_text(0x1F600); // an astral codepoint is four UTF-8 bytes
+    CHECK(input.text().size() == 4);
+}
+
+TEST_CASE("text past the buffer's capacity is dropped whole") {
+    InputState input;
+    // Two-byte codepoints: 127 fit in 256 bytes, and the 128th is dropped rather
+    // than written as half a character.
+    for (int i = 0; i < 200; ++i) {
+        input.on_text(0x00E9);
+    }
+    CHECK(input.text().size() == InputState::kMaxTextBytes);
+    // Every byte belongs to a complete two-byte sequence.
+    for (usize i = 0; i < input.text().size(); i += 2) {
+        CHECK((static_cast<unsigned char>(input.text()[i]) & 0xE0u) == 0xC0u);
+    }
+}
+
 TEST_CASE("release_all clears held keys but preserves edge history") {
     InputState input;
     input.on_key(Key::D, true);

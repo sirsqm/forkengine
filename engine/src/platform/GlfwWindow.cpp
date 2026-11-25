@@ -289,6 +289,16 @@ void key_callback(GLFWwindow* handle, int key, int /*scancode*/, int action, int
     }
 }
 
+// The character callback, not the key callback: this is what the layout
+// produced after modifiers and dead keys, which is what a name entry wants.
+void char_callback(GLFWwindow* handle, unsigned int codepoint) {
+    Window* window = window_from(handle);
+    if (window == nullptr) {
+        return;
+    }
+    window->input().on_text(static_cast<u32>(codepoint));
+}
+
 void mouse_button_callback(GLFWwindow* handle, int button, int action, int /*mods*/) {
     Window* window = window_from(handle);
     if (window == nullptr) {
@@ -378,6 +388,7 @@ Result<std::unique_ptr<Window>> GlfwWindow::create(const WindowDesc& desc) {
     glfwSetWindowUserPointer(handle, window.get());
 
     glfwSetKeyCallback(handle, &key_callback);
+    glfwSetCharCallback(handle, &char_callback);
     glfwSetMouseButtonCallback(handle, &mouse_button_callback);
     glfwSetCursorPosCallback(handle, &cursor_position_callback);
     glfwSetScrollCallback(handle, &scroll_callback);

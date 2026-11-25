@@ -7,6 +7,7 @@
 namespace fe {
 
 void InputState::begin_frame() noexcept {
+    text_size_ = 0;
     keys_pressed_.fill(false);
     keys_released_.fill(false);
     buttons_pressed_.fill(false);
@@ -40,6 +41,42 @@ void InputState::on_key(Key key, bool down) noexcept {
         keys_pressed_[index] = true;
     } else {
         keys_released_[index] = true;
+    }
+}
+
+void InputState::on_text(u32 codepoint) noexcept {
+    // Zero and the surrogate range are not characters, and above the last
+    // codepoint is not a scalar value. A backend that reports one of these has
+    // nothing to hand gameplay.
+    if (codepoint == 0 || (codepoint >= 0xD800u && codepoint <= 0xDFFFu) || codepoint > 0x10FFFFu) {
+        return;
+    }
+
+    char encoded[4]{};
+    usize length = 0;
+    if (codepoint < 0x80u) {
+        encoded[length++] = static_cast<char>(codepoint);
+    } else if (codepoint < 0x800u) {
+        encoded[length++] = static_cast<char>(0xC0u | (codepoint >> 6));
+        encoded[length++] = static_cast<char>(0x80u | (codepoint & 0x3Fu));
+    } else if (codepoint < 0x10000u) {
+        encoded[length++] = static_cast<char>(0xE0u | (codepoint >> 12));
+        encoded[length++] = static_cast<char>(0x80u | ((codepoint >> 6) & 0x3Fu));
+        encoded[length++] = static_cast<char>(0x80u | (codepoint & 0x3Fu));
+    } else {
+        encoded[length++] = static_cast<char>(0xF0u | (codepoint >> 18));
+        encoded[length++] = static_cast<char>(0x80u | ((codepoint >> 12) & 0x3Fu));
+        encoded[length++] = static_cast<char>(0x80u | ((codepoint >> 6) & 0x3Fu));
+        encoded[length++] = static_cast<char>(0x80u | (codepoint & 0x3Fu));
+    }
+
+    // Whole or not at all: a partial codepoint would be invalid UTF-8 in the
+    // frame's text, which is worse than dropping the keystroke.
+    if (text_size_ + length > kMaxTextBytes) {
+        return;
+    }
+    for (usize i = 0; i < length; ++i) {
+        text_[text_size_++] = encoded[i];
     }
 }
 

@@ -6,6 +6,7 @@
 #include "fe/core/Types.h"
 
 #include <array>
+#include <string_view>
 
 namespace fe {
 
@@ -195,6 +196,20 @@ public:
     void begin_frame() noexcept;
 
     void on_key(Key key, bool down) noexcept;
+
+    // The maximum number of UTF-8 bytes one frame's text can hold. A name entry
+    // or a cheat code is far shorter; the cap keeps the per-frame path free of
+    // allocation, and a codepoint that would not fit is dropped whole rather
+    // than truncated.
+    static constexpr usize kMaxTextBytes = 256;
+
+    // Feeds one text-input event: a Unicode codepoint the keyboard layout
+    // produced, with modifiers and dead keys already applied. This is what the
+    // backend's character callback reports; a key code is not a character once
+    // layouts are involved, so a name entry reads this rather than `Key`.
+    // Codepoints that are not characters (zero, a lone surrogate) are dropped.
+    void on_text(u32 codepoint) noexcept;
+
     void on_mouse_button(MouseButton button, bool down) noexcept;
     void on_mouse_move(f32 x, f32 y) noexcept;
     void on_scroll(f32 dx, f32 dy) noexcept;
@@ -258,6 +273,11 @@ public:
     [[nodiscard]] bool is_mouse_down(MouseButton button) const noexcept;
     [[nodiscard]] bool was_mouse_pressed(MouseButton button) const noexcept;
     [[nodiscard]] bool was_mouse_released(MouseButton button) const noexcept;
+
+    // The UTF-8 text received since the last begin_frame(), in arrival order.
+    // Cleared by begin_frame() like the other per-frame deltas, so it is exactly
+    // "what the player typed this frame".
+    [[nodiscard]] std::string_view text() const noexcept { return std::string_view{text_.data(), text_size_}; }
 
     [[nodiscard]] Vec2 mouse_position() const noexcept { return mouse_position_; }
     [[nodiscard]] Vec2 mouse_delta() const noexcept { return mouse_delta_; }
@@ -348,6 +368,9 @@ private:
         std::array<f32, kGamepadAxisCount> axes{};
     };
     std::array<Gamepad, kMaxGamepads> gamepads_{};
+
+    std::array<char, kMaxTextBytes> text_{};
+    usize text_size_ = 0;
 
     Vec2 mouse_position_{};
     Vec2 mouse_delta_{};
