@@ -74,6 +74,37 @@ std::unique_ptr<Node> Node::remove_child(Node* child) {
     return owned;
 }
 
+Node* Node::reparent(Node* new_parent, bool preserve_world) {
+    if (new_parent == parent_) {
+        return this;
+    }
+    FE_CHECK(new_parent != this);
+    FE_CHECK(new_parent == nullptr || !is_ancestor_of(*new_parent));
+
+    // Read the world matrix before the chain is broken by the detach.
+    const Mat4 world = world_matrix();
+    Scene* owner_scene = scene_;
+
+    std::unique_ptr<Node> owned;
+    if (parent_ != nullptr) {
+        owned = parent_->remove_child(this);
+    } else if (owner_scene != nullptr) {
+        owned = owner_scene->remove_root(this);
+    }
+    FE_CHECK(owned != nullptr);
+
+    if (preserve_world) {
+        const Mat4 parent_world = new_parent != nullptr ? new_parent->world_matrix() : Mat4::identity();
+        transform_ = Transform::from_matrix(inverse(parent_world) * world);
+    }
+
+    if (new_parent != nullptr) {
+        return new_parent->add_child(std::move(owned));
+    }
+    FE_CHECK(owner_scene != nullptr);
+    return owner_scene->add_root(std::move(owned));
+}
+
 std::unique_ptr<Component> Node::detach_component(usize index) {
     if (index >= components_.size()) {
         return nullptr;

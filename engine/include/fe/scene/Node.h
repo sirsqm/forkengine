@@ -82,6 +82,18 @@ public:
     // nullptr if `child` is not a child of this node.
     [[nodiscard]] std::unique_ptr<Node> remove_child(Node* child);
 
+    // Moves this node under `new_parent`, or to the scene root when `new_parent`
+    // is nullptr. With `preserve_world` (the default) the local transform is
+    // rewritten against the new parent so world_matrix() is unchanged: the node
+    // stays where it is instead of jumping by the parents' relative offset. With
+    // `preserve_world` false the local transform is kept, which is what a bare
+    // add_child() does. Reparenting to the current parent is a no-op. Returns
+    // this node.
+    //
+    // The node must already be owned by a parent or a scene, and `new_parent`
+    // must not be this node or one of its descendants.
+    Node* reparent(Node* new_parent, bool preserve_world = true);
+
     [[nodiscard]] bool is_ancestor_of(const Node& other) const noexcept;
 
     // --- Transform ---------------------------------------------------------
