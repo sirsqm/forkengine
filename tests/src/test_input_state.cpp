@@ -4,6 +4,8 @@
 
 #include "fe/platform/InputState.h"
 
+#include <ostream>
+
 using namespace fe;
 
 TEST_CASE("key down state persists until released") {
