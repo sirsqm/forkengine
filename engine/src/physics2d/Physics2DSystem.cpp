@@ -79,7 +79,7 @@ constexpr f32 kTileFriction = 0.7f;
         // mass, which a pin still constrains translationally).
         f32 inertia = body->inertia;
         if (inertia <= 0.0f) {
-            if (const auto* collider = node.get_component<Collider2D>(); collider != nullptr) {
+            if (const auto* collider = node.get_component<Collider2D>(); collider != nullptr && collider->enabled) {
                 inertia = collider->inertia_about_center(body->mass);
             }
         }

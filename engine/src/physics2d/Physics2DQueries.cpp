@@ -63,7 +63,7 @@ RaycastHit raycast(const Scene& scene, const Vec2& origin, const Vec2& direction
 
     scene.for_each_node([&](Node& node) {
         const auto* collider = node.get_component<Collider2D>();
-        if (collider == nullptr) {
+        if (collider == nullptr || !collider->enabled) {
             return;
         }
         const PlacedShape shape = place(*collider, node);
@@ -91,7 +91,7 @@ usize overlap_circle(const Scene& scene, const Vec2& center, f32 radius, std::ve
     usize count = 0;
     scene.for_each_node([&](Node& node) {
         const auto* collider = node.get_component<Collider2D>();
-        if (collider == nullptr) {
+        if (collider == nullptr || !collider->enabled) {
             return;
         }
         const PlacedShape shape = place(*collider, node);
@@ -113,7 +113,7 @@ usize overlap_box(const Scene& scene, const Vec2& center, const Vec2& half_exten
     usize count = 0;
     scene.for_each_node([&](Node& node) {
         const auto* collider = node.get_component<Collider2D>();
-        if (collider == nullptr) {
+        if (collider == nullptr || !collider->enabled) {
             return;
         }
         const PlacedShape shape = place(*collider, node);
@@ -135,7 +135,7 @@ bool overlap_point(const Scene& scene, const Vec2& point, OverlapHit* out) noexc
             return;
         }
         const auto* collider = node.get_component<Collider2D>();
-        if (collider == nullptr) {
+        if (collider == nullptr || !collider->enabled) {
             return;
         }
         const PlacedShape shape = place(*collider, node);

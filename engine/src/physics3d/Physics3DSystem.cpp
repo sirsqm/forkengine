@@ -74,7 +74,7 @@ void apply_translation_rows(ConstraintRow3D rows[], usize count, JointBody3D& a,
         // to zero (a point mass, which cannot spin on its own).
         f32 inertia = body->inertia;
         if (inertia <= 0.0f) {
-            if (const auto* collider = node.get_component<Collider3D>(); collider != nullptr) {
+            if (const auto* collider = node.get_component<Collider3D>(); collider != nullptr && collider->enabled) {
                 inertia = collider->inertia_about_center(body->mass);
             }
         }

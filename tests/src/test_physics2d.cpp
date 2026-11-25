@@ -874,6 +874,27 @@ TEST_CASE("a static collider's rotation is never changed by the solver") {
 }
 
 // ---------------------------------------------------------------------------
+TEST_CASE("a disabled collider is invisible to the queries") {
+    // "Disabled" has to mean "not in the world" everywhere, not only in the
+    // contact path: a raycast or an overlap test that still reports a disabled
+    // collider hands gameplay a hitbox the solver has already forgotten.
+    Scene scene;
+    Node* wall = scene.create_node("Wall");
+    auto* collider = wall->add_component<physics2d::Collider2D>();
+    collider->half_extent = Vec2{1.0f, 1.0f};
+
+    CHECK(physics2d::raycast(scene, Vec2{-5.0f, 0.0f}, Vec2{1.0f, 0.0f}, 0.0f).hit);
+
+    collider->enabled = false;
+    CHECK_FALSE(physics2d::raycast(scene, Vec2{-5.0f, 0.0f}, Vec2{1.0f, 0.0f}, 0.0f).hit);
+
+    physics2d::OverlapHit hit;
+    CHECK_FALSE(physics2d::overlap_point(scene, Vec2{0.0f, 0.0f}, &hit));
+
+    collider->enabled = true;
+    CHECK(physics2d::overlap_point(scene, Vec2{0.0f, 0.0f}, &hit));
+}
+
 // Queries: raycast and overlap.
 // ---------------------------------------------------------------------------
 
