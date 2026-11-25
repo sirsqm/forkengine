@@ -296,6 +296,11 @@ void Physics3DSystem::update(const FrameContext& context, Scene& scene) {
 
         auto* collider = node.get_component<Collider3D>();
         auto* body = node.get_component<RigidBody3D>();
+        // A disabled collider is absent to the broad phase and the solver, but a
+        // rigid body on the same node still simulates.
+        if (collider != nullptr && !collider->enabled) {
+            collider = nullptr;
+        }
         // Simulate a node that has either a collider (so it can collide) or a
         // rigid body (so a joint can pull on it even with no collider). A node
         // with neither is a bare pivot, which a joint may still hang from: it is

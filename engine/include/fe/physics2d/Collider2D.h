@@ -32,6 +32,14 @@ public:
 
     [[nodiscard]] const char* type_name() const noexcept override { return kTypeName; }
 
+    // Whether the collider participates in collision at all. A disabled collider
+    // is treated as absent by the broad phase and the solver: no contacts, no
+    // trigger events, no response. A rigid body on the same node still
+    // simulates, so gravity and joints keep acting on it. Re-enabling restores
+    // collisions on the next step. Default true, so an unedited scene is
+    // unchanged.
+    bool enabled = true;
+
     // Which shape `half_extent` or `radius` describes.
     ShapeType shape = ShapeType::Box;
 

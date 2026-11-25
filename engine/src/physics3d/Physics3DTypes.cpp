@@ -77,6 +77,8 @@ void register_collider3d(Registry& registry) {
         make_scalar<physics3d::Collider3D, u32>("mask", &physics3d::Collider3D::mask, ValueKind::Int, &defaults));
     desc.properties.push_back(make_scalar<physics3d::Collider3D, bool>("is_trigger", &physics3d::Collider3D::is_trigger,
                                                                        ValueKind::Bool, &defaults));
+    desc.properties.push_back(make_scalar<physics3d::Collider3D, bool>("enabled", &physics3d::Collider3D::enabled,
+                                                                      ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }

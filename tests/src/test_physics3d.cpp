@@ -603,6 +603,51 @@ TEST_CASE("a 3D trigger reports a contact but applies no impulse") {
     CHECK(saw_begin);
 }
 
+TEST_CASE("a disabled 3D collider passes through a body that an enabled one stops") {
+    // Baseline: an enabled floor stops the falling box.
+    Scene enabled_scene;
+    add_floor(enabled_scene, 20.0f);
+    Node* stopped = add_dynamic_box(enabled_scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+
+    physics3d::Physics3DSystem enabled_system;
+    run(enabled_system, enabled_scene, 1.0f / 60.0f, 300);
+    CHECK(stopped->transform().position.y > 0.4f);
+    CHECK(enabled_system.contact_count() >= 1);
+
+    // The same floor disabled: no contact, no trigger event, no response.
+    Scene disabled_scene;
+    Node* floor = add_floor(disabled_scene, 20.0f);
+    floor->get_component<physics3d::Collider3D>()->enabled = false;
+    Node* falling = add_dynamic_box(disabled_scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+
+    physics3d::Physics3DSystem disabled_system;
+    bool saw_event = false;
+    for (int i = 0; i < 300; ++i) {
+        disabled_system.update(step(1.0f / 60.0f), disabled_scene);
+        saw_event = saw_event || disabled_system.contact_event_count() > 0;
+    }
+    CHECK(falling->transform().position.y < -1.0f);
+    CHECK(disabled_system.contact_count() == 0);
+    CHECK_FALSE(saw_event);
+}
+
+TEST_CASE("re-enabling a 3D collider restores collisions on the next step") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec3{0.0f, 5.0f, 0.0f}, 0.5f, 1.0f);
+    auto* collider = body->get_component<physics3d::Collider3D>();
+    collider->enabled = false;
+
+    physics3d::Physics3DSystem system;
+    run(system, scene, 1.0f / 60.0f, 30);
+    REQUIRE(body->transform().position.y > 1.0f); // still above the floor
+
+    collider->enabled = true;
+    run(system, scene, 1.0f / 60.0f, 300);
+    CHECK(body->transform().position.y > 0.4f);
+    CHECK(system.contact_count() >= 1);
+}
+
 // ---------------------------------------------------------------------------
 // Queries.
 // ---------------------------------------------------------------------------
@@ -669,6 +714,7 @@ TEST_CASE("a 3D collider and rigid body round-trip through the serializer") {
     collider->restitution = 0.4f;
     collider->restitution_threshold = 0.75f;
     collider->friction = 0.2f;
+    collider->enabled = false;
     auto* body = node->add_component<physics3d::RigidBody3D>();
     body->velocity = Vec3{3.0f, -2.0f, 1.5f};
     body->mass = 2.5f;
@@ -692,6 +738,7 @@ TEST_CASE("a 3D collider and rigid body round-trip through the serializer") {
     CHECK(loaded_collider->restitution == doctest::Approx(0.4f));
     CHECK(loaded_collider->restitution_threshold == doctest::Approx(0.75f));
     CHECK(loaded_collider->friction == doctest::Approx(0.2f));
+    CHECK(loaded_collider->enabled == false);
 
     const auto* loaded_body = loaded_node->get_component<physics3d::RigidBody3D>();
     REQUIRE(loaded_body != nullptr);

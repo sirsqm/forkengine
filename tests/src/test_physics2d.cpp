@@ -630,6 +630,57 @@ TEST_CASE("a trigger emits a matching End event when the pair separates") {
     CHECK(ends == 1);
 }
 
+TEST_CASE("a disabled collider passes through a body that an enabled one stops") {
+    // Baseline: an enabled floor stops the falling box.
+    Scene enabled_scene;
+    add_floor(enabled_scene, 20.0f);
+    Node* stopped = add_dynamic_box(enabled_scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem enabled_system;
+    for (int i = 0; i < 300; ++i) {
+        enabled_system.update(step(1.0f / 60.0f), enabled_scene);
+    }
+    CHECK(stopped->transform().position.y > 0.4f);
+    CHECK(enabled_system.contact_count() >= 1);
+
+    // The same floor disabled: no contact, no trigger event, no response.
+    Scene disabled_scene;
+    Node* floor = add_floor(disabled_scene, 20.0f);
+    floor->get_component<physics2d::Collider2D>()->enabled = false;
+    Node* falling = add_dynamic_box(disabled_scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+
+    physics2d::Physics2DSystem disabled_system;
+    bool saw_event = false;
+    for (int i = 0; i < 300; ++i) {
+        disabled_system.update(step(1.0f / 60.0f), disabled_scene);
+        saw_event = saw_event || disabled_system.contact_event_count() > 0;
+    }
+    CHECK(falling->transform().position.y < -1.0f);
+    CHECK(disabled_system.contact_count() == 0);
+    CHECK_FALSE(saw_event);
+}
+
+TEST_CASE("re-enabling a collider restores collisions on the next step") {
+    Scene scene;
+    add_floor(scene, 20.0f);
+    Node* body = add_dynamic_box(scene, Vec2{0.0f, 5.0f}, 0.5f, 1.0f);
+    auto* collider = body->get_component<physics2d::Collider2D>();
+    collider->enabled = false;
+
+    physics2d::Physics2DSystem system;
+    for (int i = 0; i < 30; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    REQUIRE(body->transform().position.y > 1.0f); // still above the floor
+
+    collider->enabled = true;
+    for (int i = 0; i < 300; ++i) {
+        system.update(step(1.0f / 60.0f), scene);
+    }
+    CHECK(body->transform().position.y > 0.4f);
+    CHECK(system.contact_count() >= 1);
+}
+
 // ---------------------------------------------------------------------------
 // Reflection: the components persist and appear in the registry.
 // ---------------------------------------------------------------------------
@@ -695,6 +746,7 @@ TEST_CASE("collision filtering fields round-trip through the serializer") {
     collider->layer = 0x8u;
     collider->mask = 0x6u;
     collider->is_trigger = true;
+    collider->enabled = false;
 
     auto json = serialization::scene::to_json(scene);
     REQUIRE(json);
@@ -709,6 +761,7 @@ TEST_CASE("collision filtering fields round-trip through the serializer") {
     CHECK(loaded_collider->layer == 0x8u);
     CHECK(loaded_collider->mask == 0x6u);
     CHECK(loaded_collider->is_trigger == true);
+    CHECK(loaded_collider->enabled == false);
 }
 
 // ---------------------------------------------------------------------------
