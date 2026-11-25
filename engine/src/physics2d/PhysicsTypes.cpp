@@ -80,7 +80,7 @@ void register_collider2d(Registry& registry) {
     desc.properties.push_back(make_scalar<physics2d::Collider2D, bool>("is_trigger", &physics2d::Collider2D::is_trigger,
                                                                        ValueKind::Bool, &defaults));
     desc.properties.push_back(make_scalar<physics2d::Collider2D, bool>("enabled", &physics2d::Collider2D::enabled,
-                                                                      ValueKind::Bool, &defaults));
+                                                                       ValueKind::Bool, &defaults));
 
     registry.register_type(std::move(desc));
 }
