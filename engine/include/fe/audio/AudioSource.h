@@ -54,6 +54,30 @@ public:
     // read position at `pitch` times the sample-rate ratio.
     f32 pitch = 1.0f;
 
+    // Where in the clip playback begins, in seconds. A play request (and a
+    // source that starts on its own) begins reading here instead of at sample
+    // zero, so a game can resume a sound, start a music loop at a downbeat, or
+    // randomise an impact's entry point. The position is clamped to the clip's
+    // length by start_position(), so an offset at or past the end starts at the
+    // end rather than reading out of bounds: a one-shot is then finished on its
+    // first mix, and a looping voice wraps to the top. Zero (the default) leaves
+    // playback exactly as it was.
+    f32 start_offset = 0.0f;
+
+    // The read position, in frames of a sound that has `frame_count` frames at
+    // `sample_rate`, that playback begins at. Non-positive offsets and a
+    // zero-rate sound yield zero; a positive offset is clamped to the length.
+    // Takes the two numbers rather than a clip so the streamed path, whose
+    // frames come from an AudioStream, resolves the offset by the same rule.
+    [[nodiscard]] f64 start_position(u64 frame_count, u32 sample_rate) const noexcept {
+        if (start_offset <= 0.0f || sample_rate == 0) {
+            return 0.0;
+        }
+        const f64 position = static_cast<f64>(start_offset) * static_cast<f64>(sample_rate);
+        const f64 length = static_cast<f64>(frame_count);
+        return position < length ? position : length;
+    }
+
     // When true the clip restarts from the beginning after it ends. When false
     // it is a one-shot: it stops and is marked finished when it reaches the end.
     bool loop = false;

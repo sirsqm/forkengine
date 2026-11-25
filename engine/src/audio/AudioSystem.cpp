@@ -204,6 +204,12 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
             entry.voice = Voice{};
             entry.voice.clip = clip;
             entry.voice.playing = source->play_on_start && clip != nullptr;
+            // A start offset applies to the first start as well as to an
+            // explicit play(): a source authored to begin at a downbeat begins
+            // there whether or not a script asks it to start.
+            if (clip != nullptr) {
+                entry.voice.position = source->start_position(clip->frame_count(), clip->sample_rate());
+            }
         }
 
         // Decide whether this source plays streamed or fully loaded, opening or
@@ -274,11 +280,14 @@ void AudioSystem::update(const FrameContext& context, Scene& scene) {
         if (source->play_requested) {
             source->play_requested = false;
             if (entry.voice.clip != nullptr) {
-                entry.voice.position = 0.0;
+                entry.voice.position =
+                    source->start_position(entry.voice.clip->frame_count(), entry.voice.clip->sample_rate());
                 entry.voice.finished = false;
                 entry.voice.playing = true;
                 if (entry.stream != nullptr) {
-                    static_cast<void>(entry.stream->seek(0));
+                    const AudioFormat format = entry.stream->format();
+                    static_cast<void>(entry.stream->seek(
+                        static_cast<u64>(source->start_position(entry.stream->frame_count(), format.sample_rate))));
                 }
             }
         }

@@ -259,6 +259,38 @@ TEST_CASE("one looping voice and one one-shot mix to the exact expected samples"
     CHECK(voices[1].frames_played == 2);
 }
 
+TEST_CASE("a start offset begins playback at that sample") {
+    // Eight mono frames at 8 kHz: silent for the first four, then 0.5. A single
+    // output frame is mixed per update, so last_peak() is exactly the sample the
+    // voice read.
+    auto clip = mono_clip(8000, {0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.5f, 0.5f, 0.5f});
+
+    const auto first_peak = [&](f32 offset_seconds) {
+        Scene scene;
+        Node* node = scene.create_node("Source");
+        auto* source = node->add_component<audio::AudioSource>();
+        source->clip = clip;
+        source->start_offset = offset_seconds;
+
+        audio::AudioSystem system;
+        system.set_sample_rate(8000);
+        system.set_channels(1);
+        FrameContext context;
+        context.delta_time = 1.0f / 8000.0f;
+        system.update(context, scene);
+        return system.last_peak();
+    };
+
+    // The default begins at sample zero, which is silent here.
+    CHECK(first_peak(0.0f) == doctest::Approx(0.0f));
+    // Four frames in, the first mixed sample is the clip's 0.5.
+    CHECK(first_peak(4.0f / 8000.0f) == doctest::Approx(0.5f));
+
+    // An offset past the end is clamped rather than read out of bounds: the
+    // one-shot starts finished, so nothing is mixed.
+    CHECK(first_peak(10.0f) == doctest::Approx(0.0f));
+}
+
 TEST_CASE("gain scales a voice's contribution") {
     auto clip = mono_clip(8000, {0.5f, 0.25f});
     audio::Voice voice;

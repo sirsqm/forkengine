@@ -65,6 +65,8 @@ void register_audio_source(Registry& registry) {
         make_scalar<audio::AudioSource, f32>("gain", &audio::AudioSource::gain, ValueKind::Float, &defaults));
     desc.properties.push_back(
         make_scalar<audio::AudioSource, f32>("pitch", &audio::AudioSource::pitch, ValueKind::Float, &defaults));
+    desc.properties.push_back(make_scalar<audio::AudioSource, f32>("start_offset", &audio::AudioSource::start_offset,
+                                                                   ValueKind::Float, &defaults));
     desc.properties.push_back(
         make_scalar<audio::AudioSource, bool>("loop", &audio::AudioSource::loop, ValueKind::Bool, &defaults));
     desc.properties.push_back(
