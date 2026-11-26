@@ -77,7 +77,11 @@ void expand_to_world_aabb(const Vec3& local_min, const Vec3& local_max, const Ma
     out = SpriteInstance{};
     out.texture = &texture->texture();
     out.sprite = sprite;
-    out.world = node.world_matrix();
+    // The quad is centred on the instance's world origin, so the pivot lands on
+    // the node's origin when the quad's centre is moved by (0.5 - pivot) * size.
+    // The default pivot (0.5, 0.5) leaves the world matrix untouched.
+    out.world = node.world_matrix() *
+                Mat4::translation(Vec3{(0.5f - sprite->pivot.x) * size.x, (0.5f - sprite->pivot.y) * size.y, 0.0f});
     out.size = size;
     // A flipped sprite samples the same sub-rectangle mirrored about its centre:
     // swapping the U endpoints mirrors horizontally, the V endpoints vertically,

@@ -179,6 +179,66 @@ TEST_CASE("a flipped sprite mirrors its uv sub-rectangle and keeps the quad") {
     CHECK(instances[0].size == Vec2{8.0f, 8.0f});
 }
 
+TEST_CASE("a sprite pivot anchors the quad to the node origin") {
+    auto created = rhi::create_null_device();
+    REQUIRE(created.ok());
+    rhi::Device& device = *created.value();
+    auto texture = make_solid_texture(device, 8, 8);
+
+    Scene scene;
+    scene.create_node("Camera")->add_component<Camera2D>();
+    Node* node = scene.create_node("Sprite");
+    auto* sprite = node->add_component<Sprite2D>();
+    sprite->texture = texture;
+    sprite->size = Vec2{8.0f, 4.0f};
+    node->transform().position = Vec3{3.0f, 4.0f, 0.0f};
+
+    renderer2d::Renderer2D renderer;
+    REQUIRE(renderer.initialize(device).ok());
+
+    std::vector<render::SpriteInstance> instances;
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+
+    // The default pivot is the centre, so extraction must reproduce the world
+    // matrix the sprite had before the pivot existed.
+    CHECK(instances[0].world == node->world_matrix());
+
+    // A corner pivot puts that corner of the quad on the node origin. The quad
+    // spans +-size/2 about the instance origin, so the bottom-left corner is the
+    // local point (-4, -2).
+    sprite->pivot = Vec2{0.0f, 0.0f};
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    Vec3 corner = transform_point(instances[0].world, Vec3{-4.0f, -2.0f, 0.0f});
+    CHECK(corner.x == doctest::Approx(3.0f));
+    CHECK(corner.y == doctest::Approx(4.0f));
+
+    // The opposite pivot anchors the opposite corner, so the quad moves the
+    // other way by its whole size.
+    sprite->pivot = Vec2{1.0f, 1.0f};
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    corner = transform_point(instances[0].world, Vec3{4.0f, 2.0f, 0.0f});
+    CHECK(corner.x == doctest::Approx(3.0f));
+    CHECK(corner.y == doctest::Approx(4.0f));
+
+    // A pivot outside [0, 1] is allowed: it pushes the quad further off the node
+    // rather than being clamped.
+    sprite->pivot = Vec2{2.0f, 0.5f};
+    instances.clear();
+    renderer.extract(scene, instances);
+    REQUIRE(instances.size() == 1);
+    const Vec3 centre = transform_point(instances[0].world, Vec3{0.0f, 0.0f, 0.0f});
+    CHECK(centre.x == doctest::Approx(3.0f - 12.0f));
+    CHECK(centre.y == doctest::Approx(4.0f));
+
+    // The pivot only moves the quad; it must not resize it.
+    CHECK(instances[0].size == Vec2{8.0f, 4.0f});
+}
+
 TEST_CASE("extracting a 3D scene bakes each mesh's world AABB into its instance") {
     Scene scene;
     scene.create_node("Camera")->add_component<Camera3D>();

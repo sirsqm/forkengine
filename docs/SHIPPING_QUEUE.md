@@ -1513,6 +1513,131 @@ and scale by rewriting the local transform against the new parent, the old and
 new parents' child lists are updated, a reparent to the same parent is a no-op,
 and a test asserts the world matrix is unchanged.
 
+### `sprite2d-pivot`
+
+A sprite quad is always centred on its node's origin, so a character whose feet
+should sit on the node's position, or an icon that should hang from its
+top-left corner, needs a second child transform offset by half the sprite, which
+goes stale as soon as the size changes.
+
+**Done when** `Sprite2D` carries a normalised pivot (default `{0.5, 0.5}`),
+extraction offsets the instance's world matrix so the pivot lands on the node
+origin, values outside [0, 1] are documented as allowed and move the quad
+further, the default leaves an existing sprite's world matrix unchanged, the
+pivot is reflected so it round-trips through a scene file, and a test asserts the
+world-space position of the pivot corner for a corner pivot and that the default
+reproduces the old output.
+
+### `text-label-multiline`
+
+`TextLabel` lays out exactly one line, so a dialogue box, a wrapped hint, or a
+two-line menu entry has to be several labels positioned by hand and re-positioned
+whenever the font size changes.
+
+**Done when** a `\n` in the text starts a new line at the same pen X with the
+baseline advanced by `size * line_height`, `measured_width()` reports the widest
+line, alignment applies per line, `line_height` defaults to 1.0 so a single-line
+label's instances are byte-identical, and a test asserts the second line's first
+glyph sits below the first line's and is left-aligned with it.
+
+### `sprite-animation-finish-event`
+
+A non-looping `SpriteAnimator` stops on its last cell and nothing reports it, so
+a one-shot animation (an attack, a death, a pickup) cannot drive what happens
+next without the game polling the sprite's UVs every frame.
+
+**Done when** `SpriteAnimationSystem` records the animators that finished during
+the most recent update as a queryable count plus the finishing nodes, a looping
+animator never finishes, a finished animator is reported once and not again on a
+later update, and a test drives a two-frame one-shot past its end and asserts the
+report and its absence on the next frame.
+
+### `audio-source-fade`
+
+A source starts and stops at full gain, so a music change or a pickup clicks; a
+game that wants a fade has to ramp the gain itself each frame and cannot express
+a fade-out at all, because stopping releases the voice immediately.
+
+**Done when** `AudioSource` carries fade-in and fade-out durations in seconds, a
+play request ramps the gain from zero over the fade-in, a stop ramps down over
+the fade-out before the voice is released, zero (the default) leaves the current
+behaviour, and a test asserts the mixed level of a faded-in source rises across
+the ramp and reaches the authored gain afterwards.
+
+### `camera2d-follow`
+
+A `Camera2D` sits wherever its node is, so following a player means a gameplay
+script copying a position every frame; there is no deadzone and no smoothing, so
+the camera is either welded rigidly to the body or jitters with it.
+
+**Done when** a `Camera2DFollow` component names a target node, a smoothing time,
+and a deadzone rectangle, a system moves the camera node toward the target with
+frame-rate-independent exponential smoothing, a target inside the deadzone leaves
+the camera still, the target itself is not modified, and a test proves the camera
+converges toward a target outside the deadzone and does not move for one inside
+it.
+
+### `tilemap-animated-tiles`
+
+A tilemap draws one static cell per coordinate, so water, a torch, or a portal
+cannot animate without the game rewriting the map's cells every frame and losing
+the authored level.
+
+**Done when** the tileset carries an animation for a tile index (an ordered list
+of tile indices and a frames-per-second), extraction resolves the current frame
+from a clock advanced by the update, a tileset with no animation leaves the UVs
+unchanged, and a test advances the clock and asserts the drawn cell changes and
+wraps back to the first frame.
+
+### `ui-element-rotation`
+
+Every UI quad is axis-aligned, so a rotated badge, a compass needle, or a
+spinning icon cannot be drawn inside a canvas without dropping to a world-space
+sprite that ignores the canvas scale and the UI layer.
+
+**Done when** `UiElement` carries a rotation in radians (default zero) applied
+about the element's own centre in the extracted instance's world matrix, the
+canvas scale and anchors still apply, the default leaves an existing element's
+matrix unchanged, and a test asserts the extracted quad's corners rotate about
+its centre by the requested angle.
+
+### `cursor-capture-and-hide`
+
+The window has no cursor mode, so a game cannot hide the pointer for a cinematic
+or capture it for mouse-look; the OS pointer always sits over the canvas.
+
+**Done when** the platform contract exposes a cursor mode (normal, hidden,
+locked) on the window, the null backend records it so a test can read it back,
+the GLFW backend implements all three, the web backend maps hidden and locked
+onto the browser's cursor and pointer-lock APIs, and a test proves the mode
+round-trips through the null backend and that a rejected request is reported
+rather than silently ignored.
+
+### `audio-doppler`
+
+A moving source has no pitch shift, so a car or a projectile sounds the same
+going away as coming toward the listener; the 3D slice's roadmap row names
+Doppler as left open.
+
+**Done when** `AudioSource` carries a velocity, the mixer derives a playback-rate
+factor from the source and listener velocities and a configurable speed of
+sound, a zero velocity (the default) leaves playback unchanged, and a test
+asserts the factor is below one for a receding source, above one for an
+approaching one, and exactly one at rest.
+
+### `camera2d-screen-shake`
+
+An impact cannot kick the camera: a game that wants a hit to shake the view has
+to jitter the camera node itself, which then fights the follow logic and leaks
+the jitter into anything else parented to it.
+
+**Done when** `Camera2D` carries a shake magnitude and a decay rate, the camera's
+`view_projection` adds a deterministic offset that shrinks with the remaining
+trauma and returns exactly to zero when trauma is exhausted, the node's own
+transform is never modified, and a test asserts a fresh shake moves the view, the
+same trauma produces the same offset twice, and an exhausted shake reproduces
+the unshaken matrix exactly.
+
 ---
 ## Backlog — not yet ordered
 

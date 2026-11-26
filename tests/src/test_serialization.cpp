@@ -165,6 +165,22 @@ TEST_CASE("component identity survives a round trip") {
     CHECK(restored.find_component(Uuid::generate()) == nullptr);
 }
 
+TEST_CASE("a sprite's pivot survives a round trip") {
+    Scene original;
+    auto* sprite = original.create_node("Thing")->add_component<Sprite2D>();
+    sprite->pivot = Vec2{0.0f, 1.0f};
+
+    auto text = serialization::scene::to_json(original);
+    REQUIRE(text);
+
+    Scene restored;
+    REQUIRE_FALSE(serialization::scene::from_json(text.value(), restored));
+
+    const auto* reloaded = restored.find_node_by_name("Thing")->get_component<Sprite2D>();
+    REQUIRE(reloaded != nullptr);
+    CHECK(reloaded->pivot == Vec2{0.0f, 1.0f});
+}
+
 TEST_CASE("a component's id is distinct per component and stable across a move") {
     Scene scene;
     Node* node = scene.create_node("Thing");

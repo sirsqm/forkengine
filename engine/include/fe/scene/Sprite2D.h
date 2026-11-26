@@ -31,6 +31,13 @@ public:
     // Tint multiplied with the sampled texel.
     Vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
 
+    // Normalised anchor: the point of the quad that sits on the node's origin.
+    // (0, 0) is the bottom-left corner, (1, 1) the top-right, so a character
+    // stands on its feet with (0.5, 0). Values outside [0, 1] are allowed and
+    // push the quad further off the node. The default centres the quad, which is
+    // the behaviour a sprite had before the pivot existed.
+    Vec2 pivot{0.5f, 0.5f};
+
     // UV sub-rectangle (u0, v0, u1, v1) for atlas and sprite-sheet use.
     Vec4 uv{0.0f, 0.0f, 1.0f, 1.0f};
 
