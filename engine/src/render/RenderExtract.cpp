@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string_view>
 
 namespace fe::render {
 namespace {
@@ -209,15 +210,17 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     return true;
 }
 
-// The pen's starting x, in the node's local space: where alignment places the
-// line's left edge relative to the node origin. Measuring first is what lets a
-// score be pinned to a corner without the author knowing its width. Shared by
-// the vector and arena walks.
-[[nodiscard]] f32 pen_origin(const TextLabel& label, const Font& font) noexcept {
+// The pen's starting x for one line, in the node's local space: where alignment
+// places the line's left edge relative to the node origin. Measuring first is
+// what lets a score be pinned to a corner without the author knowing its width,
+// and measuring *this* line is what centres each row of a multi-line label about
+// the origin instead of the widest row's box. Shared by the vector and arena
+// walks.
+[[nodiscard]] f32 pen_origin(const TextLabel& label, std::string_view line) noexcept {
     if (label.align == TextLabel::Align::Left) {
         return 0.0f;
     }
-    const f32 width = font.measure(label.text) * label.size;
+    const f32 width = label.line_width(line);
     return label.align == TextLabel::Align::Center ? -width * 0.5f : -width;
 }
 
@@ -261,28 +264,53 @@ void append_tile(const Tilemap& map, const Mat4& node_world, const Texture2D* te
     return true;
 }
 
+// Lays out every line of `label`, handing each drawable glyph's resolved
+// instance to `emit` in reading order. A `\n` ends a line: the next one starts
+// at the same pen X (the alignment is applied per line) with its baseline one
+// `size * line_height` further down, because the world's +Y is up. Shared by the
+// vector and arena walks, so the two cannot disagree about where a line breaks
+// or where the next baseline sits.
+template <typename Emit>
+void layout_label(const TextLabel& label, const Mat4& node_world, const Font& font, const Texture2D* texture,
+                  Emit&& emit) {
+    const f32 line_step = label.size * label.line_height;
+    f32 baseline = 0.0f;
+    std::string_view rest{label.text};
+    for (;;) {
+        const usize break_at = rest.find('\n');
+        const std::string_view line = rest.substr(0, break_at);
+
+        f32 pen_x = pen_origin(label, line);
+        for (usize i = 0; i < line.size(); ++i) {
+            const u8 code = static_cast<u8>(line[i]);
+            SpriteInstance instance;
+            if (resolve_glyph(label, font, node_world, code, Vec2{pen_x, baseline}, texture, instance)) {
+                emit(instance);
+            }
+            // The pen advances whether or not the glyph drew, so a missing glyph
+            // is a gap in a line of the right length rather than a shifted one.
+            // The tracking goes in between glyphs, never after the last, so the
+            // line ends where `measured_width()` says it does.
+            pen_x += font.advance(code) * label.size;
+            if (i + 1 < line.size()) {
+                pen_x += label.tracking;
+            }
+        }
+
+        if (break_at == std::string_view::npos) {
+            return;
+        }
+        rest.remove_prefix(break_at + 1);
+        baseline -= line_step;
+    }
+}
+
 // Lays out one label's text and appends a quad per drawable glyph to `out`.
-// Returns how many were appended. Shared by every text walk.
+// Returns how many were appended.
 usize append_label(const TextLabel& label, const Mat4& node_world, const Font& font, const Texture2D* texture,
                    std::vector<SpriteInstance>& out) {
-    f32 pen_x = pen_origin(label, font);
-
     const usize before = out.size();
-    for (const char raw : label.text) {
-        const u8 code = static_cast<u8>(raw);
-        SpriteInstance instance;
-        if (resolve_glyph(label, font, node_world, code, Vec2{pen_x, 0.0f}, texture, instance)) {
-            out.push_back(instance);
-        }
-        // The pen advances whether or not the glyph drew, so a missing glyph is
-        // a gap in a line of the right length rather than a shifted one. The
-        // tracking goes in between glyphs, never after the last, so the line ends
-        // where `measured_width()` says it does.
-        pen_x += font.advance(code) * label.size;
-        if (&raw != &label.text.back()) {
-            pen_x += label.tracking;
-        }
-    }
+    layout_label(label, node_world, font, texture, [&out](const SpriteInstance& instance) { out.push_back(instance); });
     return out.size() - before;
 }
 
@@ -701,21 +729,12 @@ usize extract_text_into(FrameArena& arena, const Scene& scene, std::span<SpriteI
             return;
         }
 
-        const Mat4 node_world = node.world_matrix();
-        f32 pen_x = pen_origin(*label, *font);
-        for (const char raw : label->text) {
-            if (written == out.size()) {
-                return;
-            }
-            const u8 code = static_cast<u8>(raw);
-            if (resolve_glyph(*label, *font, node_world, code, Vec2{pen_x, 0.0f}, texture, out[written])) {
+        layout_label(*label, node.world_matrix(), *font, texture, [&](const SpriteInstance& instance) {
+            if (written < out.size()) {
+                out[written] = instance;
                 ++written;
             }
-            pen_x += font->advance(code) * label->size;
-            if (&raw != &label->text.back()) {
-                pen_x += label->tracking;
-            }
-        }
+        });
     });
     return written;
 }

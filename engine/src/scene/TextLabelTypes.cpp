@@ -66,6 +66,8 @@ void register_text(Registry& registry) {
     desc.properties.push_back(make_align_property());
     desc.properties.push_back(
         make_scalar<TextLabel, f32>("tracking", &TextLabel::tracking, ValueKind::Float, &defaults));
+    desc.properties.push_back(
+        make_scalar<TextLabel, f32>("line_height", &TextLabel::line_height, ValueKind::Float, &defaults));
     desc.properties.push_back(make_scalar<TextLabel, i32>("layer", &TextLabel::layer, ValueKind::Int, &defaults));
     desc.properties.push_back(make_resource_ref<TextLabel, std::shared_ptr<Resource>>(
         "font", &TextLabel::font, "Font",

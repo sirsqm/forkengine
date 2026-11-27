@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace fe {
 
@@ -30,9 +31,9 @@ namespace fe {
 // node's world matrix composes with each glyph's local offset, so moving,
 // rotating, or scaling the node transforms the whole line.
 //
-// Deliberately not here: wrapping, kerning, shaping, and bidirectional text. One
-// line, left-to-right, in the glyphs the atlas holds. Naming that is what keeps
-// the seam honest.
+// Deliberately not here: wrapping, kerning, shaping, and bidirectional text. A
+// `\n` starts a new line, but the layout never breaks one on its own. Naming
+// that is what keeps the seam honest.
 class TextLabel final : public Component {
 public:
     static constexpr const char* kTypeName = "TextLabel";
@@ -74,6 +75,12 @@ public:
     // so a centred or right-aligned line does not carry a trailing gap.
     f32 tracking = 0.0f;
 
+    // Baseline-to-baseline distance between the lines a `\n` starts, as a
+    // multiple of `size`. One (the default) reproduces the font's own single-line
+    // layout exactly, so a label without a newline is unchanged; a dialogue box
+    // opens its rows up with a larger value and tightens them with a smaller one.
+    f32 line_height = 1.0f;
+
     // Render order within the 2D pass, on the same scale as Sprite2D::layer, so
     // a HUD draws over the game and under a menu.
     i32 layer = 0;
@@ -83,8 +90,16 @@ public:
     // True when the label has nothing to draw: no font, or no text.
     [[nodiscard]] bool empty() const noexcept { return !has_font() || text.empty(); }
 
-    // The width of the line in world units at `size`, or 0 with no font. Used by
-    // the layout and by a test that asserts the advance.
+    // The width of one line in world units at `size`, including the tracking
+    // between its glyphs, or 0 with no font. Alignment and measurement both go
+    // through it, so a centred line and the width a layout is given cannot
+    // disagree.
+    [[nodiscard]] f32 line_width(std::string_view line) const noexcept;
+
+    // The width of the widest line in world units at `size`, or 0 with no font.
+    // A label of one line measures that line, so the answer for existing text is
+    // unchanged; a multi-line label is as wide as its longest row, which is what
+    // a dialogue box or a centred caption needs.
     [[nodiscard]] f32 measured_width() const noexcept;
 };
 

@@ -53,6 +53,11 @@ namespace {
     return m.m[12];
 }
 
+// The same for Y, which a multi-line label's baseline step lands in.
+[[nodiscard]] f32 translation_y(const Mat4& m) noexcept {
+    return m.m[13];
+}
+
 // A `Texture2D` built on the null device. The text walk only extracts glyphs
 // whose font has a `Texture2D` atlas, so this is the smallest atlas: no decode,
 // no file, no GPU object.
@@ -319,6 +324,81 @@ TEST_CASE("tracking opens the gap between glyphs and is measured") {
     CHECK(label->measured_width() == doctest::Approx(1.25f));
 }
 
+TEST_CASE("a newline starts a new line below the first at the same pen X") {
+    rhi::Device& device = null_device();
+    Scene scene;
+    auto font = make_font(make_atlas(device));
+    Node* node = add_label(scene, font, "AB\nAB");
+    auto* label = node->get_component<TextLabel>();
+
+    // One is the default, so a label that never sees a newline lays out exactly
+    // as it did before the line became a list of them.
+    CHECK(label->line_height == doctest::Approx(1.0f));
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_text(scene, instances);
+    REQUIRE(instances.size() == 4);
+
+    // The newline itself draws nothing. The second line's first glyph sits
+    // directly below the first line's first glyph: same pen X, one baseline step
+    // lower at size 1 and the default line height.
+    CHECK(translation_x(instances[2].world) == doctest::Approx(translation_x(instances[0].world)));
+    CHECK(translation_y(instances[2].world) == doctest::Approx(translation_y(instances[0].world) - 1.0f));
+    CHECK(translation_x(instances[3].world) == doctest::Approx(translation_x(instances[1].world)));
+
+    // The arena walk lays out the same lines, so a multi-line label needs no
+    // separate handling there.
+    FrameArena arena(4096);
+    std::vector<render::SpriteInstance> storage(instances.size());
+    REQUIRE(render::extract_text_into(arena, scene, storage, 0) == instances.size());
+    for (usize i = 0; i < instances.size(); ++i) {
+        CHECK(storage[i] == instances[i]);
+    }
+}
+
+TEST_CASE("line height spaces the baselines and the widest line is measured") {
+    rhi::Device& device = null_device();
+    Scene scene;
+    auto font = make_font(make_atlas(device));
+    Node* node = add_label(scene, font, "A\nAB");
+    auto* label = node->get_component<TextLabel>();
+
+    // The widest line wins: "A" is 0.5 em, "AB" is 1.0 em.
+    CHECK(label->measured_width() == doctest::Approx(1.0f));
+
+    label->line_height = 2.0f;
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_text(scene, instances);
+    REQUIRE(instances.size() == 3);
+
+    // Two baseline steps of 2.0 at size 1, so the second line is two em down.
+    CHECK(translation_y(instances[1].world) == doctest::Approx(translation_y(instances[0].world) - 2.0f));
+
+    // A shorter second line does not shrink the measured width, and a longer one
+    // does not either: only the widest row counts.
+    label->text = "A B\nA";
+    CHECK(label->measured_width() == doctest::Approx(1.5f));
+}
+
+TEST_CASE("alignment applies to each line of a multi-line label") {
+    rhi::Device& device = null_device();
+    Scene scene;
+    auto font = make_font(make_atlas(device));
+    Node* node = add_label(scene, font, "AB\nA");
+    auto* label = node->get_component<TextLabel>();
+    label->align = TextLabel::Align::Center;
+
+    std::vector<render::SpriteInstance> instances;
+    render::extract_text(scene, instances);
+    REQUIRE(instances.size() == 3);
+
+    // Each line is centred on its own width, not on the widest line's box: the
+    // 1.0-wide first line starts at -0.5 and the 0.5-wide second at -0.25.
+    CHECK((translation_x(instances[0].world) - instances[0].size.x * 0.5f) == doctest::Approx(-0.5f));
+    CHECK((translation_x(instances[2].world) - instances[2].size.x * 0.5f) == doctest::Approx(-0.25f));
+}
+
 TEST_CASE("a label with no font or no text draws nothing") {
     rhi::Device& device = null_device();
     auto font = make_font(make_atlas(device));
@@ -443,4 +523,18 @@ TEST_CASE("the text component is registered for reflection") {
         }
     }
     CHECK(has_font);
+
+    // The line spacing is authored, so it is a property too: a dialogue box's
+    // rows survive a scene file the way its text and size do.
+    const reflect::Property* line_height = nullptr;
+    for (const auto& property : desc->properties) {
+        if (property.name == "line_height") {
+            line_height = &property;
+            CHECK(property.value_kind == reflect::ValueKind::Float);
+        }
+    }
+    REQUIRE(line_height != nullptr);
+    TextLabel label;
+    REQUIRE(line_height->setter(&label, reflect::Value{2.5}));
+    CHECK(label.line_height == doctest::Approx(2.5f));
 }
