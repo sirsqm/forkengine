@@ -12,6 +12,7 @@ namespace fe {
 
 void SpriteAnimationSystem::update(const FrameContext& context, Scene& scene) {
     advanced_ = 0;
+    finished_.clear();
 
     // Gather first: walk the graph once and keep only the nodes that carry both
     // an animator and a sprite, with the accumulator each one had last frame.
@@ -34,15 +35,18 @@ void SpriteAnimationSystem::update(const FrameContext& context, Scene& scene) {
             return;
         }
 
-        // Adopt the elapsed time this animator carried last frame, if any.
+        // Adopt the elapsed time and finish report this animator carried last
+        // frame, if any.
         f32 elapsed = 0.0f;
+        bool finished = false;
         for (const Entry& prior : previous) {
             if (prior.animator == animator) {
                 elapsed = prior.elapsed;
+                finished = prior.finished;
                 break;
             }
         }
-        entries_.push_back(Entry{animator, sprite, elapsed});
+        entries_.push_back(Entry{&node, animator, sprite, elapsed, finished});
     });
 
     // Advance in a tight loop over the flat list.
@@ -54,6 +58,12 @@ void SpriteAnimationSystem::update(const FrameContext& context, Scene& scene) {
         // anything, so the displayed cell and the stored value never disagree.
         if (total > 0 && animator.current_frame >= total) {
             animator.current_frame = animator.loop ? animator.current_frame % total : total - 1;
+        }
+
+        // A one-shot that was rewound (a game replaying an attack) is allowed
+        // to finish again; one still parked on its last cell stays reported.
+        if (total > 0 && !animator.loop && animator.current_frame + 1 < total) {
+            entry.finished = false;
         }
 
         // A degenerate layout, a paused animator, or a non-positive rate
@@ -77,6 +87,10 @@ void SpriteAnimationSystem::update(const FrameContext& context, Scene& scene) {
                 animator.current_frame = frame;
                 if (frame != before) {
                     ++advanced_;
+                }
+                if (!animator.loop && !entry.finished && frame == total - 1) {
+                    entry.finished = true;
+                    finished_.push_back(entry.node);
                 }
             }
         }

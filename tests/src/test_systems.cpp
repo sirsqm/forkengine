@@ -180,6 +180,51 @@ TEST_CASE("looping wraps and non-looping clamps to the last frame") {
     CHECK(clamp->current_frame == clamp->count() - 1);
 }
 
+TEST_CASE("a one-shot animator reports finishing once and not again") {
+    Scene scene;
+    auto* animator = add_animated_sprite(scene, 2, 1, 10.0f, /*loop=*/false);
+    Node* node = animator->node();
+    REQUIRE(node != nullptr);
+
+    SpriteAnimationSystem system;
+
+    // One frame's worth of time advances the two-frame one-shot to its last cell.
+    system.update(frame(0.1f), scene);
+    CHECK(animator->current_frame == 1);
+    REQUIRE(system.finished_count() == 1);
+    CHECK((system.finished_nodes()[0] == node));
+
+    // Parked on the last cell, it is not reported a second time.
+    system.update(frame(0.1f), scene);
+    CHECK(animator->current_frame == 1);
+    CHECK(system.finished_count() == 0);
+}
+
+TEST_CASE("a looping animator is never reported finished") {
+    Scene scene;
+    add_animated_sprite(scene, 2, 1, 10.0f, /*loop=*/true);
+
+    SpriteAnimationSystem system;
+    for (int i = 0; i < 10; ++i) {
+        system.update(frame(0.1f), scene);
+        CHECK(system.finished_count() == 0);
+    }
+}
+
+TEST_CASE("a rewound one-shot can finish again") {
+    Scene scene;
+    auto* animator = add_animated_sprite(scene, 2, 1, 10.0f, /*loop=*/false);
+
+    SpriteAnimationSystem system;
+    system.update(frame(0.1f), scene);
+    REQUIRE(system.finished_count() == 1);
+
+    animator->current_frame = 0;
+    system.update(frame(0.1f), scene);
+    CHECK(animator->current_frame == 1);
+    CHECK(system.finished_count() == 1);
+}
+
 TEST_CASE("a paused animator holds its frame but still publishes uvs") {
     Scene scene;
     Node* node = scene.create_node("Animated");

@@ -10,6 +10,7 @@
 
 namespace fe {
 
+class Node;
 class Sprite2D;
 
 // Advances SpriteAnimator state and writes the current cell's UVs onto the
@@ -35,16 +36,29 @@ public:
     // the editor's debug view; it is not a gameplay-facing value.
     [[nodiscard]] usize last_advanced_count() const noexcept { return advanced_; }
 
+    // One-shot animators that reached their last cell during the most recent
+    // update, in scene order. A looping animator is never reported, and a
+    // finished animator is reported on the update that reaches the end only,
+    // not on later updates that leave it parked there. This is how a one-shot
+    // (an attack, a death, a pickup) drives what happens next without the game
+    // polling UVs. The vector is rebuilt at the top of every update, so a
+    // caller that keeps it past the frame copies it.
+    [[nodiscard]] usize finished_count() const noexcept { return finished_.size(); }
+    [[nodiscard]] const std::vector<Node*>& finished_nodes() const noexcept { return finished_; }
+
 private:
     // One entry per animator-bearing sprite, so the inner loop walks a
     // contiguous array instead of the scene's pointer graph.
     struct Entry {
+        Node* node;
         SpriteAnimator* animator;
         Sprite2D* sprite;
-        f32 elapsed; // fractional-frame accumulator carried between updates
+        f32 elapsed;   // fractional-frame accumulator carried between updates
+        bool finished; // a one-shot already reported at its last cell
     };
 
     std::vector<Entry> entries_;
+    std::vector<Node*> finished_;
     usize advanced_ = 0;
 };
 
